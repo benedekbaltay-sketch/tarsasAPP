@@ -1,0 +1,2198 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <title>Társasházkezelő</title>
+    <meta name="description" content="Társasházi közös költség és felújítási alap nyilvántartó rendszer." />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700&display=swap" rel="stylesheet" />
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="styles.css?v=227" />
+    <style>
+        .flat-tile-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+            gap: 16px !important;
+        }
+        .flat-tile-card {
+            background-color: var(--bg-card, #ffffff);
+            border: 1px solid var(--border-color, #e5e7eb);
+            border-radius: var(--radius-md, 8px);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: all 0.2s ease-in-out;
+        }
+        .flat-tile-danger {
+            background-color: #fef2f2 !important;
+            border-color: #fca5a5 !important;
+        }
+        .flat-tile-card:hover {
+            box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+            border-color: var(--primary, #3b82f6);
+            transform: translateY(-4px);
+            background-color: #f8fafc;
+        }
+        .flat-tile-danger:hover {
+            background-color: #fee2e2 !important;
+            border-color: var(--danger, #ef4444) !important;
+        }
+        .flat-tile-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+            padding-bottom: 8px;
+            margin-bottom: 4px;
+        }
+        .flat-tile-header h4 {
+            font-size: 16px;
+            color: var(--primary-dark, #0f172a);
+            margin: 0;
+        }
+        .flat-tile-balances {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .flat-tile-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: auto;
+            padding-top: 12px;
+        }
+        .tx-type-toggle-container {
+            display: flex;
+            background: var(--bg-body, #F1F5F9);
+            padding: 4px;
+            border-radius: 12px;
+            border: 1.5px solid var(--border-color);
+            gap: 6px;
+        }
+        .tx-type-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border: none;
+            border-radius: 9px;
+            font-weight: 700;
+            font-size: 13.5px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            background: transparent;
+            color: var(--text-muted);
+        }
+        .tx-type-btn:hover:not(.active-income):not(.active-expense) {
+            background: rgba(0,0,0,0.05);
+            color: var(--text-main);
+        }
+        .tx-type-btn.active-income {
+            background: #059669 !important;
+            color: #ffffff !important;
+            box-shadow: 0 3px 10px rgba(5, 150, 105, 0.35) !important;
+        }
+        .tx-type-btn.active-expense {
+            background: #DC2626 !important;
+            color: #ffffff !important;
+            box-shadow: 0 3px 10px rgba(220, 38, 38, 0.35) !important;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="app-container">
+
+    
+
+
+<!-- ================================================================
+         HEADER (Hidden before login)
+         ================================================================ -->
+    <header class="app-header" style="display:none;">
+        <div class="header-logo" id="header-logo-btn" onclick="window.goToMainMenu()" style="cursor: pointer; display: flex; align-items: center; gap: 12px;" title="Vissza a főmenübe">
+            <div class="logo-icon" style="transition: transform 0.2s ease;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+                    <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+                    <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+                    <path d="M10 6h4"/>
+                    <path d="M10 10h4"/>
+                    <path d="M10 14h4"/>
+                    <path d="M10 18h4"/>
+                </svg>
+            </div>
+            <div class="logo-text">
+                <h1 data-i18n="app_title">Közös Költség Nyilvántartó</h1>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span class="building-address" id="header-building-name" data-i18n="building_address">Batyu utca 21. - Társasház</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center: Profile Switcher Button (Visible when logged in AND user has multiple profiles) -->
+        <div id="header-center-nav" style="display:none; align-items:center; justify-content:center;">
+            <button id="header-profile-btn" class="btn btn-outline" onclick="openBuildingSelector()" style="display:none; align-items:center; gap:8px; font-weight:600; padding:8px 18px; border-radius:var(--radius-md); background:var(--bg-card); border-color:var(--border-color); color:var(--text-main); transition:all 0.2s ease; box-shadow:0 1px 3px rgba(0,0,0,0.05); cursor:pointer;" title="Profilváltás">
+                <i data-lucide="users" style="width:17px;height:17px;color:var(--primary);"></i>
+                <span data-i18n="profile_selector_btn">Profilváltás</span>
+            </button>
+        </div>
+
+        <!-- User profile bar (hidden until logged in) -->
+        <div id="user-profile-bar" class="user-profile" style="display:none;">
+            <!-- Language Toggle -->
+            <button id="lang-toggle-btn" class="btn btn-outline btn-sm btn-icon-only" style="width: 40px; height: 32px; padding: 0; border: none; display: flex; align-items: center; justify-content: center; flex-shrink: 0;" onclick="toggleLanguage()">
+        <img id="lang-flag-img" src="https://flagcdn.com/gb.svg" style="width: 24px; border-radius: 2px;" alt="EN" title="Switch to English">
+    </button>
+            <div class="user-info" style="display: flex; align-items: center; gap: 8px;">
+                <span class="user-name" id="header-user-name" style="font-weight: 700; font-size: 13.5px; color: var(--text-main); white-space: nowrap;">Felhasználó</span>
+            </div>
+            
+            <!-- Hamburger menu button (iOS Drawer) -->
+            <button id="menu-dropdown-btn" class="btn btn-outline btn-sm btn-icon-only" onclick="window.openIosSideDrawer(event)" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 32px; cursor: pointer; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card); transition: all 0.2s ease;" title="Menü">
+                <i data-lucide="menu" style="width:18px;height:18px;color:var(--text-main);"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- ================================================================
+         MAIN
+         ================================================================ -->
+    <main style="flex: 1; width: 100%; display: flex; flex-direction: column;">
+
+        <!-- ============================================================
+             LOGIN VIEW
+             ============================================================ -->
+        <section id="login-view" class="view-section" style="display:flex;">
+            <div class="login-card-container">
+
+                <div class="login-card">
+                    <div class="login-header" style="margin-bottom: 28px;">
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px;">
+                            <div class="logo-icon" style="width: 48px; height: 48px; border-radius: 12px; background: #1E3A8A !important; box-shadow: 0 4px 14px rgba(30, 58, 138, 0.35);">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
+                                    <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
+                                    <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
+                                    <path d="M10 6h4"/>
+                                    <path d="M10 10h4"/>
+                                    <path d="M10 14h4"/>
+                                    <path d="M10 18h4"/>
+                                </svg>
+                            </div>
+                            <h2 data-i18n="login_title" style="margin: 0; font-size: 24px; font-weight: 700;">Bejelentkezés</h2>
+                        </div>
+                        <p data-i18n="login_subtitle" style="margin: 0; color: var(--text-muted); font-size: 14px;">Társasház portál</p>
+                    </div>
+
+                    <form id="login-form">
+                        <!-- Success message (e.g. after password reset) -->
+                        <div id="login-success-msg" style="display:none; background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:12px 14px; margin-bottom:16px; border-radius:var(--radius-md); font-size:13px; display:none; align-items:center; gap:8px;">
+                            <i data-lucide="check-circle-2" style="width:18px;height:18px;color:#10b981;flex-shrink:0;"></i>
+                            <span id="login-success-text">A jelszó sikeresen megváltoztatva! Lépj be az új jelszóval.</span>
+                        </div>
+
+                        <!-- Error message -->
+                        <div id="login-error-msg" class="login-error" style="display:none;">
+                            <i data-lucide="alert-circle"></i>
+                            <span>Hibás e-mail cím vagy jelszó.</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="login-username" data-i18n="login_username_label">E-mail cím</label>
+                            <div class="input-wrapper">
+                                <i data-lucide="mail" class="input-icon"></i>
+                                <input id="login-username" type="email" placeholder="pelda@email.com" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required />
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="login-password" data-i18n="login_password_label">Jelszó</label>
+                            <div class="input-wrapper" style="position:relative;">
+                                <i data-lucide="lock" class="input-icon"></i>
+                                <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" style="padding-right:40px;" required />
+                                <button type="button" class="btn-password-peek" onmousedown="peekPassword('login-password', true)" onmouseup="peekPassword('login-password', false)" onmouseleave="peekPassword('login-password', false)" ontouchstart="peekPassword('login-password', true)" ontouchend="peekPassword('login-password', false)" ontouchcancel="peekPassword('login-password', false)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; padding:6px; display:flex; align-items:center; justify-content:center; z-index:2;" title="Jelszó mutatása nyomva tartáskor">
+                                    <i data-lucide="eye" style="width:16px;height:16px;"></i>
+                                </button>
+                            </div>
+                        <div class="form-group" style="margin-bottom: 18px;">
+                            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); cursor: pointer; user-select: none; margin: 0;">
+                                <input type="checkbox" id="login-remember-me" checked style="width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer;" />
+                                <span data-i18n="remember_me">Maradjak bejelentkezve</span>
+                            </label>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block" style="background:#1E3A8A; font-weight:700; height:44px;">
+                            <i data-lucide="log-in" style="width:17px;height:17px;"></i>
+                            <span data-i18n="login_title">Bejelentkezés</span>
+                        </button>
+
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:14px; border-top:1px solid var(--border-color); font-size:13px;">
+                            <a href="javascript:void(0)" onclick="openForgotPasswordModal()" style="color:var(--primary); text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:5px;">
+                                <i data-lucide="key-round" style="width:14px;height:14px;"></i>
+                                <span data-i18n="forgot_password">Elfelejtettem a jelszavam</span>
+                            </a>
+                            <a href="javascript:void(0)" onclick="openHelpModal()" style="color:var(--text-muted); text-decoration:none; font-weight:600; display:inline-flex; align-items:center; gap:5px;">
+                                <i data-lucide="help-circle" style="width:15px;height:15px;"></i>
+                                <span data-i18n="help_nav">Segítség</span>
+                            </a>
+                        </div>
+                    </form>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ============================================================
+             TENANT VIEW
+             ============================================================ -->
+        <section id="tenant-view" class="view-section" style="display:none;">
+
+            <!-- Flat summary & Transfer details grid -->
+            <div class="tenant-grid" style="margin-bottom: 24px;">
+
+                <!-- 1. Left card: A lakás pénzügyi adatai -->
+                <div class="grid-card">
+                    <div class="card-header">
+                        <i data-lucide="wallet"></i>
+                        <h3 data-i18n="flat_financial_data">A lakás pénzügyi adatai</h3>
+                    </div>
+                    <div class="card-body" style="display:flex; flex-direction:column; gap:12px;">
+                        <!-- KK row -->
+                        <div id="tenant-kk-card" style="border-radius: var(--radius-md); padding: 12px 14px; border: 1px solid var(--border-color); background: var(--bg-body); display:flex; justify-content:space-between; align-items:center;">
+                            <div style="display:flex; flex-direction:column; gap:3px;">
+                                <div style="display:flex; align-items:center; gap:5px;">
+                                    <span style="background: var(--primary); color: white; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">KK</span>
+                                    <span style="font-size: 12px; color: var(--text-muted);"><span data-i18n="monthly_short">Havi</span>: <strong id="tenant-monthly-fee-a-new">–</strong></span>
+                                </div>
+                                <div id="tenant-status-kk" style="font-size: 18px; font-weight: 700; line-height: 1.2;">–</div>
+                            </div>
+                            <span id="tenant-status-kk-badge" style="font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 20px; white-space:nowrap;">–</span>
+                        </div>
+
+                        <!-- FA row -->
+                        <div id="tenant-fa-card" style="border-radius: var(--radius-md); padding: 12px 14px; border: 1px solid var(--border-color); background: var(--bg-body); display:flex; justify-content:space-between; align-items:center;">
+                            <div style="display:flex; flex-direction:column; gap:3px;">
+                                <div style="display:flex; align-items:center; gap:5px;">
+                                    <span style="background: var(--purple); color: white; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">FA</span>
+                                    <span style="font-size: 12px; color: var(--text-muted);"><span data-i18n="monthly_short">Havi</span>: <strong id="tenant-monthly-fee-b-new">–</strong></span>
+                                </div>
+                                <div id="tenant-status-fa" style="font-size: 18px; font-weight: 700; line-height: 1.2;">–</div>
+                            </div>
+                            <span id="tenant-status-fa-badge" style="font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 20px; white-space:nowrap;">–</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Right card: Utalási adatok -->
+                <div class="grid-card">
+                    <div class="card-header">
+                        <i data-lucide="credit-card"></i>
+                        <h3 data-i18n="transfer_details_title">Utalási adatok</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="payment-instructions">
+                            <div class="payment-group" style="margin-bottom: 12px; padding: 12px; background: var(--bg-body); border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                                <h4 style="font-size: 13px; font-weight: 600; color: var(--primary-dark); margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px;">
+                                    <span style="background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;">KK</span> <span data-i18n="transfer_kk_title">Közös Költség utalás</span>
+                                </h4>
+                                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                        <span><span data-i18n="pay_beneficiary">Kedvezményezett</span>: <strong id="kk-ref-name">Batyu utca 21 Társasház</strong></span>
+                                        <button class="btn btn-outline btn-xs copy-btn" onclick="copyText('kk-ref-name')" style="padding: 2px 6px; height: auto; font-size: 11px;" title="Másolás">
+                                            <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
+                                        </button>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                        <span><span data-i18n="pay_bank_account">Bankszámla</span>: <strong id="kk-ref-bank">11702005 21461266 (OTP)</strong></span>
+                                        <button class="btn btn-outline btn-xs copy-btn" onclick="copyText('kk-ref-bank')" style="padding: 2px 6px; height: auto; font-size: 11px;" title="Másolás">
+                                            <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
+                                        </button>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                        <span><span data-i18n="pay_reference">Közlemény</span>: <code id="tenant-payment-ref" style="font-weight: 700;">-</code></span>
+                                        <button class="btn btn-outline btn-xs copy-btn" onclick="copyText('tenant-payment-ref')" style="padding: 2px 6px; height: auto; font-size: 11px;" title="Másolás">
+                                            <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="payment-group" style="padding: 12px; background: var(--bg-body); border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                                <h4 style="font-size: 13px; font-weight: 600; color: var(--purple); margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px;">
+                                    <span style="background: var(--purple); color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;">FA</span> <span data-i18n="transfer_fa_title">Felújítási Alap utalás</span>
+                                </h4>
+                                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                        <span><span data-i18n="pay_beneficiary">Kedvezményezett</span>: <strong id="fa-ref-name">Batyu utca 21 Társasház</strong></span>
+                                        <button class="btn btn-outline btn-xs copy-btn" onclick="copyText('fa-ref-name')" style="padding: 2px 6px; height: auto; font-size: 11px;" title="Másolás">
+                                            <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
+                                        </button>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                        <span><span data-i18n="pay_bank_account">Bankszámla</span>: <strong id="fa-ref-bank">11702005 21461273 (OTP)</strong></span>
+                                        <button class="btn btn-outline btn-xs copy-btn" onclick="copyText('fa-ref-bank')" style="padding: 2px 6px; height: auto; font-size: 11px;" title="Másolás">
+                                            <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
+                                        </button>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                        <span><span data-i18n="pay_reference">Közlemény</span>: <code id="tenant-payment-ref-b" style="font-weight: 700;">-</code></span>
+                                        <button class="btn btn-outline btn-xs copy-btn" onclick="copyText('tenant-payment-ref-b')" style="padding: 2px 6px; height: auto; font-size: 11px;" title="Másolás">
+                                            <i data-lucide="copy" style="width: 12px; height: 12px;"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ---- Combined Transactions Card (preview: top 5) ---- -->
+            <div class="card-table-container">
+                <div class="table-header-bar" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                    <div class="table-title">
+                        <i data-lucide="list"></i>
+                        <h3 data-i18n="transactions">Tranzakciók</h3>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; flex:1; max-width:360px; margin-left:auto;">
+                        <div class="search-input-wrapper" style="position:relative; flex:1;">
+                            <input type="text" id="tenant-tx-search" class="form-input"
+                                   data-i18n-placeholder="search_fullscreen_placeholder"
+                                   placeholder="Keresés dátum, összeg, megjegyzés..."
+                                   oninput="filterTenantCombinedTable(this.value)"
+                                   style="padding-left:32px; height:34px; font-size:13px; width:100%; border-radius:var(--radius-sm);">
+                            <i data-lucide="search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-muted); pointer-events:none;"></i>
+                        </div>
+                        <button class="btn btn-outline btn-sm" onclick="exportCombinedFlatLedgerToExcel()" style="display:flex;align-items:center;gap:6px;height:34px;white-space:nowrap;">
+                            <i data-lucide="download" style="width:14px;height:14px;"></i>
+                            <span>Excel</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="th_date">Dátum</th>
+                                <th data-i18n="th_account">Számla</th>
+                                <th data-i18n="th_type">Típus</th>
+                                <th data-i18n="th_amount">Összeg</th>
+                                <th data-i18n="th_comment">Megjegyzés</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tenant-tbody-combined">
+                            <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Betöltés…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Show all button row -->
+                <div id="tenant-tx-show-all-row" style="display:none; padding:16px 24px; border-top:1px solid var(--border-color); text-align:center;">
+                    <button class="btn btn-primary btn-sm" onclick="openTenantFullscreen()" style="gap:6px;">
+                        <i data-lucide="list" style="width:14px;height:14px;"></i>
+                        <span id="tenant-tx-show-all-label">Teljes lista megtekintése</span>
+                    </button>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ============================================================
+             ADMIN VIEW
+             ============================================================ -->
+        <section id="admin-view" class="view-section" style="display:none;">
+
+            <!-- Top Overview KPI Cards row -->
+            <div class="financial-stat-row" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+                <div class="stat-item" style="display:flex; flex-direction:column; justify-content:space-between; gap:12px; background:var(--bg-card); border-radius:var(--radius-md); box-shadow:var(--shadow-sm);">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <span class="stat-label" style="margin-bottom:4px; display:block; color:var(--primary); font-weight:600;" data-i18n="kpi_building_reserve">Közös Költség alap</span>
+                            <span class="stat-value text-success" id="admin-kpi-balance" style="font-size:22px;">–</span>
+                        </div>
+                        <button class="btn btn-outline btn-xs btn-icon-only" style="padding:4px; flex-shrink:0;" onclick="openGlobalBalancesModal()" title="Számlafőösszeg szerkesztése">
+                            <i data-lucide="pencil" style="width:14px;height:14px;"></i>
+                        </button>
+                    </div>
+                    <div style="border-top:1px solid var(--border-color); padding-top:12px;">
+                        <span class="stat-label" style="margin-bottom:4px; display:block; color:var(--primary); font-weight:600;" data-i18n="kpi_renovation_fund">Felújítási Alap</span>
+                        <span class="stat-value" style="color:var(--primary); font-size:22px;" id="admin-kpi-renovation">–</span>
+                    </div>
+                </div>
+                
+                <div class="stat-item" style="display:flex; flex-direction:column; justify-content:space-between; align-items:flex-start; gap:12px; background:var(--bg-card); border-radius:var(--radius-md); box-shadow:var(--shadow-sm);">
+                    <div style="width:100%;">
+                        <span class="stat-label" data-i18n="kpi_total_arrears">Összes hátralék</span>
+                        <span class="stat-value text-danger" id="admin-kpi-arrears" style="display:block; margin-top:4px; font-size:22px;">–</span>
+                    </div>
+                    <div style="border-top:1px solid var(--border-color); padding-top:12px; width:100%;">
+                        <button class="btn" style="font-size:13px; font-weight:700; padding:10px 16px; display:inline-flex; align-items:center; justify-content:center; gap:8px; border:none; background:#1E3A8A; color:#ffffff !important; border-radius:8px; box-shadow:0 3px 10px rgba(30,58,138,0.3); cursor:pointer; width:100%; transition:all 0.2s ease;" onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#1E3A8A'" onclick="openGlobalDetailAddTxModal()" title="Közös tétel rögzítése">
+                            <i data-lucide="plus-circle" style="width:16px;height:16px;stroke-width:2.5;color:#ffffff !important;"></i> <span style="color:#ffffff !important;" data-i18n="add_global_item_btn">Tétel hozzáadása</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Monthly Balance Card (Right above Flats and Balances) -->
+            <div class="stat-item" style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px 20px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <div style="width:34px; height:34px; border-radius:8px; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            <i data-lucide="scale" style="width:18px; height:18px;"></i>
+                        </div>
+                        <div>
+                            <span class="stat-label" style="font-size:12px; color:var(--text-muted); display:block; margin:0;" data-i18n="kpi_monthly_balance">Aktuális havi mérleg</span>
+                            <span class="stat-value" id="admin-kpi-stats" style="font-size:20px; font-weight:700;">–</span>
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <span class="stat-label" id="admin-kpi-sub-stats" style="font-size:12.5px; font-weight:600; color:var(--text-muted);"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Arrears matrix (Full Width) -->
+            <div style="width: 100%;">
+
+                <!-- Arrears matrix -->
+                <div class="card-table-container" style="flex: 1;">
+                    <div class="table-header-bar">
+                        <div class="table-title">
+                            <i data-lucide="layout-grid"></i>
+                            <h3 data-i18n="admin_arrears_title">Lakások és Egyenlegek</h3>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <button class="btn btn-primary btn-sm" onclick="openAddTransactionModal()" style="font-size:12px;">
+                                <i data-lucide="plus" style="width:14px;height:14px;"></i> <span data-i18n="admin_add_transaction">Tranzakció rögzítése</span>
+                            </button>
+                            <button id="grid-add-flat-btn" class="btn btn-success btn-sm" onclick="openAddFlatModal()" style="display:none; font-size:12px;">
+                                <i data-lucide="home" style="width:14px;height:14px;"></i> <span data-i18n="admin_add_flat">Új lakás</span>
+                            </button>
+                            <button id="grid-edit-btn" class="btn btn-outline btn-sm" onclick="toggleGridEditMode()" style="font-size:12px;">
+                                <i data-lucide="pencil" style="width:14px;height:14px;"></i> <span data-i18n="edit">Szerkesztés</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div style="padding: 24px; background: var(--bg-body);">
+                        <div id="arrears-matrix-list" class="flat-tile-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- All Transactions Table -->
+            <div class="card-table-container">
+                <div class="table-header-bar" style="position: sticky; top: 0; z-index: 10; background: var(--bg-card); padding-top: 12px; padding-bottom: 12px;">
+                    <div class="table-title">
+                        <i data-lucide="list"></i>
+                        <h3 data-i18n="admin_all_tx_title">Minden tranzakció és kiadás</h3>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <div class="search-box-wrapper" style="position:relative; display:flex; align-items:center;">
+                            <i data-lucide="search" class="search-icon"></i>
+                            <input id="admin-search" type="text" placeholder="Keresés…" data-i18n-placeholder="search_placeholder" style="padding-right:28px;" oninput="toggleSearchClear('admin-search', 'admin-search-clear'); renderAdminTransactions();" />
+                            <button id="admin-search-clear" style="display:none; position:absolute; right:8px; border:none; background:transparent; cursor:pointer; color:var(--text-muted); padding:2px; align-items:center; justify-content:center;" onclick="clearSearchInput('admin-search', 'admin-search-clear', renderAdminTransactions)" title="Keresés törlése">
+                                <i data-lucide="x" style="width:14px;height:14px;"></i>
+                            </button>
+                        </div>
+                        <button class="btn btn-outline btn-sm" onclick="exportTransactionsToExcel()" style="display:flex; align-items:center; gap:6px; font-size:13px; white-space:nowrap;" title="Exportálás Excelbe">
+                            <i data-lucide="download" style="width:14px;height:14px;"></i>
+                            <span>Excel</span>
+                        </button>
+                        <button id="admin-tx-edit-btn" class="btn btn-outline btn-sm" onclick="toggleAdminTxEditMode()" style="display:flex; align-items:center; gap:6px; font-size:13px; white-space:nowrap;">
+                            <i data-lucide="pencil" style="width:14px;height:14px;"></i>
+                            <span data-i18n="edit">Szerkesztés</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <div id="admin-transactions-tbody" class="modern-list"></div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+</div>
+
+<!-- ================================================================
+     FLAT DETAIL MODAL
+     ================================================================ -->
+<div id="flat-detail-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box modal-box-wide">
+        <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap; gap:8px;">
+            <h3 id="flat-detail-title" style="flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:0;">Lakás adatlap</h3>
+            <div style="display:flex; gap:8px; align-items:center; margin-left:auto; flex-shrink:0;">
+                <button class="btn btn-primary btn-sm" id="flat-detail-add-tx-btn" onclick="openFlatDetailAddTxModal()" style="display:none; font-size:12px; gap:4px; align-items:center; padding: 6px 12px; height: 32px;">
+                    <i data-lucide="plus-circle" style="width:14px;height:14px;"></i> <span>Új tétel</span>
+                </button>
+                <button class="btn btn-outline btn-sm btn-icon-only" onclick="toggleFlatEditMode()" id="flat-detail-edit-btn" title="Adatok szerkesztése" data-i18n-title="edit" style="height:32px; width:32px;">
+                    <i data-lucide="pencil" style="width:16px;height:16px;"></i>
+                </button>
+                <button id="flat-detail-close-btn" class="btn btn-outline btn-sm btn-icon-only" style="height:32px; width:32px;">
+                    <i data-lucide="x" style="width:16px;height:16px;"></i>
+                </button>
+            </div>
+        </div>
+        <div class="modal-body">
+
+            <!-- Flat Identity & Resident Summary (Before Balances) -->
+            <div id="flat-info-readonly" style="background:var(--bg-body); padding:14px 18px; border-radius:var(--radius-md); border:1px solid var(--border-color); margin-bottom:14px; display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
+                <div>
+                    <span class="stat-label" style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; display:block; margin-bottom:2px;" data-i18n="owner_name">Tulajdonos neve</span>
+                    <strong style="font-size:15px; color:var(--text-main);" id="ro-flat-owner">–</strong>
+                </div>
+                <div style="height:28px; width:1px; background:var(--border-color);" class="hidden-xs"></div>
+                <div>
+                    <span class="stat-label" style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; display:block; margin-bottom:2px;" data-i18n="email">E-mail cím</span>
+                    <strong style="font-size:14px; color:var(--text-main);" id="flat-detail-email">–</strong>
+                </div>
+                <div style="height:28px; width:1px; background:var(--border-color);" class="hidden-xs"></div>
+                <div>
+                    <span class="stat-label" style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; display:block; margin-bottom:2px;" data-i18n="tenant_count">Lakók száma</span>
+                    <strong style="font-size:14px; color:var(--text-main);" id="ro-flat-tenant-count">–</strong>
+                </div>
+            </div>
+
+            <!-- Summary Balances row (Always visible) -->
+            <div class="financial-stat-row flat-detail-stat-row" style="margin-bottom:18px;">
+                <div class="stat-item">
+                    <span class="stat-label" data-i18n="current_kk_balance">Jelenlegi KK egyenleg</span>
+                    <span class="stat-value ro-stat-item" id="flat-detail-balance-a">–</span>
+                    <input type="number" class="form-input edit-stat-item" id="flat-edit-balance-a" style="display:none; margin-top:4px;" />
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label" data-i18n="current_fa_balance">Jelenlegi FA egyenleg</span>
+                    <span class="stat-value ro-stat-item" id="flat-detail-balance-b">–</span>
+                    <input type="number" class="form-input edit-stat-item" id="flat-edit-balance-b" style="display:none; margin-top:4px;" />
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label" data-i18n="monthly_kk_fee">Havi KK előírás</span>
+                    <span class="stat-value ro-stat-item" id="flat-detail-fee-a">–</span>
+                    <div class="edit-stat-item" style="display:none; margin-top:4px; flex-direction:column; gap:4px;">
+                        <input type="number" min="0" class="form-input" id="flat-edit-fee-a" oninput="checkFeeChange('KK')" />
+                        <div id="flat-edit-fee-date-container-a" style="display:none; background:var(--bg-body); padding:8px; border-radius:var(--radius-sm); border:1px solid var(--border-color); margin-top:4px;">
+                            <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;" data-i18n="effective_from">Érvényes ettől (ÉÉÉÉ-HH):</label>
+                            <input type="month" id="flat-edit-fee-date-a" class="form-input" style="padding:4px;" />
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label" data-i18n="monthly_fa_fee">Havi FA előírás</span>
+                    <span class="stat-value ro-stat-item" id="flat-detail-fee-b">–</span>
+                    <div class="edit-stat-item" style="display:none; margin-top:4px; flex-direction:column; gap:4px;">
+                        <input type="number" min="0" class="form-input" id="flat-edit-fee-b" oninput="checkFeeChange('FA')" />
+                        <div id="flat-edit-fee-date-container-b" style="display:none; background:var(--bg-body); padding:8px; border-radius:var(--radius-sm); border:1px solid var(--border-color); margin-top:4px;">
+                            <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;" data-i18n="effective_from">Érvényes ettől (ÉÉÉÉ-HH):</label>
+                            <input type="month" id="flat-edit-fee-date-b" class="form-input" style="padding:4px;" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fee edit form (when in edit mode) -->
+            <form id="flat-fee-edit-form" style="display:none;flex-direction:column;gap:12px;margin-bottom:18px;background:var(--bg-card);padding:14px;border:1px solid var(--border-color);border-radius:var(--radius-md);">
+                <input type="hidden" id="flat-detail-flatnum-hidden" />
+                <div style="display:flex;justify-content:flex-end;gap:8px;">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="toggleFlatEditMode(false)">
+                        Mégse
+                    </button>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        Mentés
+                    </button>
+                </div>
+            </form>
+
+            <div style="display:flex; align-items:center; gap:8px; margin: 0 0 12px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                <h4 style="margin:0; font-size: 14px; color: var(--text-main);" data-i18n="tx_and_fees_title">Tranzakciók és Előírások</h4>
+                <button id="flat-detail-timeline-edit-btn" class="btn btn-outline btn-sm btn-icon-only" style="border:none; padding:4px; display:none;" onclick="toggleFlatTimelineEditMode()" title="Szerkesztés">
+                    <i data-lucide="pencil" style="width:14px;height:14px;"></i>
+                </button>
+            </div>
+            
+            <!-- Ledger table -->
+            <div id="flat-detail-ledger-wrapper">
+                <div class="table-responsive" style="border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+                    <table class="data-table">
+                        <thead style="position: sticky; top: 0; z-index: 10;">
+                            <tr>
+                                <th data-i18n="th_date">Dátum</th>
+                                <th data-i18n="th_comment">Megjegyzés</th>
+                                <th data-i18n="th_amount">Összeg</th>
+                            </tr>
+                        </thead>
+                        <tbody id="flat-detail-ledger-tbody">
+                            <!-- populated by JS -->
+                        </tbody>
+                        <tfoot id="flat-view-all-container">
+                            <tr>
+                                <td colspan="3" style="text-align:center; padding: 12px; background: var(--bg-body);">
+                                    <button class="btn btn-outline btn-sm" id="flat-view-all-btn" onclick="openFullscreenTx('flat')">Minden tranzakció megjelenítése</button>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button id="flat-detail-close-btn-bottom" class="btn btn-outline" data-i18n="close">Bezárás</button>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     EDIT TRANSACTION MODAL
+     ================================================================ -->
+<div id="edit-transaction-modal" class="modal-overlay" style="display:none; z-index:10000;">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3 data-i18n="edit_item_title">Tétel szerkesztése</h3>
+            <button id="modal-close-btn" class="btn btn-outline btn-sm btn-icon-only">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="edit-transaction-form">
+                <input type="hidden" id="edit-tx-id" />
+                <input type="hidden" id="edit-tx-type" />
+
+                <div class="form-group" id="edit-flat-group">
+                    <label for="edit-tx-flat">Lakás</label>
+                    <select id="edit-tx-flat" class="form-select"></select>
+                </div>
+
+                <div class="form-group" id="edit-provider-group" style="display:none;">
+                    <label for="edit-tx-provider" data-i18n="account">Számla</label>
+                    <select id="edit-tx-provider" class="form-select">
+                        <option value="Közös Költség" data-i18n="common_cost">Közös Költség</option>
+                        <option value="Felújítási Alap" data-i18n="renovation_fund">Felújítási Alap</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-tx-date">Dátum</label>
+                    <input id="edit-tx-date" type="date" class="form-input" required />
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-tx-amount">Összeg (Ft)</label>
+                    <input id="edit-tx-amount" type="number" min="1" class="form-input" required />
+                </div>
+
+                <div class="form-group" id="edit-category-group">
+                    <label for="edit-tx-category">Kategória / Módszer</label>
+                    <select id="edit-tx-category" class="form-select"></select>
+                </div>
+
+                <div class="form-group" id="edit-target-account-group">
+                    <label for="edit-tx-target-account">Számla</label>
+                    <select id="edit-tx-target-account" class="form-select">
+                        <option value="Közös Költség" data-i18n="common_cost">Közös Költség</option>
+                        <option value="Felújítási Alap" data-i18n="renovation_fund">Felújítási Alap</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-tx-comment">Megjegyzés</label>
+                    <input id="edit-tx-comment" type="text" class="form-input" />
+                </div>
+
+                <div class="form-group" id="edit-include-balance-group" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; margin-bottom:12px;">
+                    <label for="edit-tx-include-balance" style="font-weight:600; cursor:pointer; font-size:13.5px;" data-i18n="include_in_balance_label">Beleszámítson a folyószámla egyenlegbe</label>
+                    <label class="switch" style="position:relative; display:inline-block; width:44px; height:24px; flex-shrink:0;">
+                        <input type="checkbox" id="edit-tx-include-balance" checked style="opacity:0; width:0; height:0;">
+                        <span class="slider round" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; transition:.4s; border-radius:24px;"></span>
+                    </label>
+                </div>
+
+                <div class="form-group" style="margin-bottom:16px;">
+                    <label style="font-weight:600; font-size:13px; display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                        <span style="display:flex; align-items:center; gap:5px;"><i data-lucide="paperclip" style="width:14px;height:14px;color:var(--primary);"></i> <span data-i18n="attachments">Csatolt dokumentumok / számlák</span></span>
+                    </label>
+                    <div id="edit-tx-existing-attachments" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;"></div>
+                    <input type="file" id="edit-tx-attachment-file" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xlsx,.xls,.txt" multiple />
+                    <div class="attachment-upload-zone">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('edit-tx-attachment-file').click()" style="display:flex; align-items:center; justify-content:center; gap:6px; font-size:12.5px; width:100%;">
+                            <i data-lucide="plus" style="width:14px;height:14px;"></i>
+                            <span data-i18n="add_new_file">Új fájl csatolása...</span>
+                        </button>
+                        <div id="edit-tx-attachment-list" style="display:flex; flex-direction:column; gap:4px;"></div>
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+                    <button type="button" id="modal-cancel-btn" class="btn btn-outline" data-i18n="cancel">Mégse</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-lucide="save" style="width:14px;height:14px;"></i> <span data-i18n="save">Mentés</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     TRANSACTION MODAL (Add Payment / Expense)
+     ================================================================ -->
+<div id="transaction-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box" style="max-width: 480px; width: 95%;">
+        <div class="modal-header">
+            <h3 data-i18n="transaction_modal_title">Új Tranzakció Rögzítése</h3>
+            <button id="transaction-close-btn" class="btn btn-outline btn-sm btn-icon-only">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="padding: 20px 24px;">
+            <!-- Segmented Switcher for Transaction Type -->
+            <div class="form-group" style="margin-bottom: 16px;">
+                <label style="font-weight:600; font-size:12.5px; color:var(--text-main); margin-bottom:6px; display:block;" data-i18n="type">Tranzakció típusa</label>
+                <div class="tx-type-toggle-container">
+                    <button type="button" id="main-tx-type-btn-befizetes" class="tx-type-btn active-income" onclick="window.setTransactionModalType('Befizetés')">
+                        <i data-lucide="plus-circle" style="width:16px;height:16px;"></i>
+                        <span data-i18n="add_payment">Befizetés (+)</span>
+                    </button>
+                    <button type="button" id="main-tx-type-btn-terheles" class="tx-type-btn" onclick="window.setTransactionModalType('Terhelés')">
+                        <i data-lucide="minus-circle" style="width:16px;height:16px;"></i>
+                        <span>Terhelés / Kiadás (-)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Add Payment Form Section -->
+            <div id="tx-modal-payment-section">
+                <form id="add-payment-form" style="display:flex; flex-direction:column; gap:12px;">
+                    <div class="form-group">
+                        <label for="payment-flat" data-i18n="flat">Lakás</label>
+                        <select id="payment-flat" class="form-select"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="payment-target-account" data-i18n="account">Számla</label>
+                        <select id="payment-target-account" class="form-select">
+                            <option value="Közös Költség" data-i18n="common_cost">Közös Költség</option>
+                            <option value="Felújítási Alap" data-i18n="renovation_fund">Felújítási Alap</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="payment-date" data-i18n="date">Dátum</label>
+                        <input id="payment-date" type="date" class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label for="payment-amount" data-i18n="amount">Összeg (Ft)</label>
+                        <input id="payment-amount" type="number" min="1" class="form-input" required />
+                    </div>
+                    <input type="hidden" id="payment-method" value="Bank Transfer" />
+                    <div class="form-group">
+                        <label for="payment-comment" data-i18n="comment">Megjegyzés</label>
+                        <input id="payment-comment" type="text" class="form-input" />
+                    </div>
+                    <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; margin-bottom:12px;">
+                        <label for="payment-include-balance" style="font-weight:600; cursor:pointer; font-size:13.5px;" data-i18n="include_in_balance_label">Beleszámítson a folyószámla egyenlegbe</label>
+                        <label class="switch" style="position:relative; display:inline-block; width:44px; height:24px; flex-shrink:0;">
+                            <input type="checkbox" id="payment-include-balance" checked style="opacity:0; width:0; height:0;">
+                            <span class="slider round" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; transition:.4s; border-radius:24px;"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-bottom:16px;">
+                        <label style="font-weight:600; font-size:13px; display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                            <span style="display:flex; align-items:center; gap:5px;"><i data-lucide="paperclip" style="width:14px;height:14px;color:var(--primary);"></i> <span data-i18n="attach_doc">Dokumentum / Számla csatolása</span></span>
+                            <span style="font-size:11px; font-weight:normal; color:var(--text-muted);">(opcionális)</span>
+                        </label>
+                        <input type="file" id="payment-attachment-file" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xlsx,.xls,.txt" multiple />
+                        <div class="attachment-upload-zone">
+                            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('payment-attachment-file').click()" style="display:flex; align-items:center; justify-content:center; gap:6px; font-size:12.5px; width:100%;">
+                                <i data-lucide="upload" style="width:14px;height:14px;"></i>
+                                <span data-i18n="choose_file">Fájl kiválasztása...</span>
+                            </button>
+                            <div id="payment-attachment-list" style="display:flex; flex-direction:column; gap:4px;"></div>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="padding:16px 0 0 0; margin-top:8px; display:flex; justify-content:flex-end; gap:10px;">
+                        <button type="button" class="btn btn-outline" onclick="window.closeTransactionModal()" data-i18n="cancel">Mégse</button>
+                        <button type="submit" class="btn btn-success" style="display:flex; align-items:center; justify-content:center; gap:6px; font-weight:700;">
+                            <i data-lucide="save" style="width:14px;height:14px;"></i>
+                            <span data-i18n="save_payment">Befizetés mentése</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Add Expense Form Section -->
+            <div id="tx-modal-expense-section" style="display:none;">
+                <form id="add-expense-form" style="display:flex; flex-direction:column; gap:12px;">
+                    <div class="form-group">
+                        <label for="expense-category" data-i18n="category">Kategória</label>
+                        <select id="expense-category" class="form-select">
+                            <option value="Utility">Közmű</option>
+                            <option value="Insurance">Biztosítás</option>
+                            <option value="Maintenance">Karbantartás</option>
+                            <option value="Bank Fee">Bankköltség</option>
+                            <option value="Other">Egyéb</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-provider" data-i18n="account">Számla</label>
+                        <select id="expense-provider" class="form-select">
+                            <option value="Közös Költség" data-i18n="common_cost">Közös Költség</option>
+                            <option value="Felújítási Alap" data-i18n="renovation_fund">Felújítási Alap</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-date" data-i18n="date">Dátum</label>
+                        <input id="expense-date" type="date" class="form-input" />
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-amount" data-i18n="amount">Összeg (Ft)</label>
+                        <input id="expense-amount" type="number" min="1" class="form-input" required />
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-comment" data-i18n="comment">Megjegyzés</label>
+                        <input id="expense-comment" type="text" class="form-input" />
+                    </div>
+                    <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; margin-bottom:12px;">
+                        <label for="expense-include-balance" style="font-weight:600; cursor:pointer; font-size:13.5px;" data-i18n="include_in_balance_label">Beleszámítson a folyószámla egyenlegbe</label>
+                        <label class="switch" style="position:relative; display:inline-block; width:44px; height:24px; flex-shrink:0;">
+                            <input type="checkbox" id="expense-include-balance" checked style="opacity:0; width:0; height:0;">
+                            <span class="slider round" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; transition:.4s; border-radius:24px;"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-bottom:16px;">
+                        <label style="font-weight:600; font-size:13px; display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                            <span style="display:flex; align-items:center; gap:5px;"><i data-lucide="paperclip" style="width:14px;height:14px;color:var(--primary);"></i> <span data-i18n="attach_doc">Számla / Bizonylat csatolása</span></span>
+                            <span style="font-size:11px; font-weight:normal; color:var(--text-muted);">(opcionális)</span>
+                        </label>
+                        <input type="file" id="expense-attachment-file" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xlsx,.xls,.txt" multiple />
+                        <div class="attachment-upload-zone">
+                            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('expense-attachment-file').click()" style="display:flex; align-items:center; justify-content:center; gap:6px; font-size:12.5px; width:100%;">
+                                <i data-lucide="upload" style="width:14px;height:14px;"></i>
+                                <span data-i18n="choose_file">Fájl kiválasztása...</span>
+                            </button>
+                            <div id="expense-attachment-list" style="display:flex; flex-direction:column; gap:4px;"></div>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="padding:16px 0 0 0; margin-top:8px; display:flex; justify-content:flex-end; gap:10px;">
+                        <button type="button" class="btn btn-outline" onclick="window.closeTransactionModal()" data-i18n="cancel">Mégse</button>
+                        <button type="submit" class="btn btn-danger" style="display:flex; align-items:center; justify-content:center; gap:6px; font-weight:700;">
+                            <i data-lucide="save" style="width:14px;height:14px;"></i>
+                            <span data-i18n="save_expense">Kiadás mentése</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     ADD FLAT MODAL
+     ================================================================ -->
+<div id="add-flat-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3 data-i18n="add_flat_title">Új lakás hozzáadása</h3>
+            <button id="add-flat-close-btn" class="btn btn-outline btn-sm btn-icon-only">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="add-flat-form">
+                <div class="form-group">
+                    <label for="new-flat-num" data-i18n="flat_num">Lakásszám (pl. III 12)</label>
+                    <input id="new-flat-num" type="text" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="new-flat-owner" data-i18n="owner_name">Tulajdonos neve</label>
+                    <input id="new-flat-owner" type="text" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="new-flat-email" data-i18n="owner_email">Tulajdonos e-mail címe (belépéshez)</label>
+                    <input id="new-flat-email" type="email" class="form-input" placeholder="pl. tulajdonos@email.com" required />
+                </div>
+                <div class="form-group">
+                    <label for="new-flat-monthly" data-i18n="monthly_fee">Közös Költség Előírás (Ft/hó)</label>
+                    <input id="new-flat-monthly" type="number" min="0" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="new-flat-renovation" data-i18n="renovation_fee">Felújítási Alap Előírás (Ft/hó)</label>
+                    <input id="new-flat-renovation" type="number" min="0" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="new-flat-ownership">Tulajdoni hányad (%)</label>
+                    <input id="new-flat-ownership" type="number" step="0.01" min="0" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="new-flat-area">Alapterület (m²)</label>
+                    <input id="new-flat-area" type="number" step="0.1" min="0" class="form-input" placeholder="pl. 58" />
+                </div>
+                <div class="form-group">
+                    <label for="new-flat-terrace">Terasz / Loggia mérete (m²)</label>
+                    <input id="new-flat-terrace" type="number" step="0.1" min="0" class="form-input" placeholder="pl. 12 (opcionális)" />
+                </div>
+                <div class="form-group">
+                    <label for="new-flat-garage">Garázs(ok) alapterülete (m²)</label>
+                    <input id="new-flat-garage" type="text" class="form-input" placeholder="pl. 16.5 vagy több esetén pl. 15, 18 (opcionális)" />
+                </div>
+                <div class="form-group">
+                    <label for="new-flat-tenant">Lakók száma (fő)</label>
+                    <input id="new-flat-tenant" type="number" min="1" class="form-input" required />
+                </div>
+                <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px;">
+                    <button type="button" class="btn btn-outline" onclick="closeAddFlatModal()" data-i18n="cancel">Mégse</button>
+                    <button type="submit" class="btn btn-success">
+                        <i data-lucide="plus" style="width:14px;height:14px;"></i> <span data-i18n="add">Hozzáadás</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     DELETE CONFIRM MODAL
+     ================================================================ -->
+<div id="delete-confirm-modal" class="modal-overlay" style="display:none; z-index:25000;">
+    <div class="modal-box" style="max-width: 400px; text-align: center;">
+        <div class="modal-body" style="padding-top: 32px; gap: 16px;">
+            <div style="color: var(--danger); margin: 0 auto; background: var(--danger-light); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                <i data-lucide="alert-triangle" style="width:32px;height:32px;"></i>
+            </div>
+            <h3 style="font-size: 20px;" data-i18n="delete_confirm_title">Biztosan törlöd a lakást?</h3>
+            <p style="color: var(--text-muted); font-size: 14px;" data-i18n="delete_confirm_desc">Ezzel a művelettel a lakás adatai törlésre kerülnek az aktuális nézetből. Ez nem visszavonható.</p>
+            <input type="hidden" id="delete-flat-num-hidden" />
+            <div style="display:flex;gap:12px;justify-content:center;margin-top:16px;">
+                <button type="button" class="btn btn-outline" onclick="closeDeleteModal()" data-i18n="cancel">Mégse</button>
+                <button id="delete-flat-confirm-btn" type="button" class="btn btn-danger" onclick="confirmDeleteFlat()">
+                    <i data-lucide="trash-2" style="width:14px;height:14px;"></i> <span data-i18n="delete">Törlés</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Transaction Delete Confirm Modal -->
+<div id="delete-tx-confirm-modal" class="modal-overlay" style="display:none; z-index:25000;">
+    <div class="modal-box" style="max-width: 400px; text-align: center;">
+        <div class="modal-body" style="padding-top: 32px; gap: 16px;">
+            <div style="color: var(--danger); margin: 0 auto; background: var(--danger-light); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                <i data-lucide="trash-2" style="width:32px;height:32px;"></i>
+            </div>
+            <h3 style="font-size: 20px;">Biztosan törlöd ezt a tételt?</h3>
+            <p style="color: var(--text-muted); font-size: 14px;">Ez a művelet visszavonhatatlan és azonnal végrehajtódik.</p>
+            <input type="hidden" id="delete-tx-id-hidden" />
+            <input type="hidden" id="delete-tx-type-hidden" />
+            <div style="display:flex;gap:12px;justify-content:center;margin-top:16px;">
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('delete-tx-confirm-modal').style.display='none'" data-i18n="cancel">Mégse</button>
+                <button id="delete-tx-confirm-btn" type="button" class="btn btn-danger" onclick="confirmDeleteTx()">
+                    <i data-lucide="trash-2" style="width:14px;height:14px;"></i> Törlés véglegesítése
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Document Delete Confirm Modal -->
+<div id="delete-doc-confirm-modal" class="modal-overlay" style="display:none; z-index:25000;">
+    <div class="modal-box" style="max-width: 400px; text-align: center;">
+        <div class="modal-body" style="padding-top: 32px; gap: 16px; display:flex; flex-direction:column; align-items:center;">
+            <div style="color: var(--danger); margin: 0 auto; background: var(--danger-light); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                <i data-lucide="trash-2" style="width:32px;height:32px;"></i>
+            </div>
+            <h3 id="delete-doc-confirm-title" style="font-size: 19px; margin:0;">Biztosan törlöd ezt a dokumentumot?</h3>
+            <p style="color: var(--text-muted); font-size: 13.5px; margin:0;">Ez a művelet visszavonhatatlan és a dokumentum azonnal törlődik az irattárból.</p>
+            <input type="hidden" id="delete-doc-id-hidden" />
+            <div style="display:flex;gap:12px;justify-content:center;margin-top:16px;width:100%;">
+                <button type="button" class="btn btn-outline" style="flex:1;" onclick="closeDeleteDocModal()" data-i18n="cancel">Mégse</button>
+                <button id="delete-doc-confirm-btn" type="button" class="btn btn-danger" style="flex:1;" onclick="confirmDeleteDocument()">
+                    <i data-lucide="trash-2" style="width:14px;height:14px;"></i> Törlés véglegesítése
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Payment Confirm Modal -->
+<div id="quick-pay-confirm-modal" class="modal-overlay" style="display:none; z-index:25000;">
+    <div class="modal-box" style="max-width: 420px; text-align: center;">
+        <div class="modal-body" style="padding-top: 32px; gap: 16px; display:flex; flex-direction:column; align-items:center;">
+            <div style="color: var(--success); background: var(--success-light); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                <i data-lucide="plus" style="width:32px;height:32px;color:var(--success);"></i>
+            </div>
+            <h3 id="quick-pay-title" style="font-size: 18px; margin:0;">Befizetés gyors rögzítése</h3>
+            <p id="quick-pay-desc" style="color: var(--text-muted); font-size: 13px; margin:0; line-height:1.5;"></p>
+            <input type="hidden" id="quick-pay-flatnum" />
+            <input type="hidden" id="quick-pay-type" />
+            <input type="hidden" id="quick-pay-amount" />
+            <div style="display:flex; gap:12px; justify-content:center; margin-top:16px; width:100%;">
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('quick-pay-confirm-modal').style.display='none'" data-i18n="cancel" style="flex:1;">Mégse</button>
+                <button type="button" class="btn btn-primary" onclick="confirmQuickPay()" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px;">
+                    <i data-lucide="check" style="width:14px;height:14px;"></i> <span data-i18n="save">Mentés</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Flat Password Reset Confirm Modal -->
+<div id="reset-pass-confirm-modal" class="modal-overlay" style="display:none; z-index:25000;">
+    <div class="modal-box" style="max-width: 420px; text-align: center;">
+        <div class="modal-body" style="padding-top: 32px; gap: 16px; display:flex; flex-direction:column; align-items:center;">
+            <div style="color: var(--primary); background: var(--primary-light); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                <i data-lucide="key" style="width:32px;height:32px;color:var(--primary);"></i>
+            </div>
+            <h3 id="reset-pass-confirm-title" style="font-size: 19px; margin:0;">Biztosan visszaállítod a jelszót?</h3>
+            <p id="reset-pass-confirm-desc" style="color: var(--text-muted); font-size: 13.5px; margin:0; line-height:1.5;">A lakás jelszava visszaáll az alapértelmezett <strong>lakas123</strong> jelszóra.</p>
+            <input type="hidden" id="reset-pass-flatnum-hidden" />
+            <div style="display:flex; gap:12px; justify-content:center; margin-top:16px; width:100%;">
+                <button type="button" class="btn btn-outline" onclick="closeResetPassConfirmModal()" data-i18n="cancel" style="flex:1;">Mégse</button>
+                <button id="reset-pass-confirm-btn" type="button" class="btn btn-primary" onclick="confirmResetResidentPassword()" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px;">
+                    <i data-lucide="key" style="width:14px;height:14px;"></i> <span>Visszaállítás</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Flat Detail Add Transaction Modal -->
+<div id="flat-detail-add-tx-modal" class="modal-overlay" style="display:none; z-index:10003;">
+    <div class="modal-box" style="max-width: 440px;">
+        <div class="modal-header">
+            <h3 id="flat-detail-add-tx-title">Új tétel rögzítése</h3>
+            <button class="btn btn-outline btn-sm btn-icon-only" onclick="closeFlatDetailAddTxModal()">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="flat-detail-add-tx-form" style="display:flex; flex-direction:column; gap:12px;">
+                <div class="form-group">
+                    <label style="font-weight:600; font-size:12.5px; color:var(--text-main); margin-bottom:6px; display:block;" data-i18n="type">Tétel típusa</label>
+                    <input type="hidden" id="flat-add-tx-type" value="Befizetés" />
+                    <div class="tx-type-toggle-container">
+                        <button type="button" id="tx-type-btn-befizetes" class="tx-type-btn active-income" onclick="window.setFlatAddTxType('Befizetés')">
+                            <i data-lucide="plus-circle" style="width:16px;height:16px;"></i>
+                            <span data-i18n="add_payment">Befizetés (+)</span>
+                        </button>
+                        <button type="button" id="tx-type-btn-terheles" class="tx-type-btn" onclick="window.setFlatAddTxType('Terhelés')">
+                            <i data-lucide="minus-circle" style="width:16px;height:16px;"></i>
+                            <span>Terhelés / Kiadás (-)</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group" id="flat-add-tx-category-group">
+                    <label for="flat-add-tx-category" data-i18n="category">Kategória</label>
+                    <select id="flat-add-tx-category" class="form-select">
+                        <option value="Bank Transfer">Banki átutalás</option>
+                        <option value="Cash Offset">Készpénz</option>
+                        <option value="Other">Egyéb</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="flat-add-tx-account" data-i18n="account">Számla</label>
+                    <select id="flat-add-tx-account" class="form-select" required>
+                        <option value="Közös Költség" data-i18n="common_cost">Közös Költség</option>
+                        <option value="Felújítási Alap" data-i18n="renovation_fund">Felújítási Alap</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="flat-add-tx-date" data-i18n="date">Dátum</label>
+                    <input id="flat-add-tx-date" type="date" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="flat-add-tx-amount" data-i18n="amount">Összeg (Ft)</label>
+                    <input id="flat-add-tx-amount" type="number" min="1" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="flat-add-tx-comment" data-i18n="comment">Megjegyzés</label>
+                    <input id="flat-add-tx-comment" type="text" class="form-input" />
+                </div>
+                <div class="form-group" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; margin-bottom:12px;">
+                    <label for="flat-add-tx-include-balance" style="font-weight:600; cursor:pointer; font-size:13.5px;" data-i18n="include_in_balance_label">Beleszámítson a folyószámla egyenlegbe</label>
+                    <label class="switch" style="position:relative; display:inline-block; width:44px; height:24px; flex-shrink:0;">
+                        <input type="checkbox" id="flat-add-tx-include-balance" checked style="opacity:0; width:0; height:0;">
+                        <span class="slider round" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#ccc; transition:.4s; border-radius:24px;"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin-bottom:16px;">
+                    <label style="font-weight:600; font-size:13px; display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                        <span style="display:flex; align-items:center; gap:5px;"><i data-lucide="paperclip" style="width:14px;height:14px;color:var(--primary);"></i> <span data-i18n="attach_doc">Bizonylat / Számla csatolása</span></span>
+                        <span style="font-size:11px; font-weight:normal; color:var(--text-muted);">(opcionális)</span>
+                    </label>
+                    <input type="file" id="flat-add-attachment-file" style="display:none;" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xlsx,.xls,.txt" multiple />
+                    <div class="attachment-upload-zone">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('flat-add-attachment-file').click()" style="display:flex; align-items:center; justify-content:center; gap:6px; font-size:12.5px; width:100%;">
+                            <i data-lucide="upload" style="width:14px;height:14px;"></i>
+                            <span data-i18n="choose_file">Fájl kiválasztása...</span>
+                        </button>
+                        <div id="flat-add-attachment-list" style="display:flex; flex-direction:column; gap:4px;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding:16px 0 0 0; margin-top:8px;">
+                    <button type="button" class="btn btn-outline" onclick="closeFlatDetailAddTxModal()" data-i18n="cancel">Mégse</button>
+                    <button type="submit" class="btn btn-primary" data-i18n="save">Mentés</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     EXTRA STYLES for elements not in styles.css
+     ================================================================ -->
+<style>
+    /* Form inputs */
+    .form-input, .form-select {
+        width: 100%;
+        padding: 10px 14px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        font-family: inherit;
+        font-size: 14px;
+        color: var(--text-main);
+        background-color: var(--bg-body);
+        transition: var(--transition-fast);
+    }
+    .form-input:focus, .form-select:focus {
+        outline: none;
+        border-color: var(--primary);
+        background-color: white;
+        box-shadow: 0 0 0 3px rgba(30,41,59,0.1);
+    }
+
+    /* Balance hero card */
+    .balance-hero-card {
+        border-radius: var(--radius-md);
+        padding: 20px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .hero-bg-hatralek  { background: var(--danger-light);  border: 1px solid rgba(239,68,68,0.25); }
+    .hero-bg-rendezett { background: var(--primary-light); border: 1px solid var(--border-color); }
+    .hero-bg-tulfizetes{ background: var(--accent-light);  border: 1px solid rgba(16,185,129,0.25); }
+    .hero-value { font-family:'Outfit',sans-serif; font-size:22px; font-weight:700; color:var(--primary-dark); }
+    .hero-sub   { font-size:13px; color:var(--text-muted); }
+    .hero-fee-row { font-size:13px; color:var(--text-muted); margin-top:4px; }
+
+    /* Matrix badges */
+    .matrix-badge {
+        display:inline-flex; align-items:center; gap:4px;
+        font-size:11px; font-weight:600; padding:3px 9px;
+        border-radius:100px; text-transform:uppercase; letter-spacing:0.02em;
+    }
+    .matrix-badge-hatralek  { background:var(--danger-light);  color:var(--danger); }
+    .matrix-badge-rendezett { background:var(--primary-light); color:var(--primary); }
+    .matrix-badge-tulfizetes{ background:var(--accent-light);  color:var(--accent-hover); }
+
+    /* Status badges */
+    .status-expense { background:var(--danger-light); color:var(--danger-hover); }
+    .status-pending { background:var(--warning-light); color:var(--warning); }
+
+    /* Actions cell */
+    .actions-cell { display:flex; gap:6px; justify-content:flex-end; }
+    .btn-action-edit:hover  { background:var(--primary); color:white; border-color:transparent; }
+    .btn-action-delete:hover{ background:var(--danger);  color:white; border-color:transparent; }
+
+    /* Modal overlay */
+    .modal-overlay {
+        position:fixed; inset:0; background:rgba(15,23,42,0.7);
+        z-index:1000; display:flex; align-items:center; justify-content:center;
+        padding:24px;
+    }
+    .modal-box {
+        background:var(--bg-card); border:1px solid var(--border-color);
+        border-radius:var(--radius-lg); box-shadow:var(--shadow-lux);
+        width:100%; max-width:560px; max-height:90vh;
+        display:flex; flex-direction:column; overflow:hidden;
+        animation: fadeIn 0.2s ease; margin:auto;
+    }
+    .modal-box-wide { max-width:860px; }
+    .modal-header {
+        display:flex; justify-content:space-between; align-items:center;
+        padding:20px 24px; border-bottom:1px solid var(--border-color);
+    }
+    .modal-header h3 { font-size:17px; }
+    .modal-body  {
+        padding:24px;
+        overflow-y:auto;
+        display:flex;
+        flex-direction:column;
+        gap:12px;
+        -webkit-overflow-scrolling: touch;
+        will-change: scroll-position;
+    }
+    .modal-footer{ padding:16px 24px; border-top:1px solid var(--border-color); display:flex; justify-content:flex-end; }
+
+    /* XS button variant */
+    .btn-xs { padding:5px 12px; font-size:12px; border-radius:var(--radius-sm); }
+
+    /* Animations */
+    @keyframes fadeIn   { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes slideDown{ from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes shake    { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .tenant-grid { grid-template-columns: 1fr; }
+        .financial-stat-row { grid-template-columns: 1fr 1fr; }
+    }
+    /* Revolut-style App constraints */
+    .app-main {
+        max-width: 860px;
+        margin: 0 auto;
+        width: 100%;
+        padding-bottom: 32px;
+    }
+    .modal-box-fullscreen {
+        max-width: 860px !important;
+        margin: 0 auto !important;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.08) !important;
+    }
+
+    /* Revolut-style lists */
+    .modern-list {
+        max-width: 860px;
+        margin: 0 auto;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        background: var(--bg-card);
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+    }
+    .tx-item {
+        display: flex;
+        align-items: center;
+        padding: 16px;
+        border-bottom: 1px solid var(--border-color);
+        transition: background 0.15s ease;
+        text-decoration: none;
+        color: inherit;
+    }
+    .tx-item:last-child { border-bottom: none; }
+    .tx-item:hover { background: var(--bg-hover); cursor: pointer; }
+    
+    .tx-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 16px;
+        flex-shrink: 0;
+    }
+    .tx-icon.income { background: var(--success-light); color: var(--success); }
+    .tx-icon.expense { background: var(--bg-hover); color: var(--text-main); }
+    .tx-icon.neutral { background: var(--border-color); color: var(--text-muted); }
+    
+    .tx-details {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .tx-title {
+        font-weight: 600;
+        font-size: 15px;
+        color: var(--text-main);
+        /* nowrap removed */
+        margin-bottom: 2px;
+    }
+    .tx-subtitle {
+        font-size: 13px;
+        color: var(--text-muted);
+        white-space: normal;
+        word-break: break-word;
+        
+    }
+    
+    .tx-amount-group {
+        text-align: right;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+    }
+    .tx-amount {
+        font-weight: 600;
+        font-size: 16px;
+    }
+    .tx-amount.positive { color: var(--success); }
+    .tx-amount.negative { color: var(--text-main); }
+    
+    .tx-balance {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 2px;
+    }
+    
+    .tx-actions {
+        display: flex;
+        gap: 4px;
+        margin-left: 12px;
+    }
+</style>
+
+<!-- ================================================================
+     BUILDING & FLAT SELECTOR MODAL
+     ================================================================ -->
+<div id="building-selector-modal" class="modal-overlay" style="display:none; z-index:20005;">
+    <div class="modal-box" style="max-width: 440px;">
+        <div class="modal-header">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:34px; height:34px; border-radius:8px; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center;">
+                    <i data-lucide="users" style="width:18px;height:18px;"></i>
+                </div>
+                <div>
+                    <h3 id="building-selector-title" style="margin:0; font-size:17px; font-weight:700;">Profilváltás</h3>
+                </div>
+            </div>
+            <button class="btn btn-outline btn-sm btn-icon-only" onclick="closeBuildingSelector()">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="padding:16px 20px;">
+            <div id="building-selector-list" style="display:flex; flex-direction:column; gap:8px; max-height:380px; overflow-y:auto; margin-bottom:12px;">
+                <!-- Populated dynamically by JS -->
+            </div>
+            <div id="building-selector-admin-actions" style="display:none; padding-top:12px; border-top:1px solid var(--border-color);">
+                <button class="btn btn-outline btn-block btn-sm" onclick="openAddBuildingModal()" style="display:flex; align-items:center; justify-content:center; gap:8px; font-weight:600;">
+                    <i data-lucide="plus" style="width:15px;height:15px;"></i>
+                    <span data-i18n="add_building_title">Új társasház hozzáadása</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     ADD BUILDING MODAL (Admin)
+     ================================================================ -->
+<div id="add-building-modal" class="modal-overlay" style="display:none; z-index:20006;">
+    <div class="modal-box" style="max-width: 520px;">
+        <div class="modal-header">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <i data-lucide="plus-circle" style="width:20px;height:20px;color:var(--primary);"></i>
+                <h3 data-i18n="add_building_title">Új társasház hozzáadása</h3>
+            </div>
+            <button class="btn btn-outline btn-sm btn-icon-only" onclick="closeAddBuildingModal()">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="padding:16px 20px;">
+            <form id="add-building-form" style="display:flex; flex-direction:column; gap:12px;">
+                <div class="form-group">
+                    <label for="new-building-name" data-i18n="building_name">Társasház neve</label>
+                    <input id="new-building-name" type="text" class="form-input" placeholder="pl. Kossuth Lajos utca 12. Társasház" required />
+                </div>
+                <div class="form-group">
+                    <label for="new-building-address" data-i18n="building_address_label">Cím</label>
+                    <input id="new-building-address" type="text" class="form-input" placeholder="pl. 1053 Budapest, Kossuth Lajos utca 12." required />
+                </div>
+                
+                <div style="background:var(--bg-body); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border-color); display:flex; flex-direction:column; gap:8px;">
+                    <span style="font-size:12px; font-weight:700; color:var(--primary);">Közös Költség banki adatok</span>
+                    <div style="display:flex; gap:8px;">
+                        <input id="new-building-bank-kk-name" type="text" class="form-input" placeholder="Kedvezményezett neve" style="flex:1;" />
+                        <input id="new-building-bank-kk-bank" type="text" class="form-input" placeholder="Bank neve (pl. OTP)" style="width:120px;" />
+                    </div>
+                    <input id="new-building-bank-kk-account" type="text" class="form-input" placeholder="Bankszámlaszám (pl. 11702005 12345678)" />
+                </div>
+
+                <div style="background:var(--bg-body); padding:12px; border-radius:var(--radius-md); border:1px solid var(--border-color); display:flex; flex-direction:column; gap:8px;">
+                    <span style="font-size:12px; font-weight:700; color:var(--purple);">Felújítási Alap banki adatok</span>
+                    <div style="display:flex; gap:8px;">
+                        <input id="new-building-bank-fa-name" type="text" class="form-input" placeholder="Kedvezményezett neve" style="flex:1;" />
+                        <input id="new-building-bank-fa-bank" type="text" class="form-input" placeholder="Bank neve (pl. OTP)" style="width:120px;" />
+                    </div>
+                    <input id="new-building-bank-fa-account" type="text" class="form-input" placeholder="Bankszámlaszám (pl. 11702005 87654321)" />
+                </div>
+
+                <div style="display:flex; gap:12px;">
+                    <div class="form-group" style="flex:1; margin:0;">
+                        <label for="new-building-reserve-kk" data-i18n="initial_reserve_kk">Kezdő KK egyenleg (Ft)</label>
+                        <input id="new-building-reserve-kk" type="number" class="form-input" value="0" />
+                    </div>
+                    <div class="form-group" style="flex:1; margin:0;">
+                        <label for="new-building-reserve-fa" data-i18n="initial_reserve_fa">Kezdő FA egyenleg (Ft)</label>
+                        <input id="new-building-reserve-fa" type="number" class="form-input" value="0" />
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+                    <button type="button" class="btn btn-outline" onclick="closeAddBuildingModal()" data-i18n="cancel">Mégse</button>
+                    <button type="submit" class="btn btn-success" style="display:flex; align-items:center; gap:6px;">
+                        <i data-lucide="plus" style="width:14px;height:14px;"></i>
+                        <span data-i18n="create_building_btn">Társasház létrehozása</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     DOCUMENTS MODAL (Common Representative & Resident Document Repository)
+     ================================================================ -->
+<div id="documents-modal" class="documents-fullscreen-overlay">
+    <div class="documents-fullscreen-box">
+        <div class="modal-header" style="padding:16px 28px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; gap:16px; background:var(--bg-card);">
+            <!-- Left: Clickable Document Symbol and Titles (returns to Main Menu) -->
+            <div onclick="window.goToMainMenu()" style="cursor:pointer; display:flex; align-items:center; gap:12px; transition:opacity 0.2s;" class="docs-header-home-btn" title="Vissza a főmenübe">
+                <div style="width:36px; height:36px; border-radius:8px; background:var(--primary-light); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; transition:background 0.2s;">
+                    <i data-lucide="folder-open" style="width:20px;height:20px;"></i>
+                </div>
+                <div style="text-align:left;">
+                    <h3 id="docs-modal-main-title" data-i18n="documents_title" style="margin:0; font-size:18px; font-weight:700; color:var(--text-main);">Társasházi Dokumentumok</h3>
+                    <span id="docs-modal-building-name" style="font-size:12px; color:var(--text-muted);">Batyu utca 21. Társasház</span>
+                </div>
+            </div>
+            
+            <!-- Right: Hamburger Menu Button (iOS Drawer) -->
+            <button id="menu-dropdown-btn-docs" class="btn btn-outline btn-sm btn-icon-only" onclick="window.openIosSideDrawer(event)" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 32px; cursor: pointer; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card); transition: all 0.2s ease;" title="Menü">
+                <i data-lucide="menu" style="width:18px;height:18px;color:var(--text-main);"></i>
+            </button>
+        </div>
+        
+        <div class="modal-body" style="padding:24px 28px; flex:1;">
+            
+            <!-- ADMIN UPLOAD SECTION (Hidden for Residents) -->
+            <div id="doc-admin-upload-section" style="display:none; margin-bottom:20px; background:var(--bg-body); border:1.5px dashed var(--border-color); border-radius:var(--radius-md); padding:16px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; cursor:pointer;" onclick="toggleDocUploadForm()">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <i data-lucide="upload-cloud" style="width:18px;height:18px;color:var(--primary);"></i>
+                        <span style="font-weight:700; font-size:14px; color:var(--text-main);" data-i18n="upload_document">Új dokumentum feltöltése</span>
+                    </div>
+                    <i data-lucide="chevron-down" id="doc-upload-chevron" style="width:16px;height:16px;color:var(--text-muted); transition:transform 0.2s;"></i>
+                </div>
+                
+                <form id="doc-upload-form" style="display:flex; flex-direction:column; gap:12px;">
+                    <div class="form-group" style="margin:0;">
+                        <label for="doc-upload-title" data-i18n="doc_title_label">Dokumentum megnevezése</label>
+                        <input id="doc-upload-title" type="text" class="form-input" placeholder="pl. 2026. Évi költségvetési terv" required />
+                    </div>
+                    
+                    <div class="form-group" style="margin:0;">
+                        <label for="doc-upload-file" data-i18n="doc_file_label">Fájl csatolása (PDF, Word, Excel, Kép vagy egyéb)</label>
+                        <input id="doc-upload-file" type="file" class="form-input" style="padding:6px 10px;" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt,.zip" />
+                    </div>
+                    
+                    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:4px;">
+                        <button type="submit" class="btn btn-primary btn-sm" style="display:flex; align-items:center; gap:6px;">
+                            <i data-lucide="upload" style="width:14px;height:14px;"></i>
+                            <span data-i18n="doc_upload_btn">Feltöltés</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- SEARCH BAR -->
+            <div style="margin-bottom:16px;">
+                <div style="position:relative; width:100%;">
+                    <i data-lucide="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:15px; height:15px; color:var(--text-muted); pointer-events:none;"></i>
+                    <input id="docs-search-input" type="text" class="form-input" placeholder="Keresés dokumentum címe alapján..." data-i18n-placeholder="search_docs_placeholder" style="padding-left:36px; padding-right:32px;" oninput="filterDocumentsList(this.value)" />
+                    <button id="docs-search-clear" style="display:none; position:absolute; right:10px; top:50%; transform:translateY(-50%); border:none; background:transparent; cursor:pointer; color:var(--text-muted); padding:2px;" onclick="clearDocsSearch()" title="Törlés">
+                        <i data-lucide="x" style="width:14px;height:14px;"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- DOCUMENTS LIST CONTAINER -->
+            <div id="documents-list-container" style="display:flex; flex-direction:column; gap:8px;">
+                <!-- Populated dynamically by JS -->
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     LOANS MODAL (Hitelek - Fullscreen View)
+     ================================================================ -->
+<div id="loans-modal" class="documents-fullscreen-overlay">
+    <div class="documents-fullscreen-box">
+        <div class="modal-header" style="padding:16px 28px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; gap:16px; background:var(--bg-card);">
+            <!-- Left: Clickable Symbol and Title (returns to Main Menu) -->
+            <div onclick="window.goToMainMenu()" style="cursor:pointer; display:flex; align-items:center; gap:12px; transition:opacity 0.2s;" class="docs-header-home-btn" title="Vissza a főmenübe">
+                <div style="width:36px; height:36px; border-radius:8px; background:var(--primary-light); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; transition:background 0.2s;">
+                    <i data-lucide="landmark" style="width:20px;height:20px;"></i>
+                </div>
+                <div style="text-align:left;">
+                    <h3 id="loans-modal-title" style="margin:0; font-size:18px; font-weight:700; color:var(--text-main);" data-i18n="loans_title">Hitelek</h3>
+                    <span id="loans-modal-subtitle" style="font-size:12px; color:var(--text-muted);" data-i18n="loans_subtitle">Társasházi hitelek és kötelezettségek</span>
+                </div>
+            </div>
+            
+            <!-- Right: Hamburger Menu Button (iOS Drawer) -->
+            <button id="menu-dropdown-btn-loans" class="btn btn-outline btn-sm btn-icon-only" onclick="window.openIosSideDrawer(event)" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 32px; cursor: pointer; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card); transition: all 0.2s ease;" title="Menü">
+                <i data-lucide="menu" style="width:18px;height:18px;color:var(--text-main);"></i>
+            </button>
+        </div>
+        <div class="modal-body" id="loans-modal-body" style="padding: 40px 28px; overflow-y: auto; flex-grow: 1; display: flex; align-items: center; justify-content: center;">
+            <div style="background: var(--bg-body); border: 1.5px solid var(--border-color); border-radius: var(--radius-lg); padding: 48px 32px; max-width: 580px; width: 100%; text-align: center; box-shadow: var(--shadow-sm);">
+                <div style="display: inline-flex; align-items: center; justify-content: center; width: 72px; height: 72px; border-radius: 50%; background: var(--primary-light); color: var(--primary); margin-bottom: 20px;">
+                    <i data-lucide="landmark" style="width:36px;height:36px;"></i>
+                </div>
+                <h3 style="margin:0 0 10px 0; font-size:20px; font-weight:800; color:var(--text-main);" data-i18n="loans_dev_title">Hitelek és Kölcsönök Modul</h3>
+                <p style="margin:0 0 24px 0; font-size:14px; color:var(--text-muted); line-height:1.6;" data-i18n="loans_dev_desc">
+                    Ez a modul jelenleg fejlesztés alatt áll. Hamarosan elérhetővé válik a társasházi felújítási hitelek, kamatok, törlesztőrészletek és futamidők részletes analitikája és nyilvántartása.
+                </p>
+                <div style="display: inline-flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: var(--radius-md); font-size: 12.5px; font-weight: 600; color: var(--primary);">
+                    <i data-lucide="sparkles" style="width:16px;height:16px;"></i>
+                    <span>Hamarosan érkezik</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- ================================================================
+     PROFILE MODAL (Profilom - Személyes adatok - Fullscreen View)
+     ================================================================ -->
+<div id="profile-modal" class="documents-fullscreen-overlay">
+    <div class="documents-fullscreen-box">
+        <div class="modal-header" style="padding:16px 28px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; gap:16px; background:var(--bg-card);">
+            <!-- Left: Clickable Symbol and Title (returns to Main Menu) -->
+            <div onclick="window.goToMainMenu()" style="cursor:pointer; display:flex; align-items:center; gap:12px; transition:opacity 0.2s; min-width:220px;" class="docs-header-home-btn" title="Vissza a főmenübe">
+                <div style="width:36px; height:36px; border-radius:8px; background:var(--primary-light); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; transition:background 0.2s;">
+                    <i data-lucide="user" style="width:20px;height:20px;"></i>
+                </div>
+                <div style="text-align:left;">
+                    <h3 id="profile-modal-title" style="margin:0; font-size:18px; font-weight:700; color:var(--text-main);">Profilom</h3>
+                    <span id="profile-modal-subtitle" style="font-size:12px; color:var(--text-muted);">Személyes adatok és egyenlegek</span>
+                </div>
+            </div>
+            
+            <!-- Center: Profile Switcher Button (Centered) -->
+            <div id="profile-header-center-nav" style="display:flex; align-items:center; justify-content:center; flex:1;">
+                <button id="profile-header-switch-btn" class="btn btn-outline" onclick="openBuildingSelector()" style="display:none; align-items:center; gap:8px; font-weight:600; padding:8px 18px; border-radius:var(--radius-md); background:var(--bg-card); border-color:var(--border-color); color:var(--text-main); transition:all 0.2s ease; box-shadow:0 1px 3px rgba(0,0,0,0.05); cursor:pointer;" title="Profilváltás">
+                    <i data-lucide="users" style="width:17px;height:17px;color:var(--primary);"></i>
+                    <span data-i18n="profile_selector_btn">Profilváltás</span>
+                </button>
+            </div>
+            
+            <!-- Right: Hamburger Menu Button (iOS Drawer) -->
+            <div style="display:flex; justify-content:flex-end; align-items:center; min-width:220px;">
+                <button id="menu-dropdown-btn-profile" class="btn btn-outline btn-sm btn-icon-only" onclick="window.openIosSideDrawer(event)" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 32px; cursor: pointer; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card); transition: all 0.2s ease;" title="Menü">
+                    <i data-lucide="menu" style="width:18px;height:18px;color:var(--text-main);"></i>
+                </button>
+            </div>
+        </div>
+        <div class="modal-body" id="profile-modal-body" style="padding: 24px 28px; overflow-y: auto; flex-grow: 1;">
+            <!-- Dynamically populated in app.js -->
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     FINANCIAL SITUATION MODAL (Társasház Pénzügyi Helyzete - Fullscreen View)
+     ================================================================ -->
+<div id="financial-situation-modal" class="documents-fullscreen-overlay">
+    <div class="documents-fullscreen-box">
+        <div class="modal-header" style="padding:16px 28px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; gap:16px; background:var(--bg-card);">
+            <!-- Left: Clickable Symbol and Title (returns to Main Menu) -->
+            <div onclick="window.goToMainMenu()" style="cursor:pointer; display:flex; align-items:center; gap:12px; transition:opacity 0.2s;" class="docs-header-home-btn" title="Vissza a főmenübe">
+                <div style="width:36px; height:36px; border-radius:8px; background:var(--primary-light); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; transition:background 0.2s;">
+                    <i data-lucide="line-chart" style="width:20px;height:20px;"></i>
+                </div>
+                <div style="text-align:left;">
+                    <h3 id="finance-modal-title" style="margin:0; font-size:18px; font-weight:700; color:var(--text-main);">A ház pénzügyi helyzete</h3>
+                    <span id="finance-modal-subtitle" style="font-size:12px; color:var(--text-muted);">Társasház egyenlegei és havi pénzügyi mérlege</span>
+                </div>
+            </div>
+            
+            <!-- Right: Hamburger Menu Button (iOS Drawer) -->
+            <button id="menu-dropdown-btn-finance" class="btn btn-outline btn-sm btn-icon-only" onclick="window.openIosSideDrawer(event)" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 32px; cursor: pointer; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card); transition: all 0.2s ease;" title="Menü">
+                <i data-lucide="menu" style="width:18px;height:18px;color:var(--text-main);"></i>
+            </button>
+        </div>
+        <div class="modal-body" id="finance-modal-body" style="padding: 24px 28px; overflow-y: auto; flex-grow: 1;">
+            <!-- Dynamically populated in app.js -->
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     FLATS DATA MODAL (Lakások Adatai - Fullscreen Tile Grid for KK)
+     ================================================================ -->
+<div id="flats-data-modal" class="documents-fullscreen-overlay">
+    <div class="documents-fullscreen-box">
+        <div class="modal-header" style="padding:16px 28px; border-bottom:1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; gap:16px; background:var(--bg-card); flex-wrap:wrap;">
+            <!-- Left: Clickable Symbol and Title (returns to Main Menu) -->
+            <div onclick="window.goToMainMenu()" style="cursor:pointer; display:flex; align-items:center; gap:12px; transition:opacity 0.2s;" class="docs-header-home-btn" title="Vissza a főmenübe">
+                <div style="width:36px; height:36px; border-radius:8px; background:var(--primary-light); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; transition:background 0.2s;">
+                    <i data-lucide="home" style="width:20px;height:20px;"></i>
+                </div>
+                <div style="text-align:left;">
+                    <h3 id="flats-data-modal-title" style="margin:0; font-size:18px; font-weight:700; color:var(--text-main);">Lakások adatai</h3>
+                    <span id="flats-data-modal-subtitle" style="font-size:12px; color:var(--text-muted);">Társasház lakásainak törzsadatai és paraméterei</span>
+                </div>
+            </div>
+            
+            <!-- Right: Search + Hamburger Menu Button (iOS Drawer) -->
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                <div style="position:relative; width:240px;">
+                    <input type="text" id="flats-data-search-input" oninput="window.filterFlatsDataGrid(this.value)" placeholder="Keresés lakás/név..." style="width:100%; padding:7px 12px 7px 32px; font-size:13px; border-radius:var(--radius-md); border:1px solid var(--border-color); background:var(--bg-body); color:var(--text-main);" />
+                    <i data-lucide="search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:15px; height:15px; color:var(--text-muted);"></i>
+                </div>
+                <button id="menu-dropdown-btn-flats-data" class="btn btn-outline btn-sm btn-icon-only" onclick="window.openIosSideDrawer(event)" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 32px; cursor: pointer; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card); transition: all 0.2s ease;" title="Menü">
+                    <i data-lucide="menu" style="width:18px;height:18px;color:var(--text-main);"></i>
+                </button>
+            </div>
+        </div>
+        <div class="modal-body" id="flats-data-modal-body" style="padding: 24px 28px; overflow-y: auto; flex-grow: 1;">
+            <!-- Dynamically populated in app.js -->
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     EDIT FLAT MASTER DATA MODAL (Egy lakás adatainak módosítása popup)
+     ================================================================ -->
+<div id="edit-flat-master-modal" class="modal-overlay" style="display:none; z-index:25000;">
+    <div class="modal-box" style="max-width: 640px; width: 95%;">
+        <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border-color); flex-wrap:nowrap; gap:10px;">
+            <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1 1 auto; overflow:hidden;">
+                <div style="width:38px; height:38px; border-radius:10px; background:var(--primary-light); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <i data-lucide="home" style="width:20px;height:20px;"></i>
+                </div>
+                <div style="min-width:0; overflow:hidden;">
+                    <h3 id="efm-title" style="margin:0; font-size:16.5px; font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Lakás Adatai</h3>
+                    <span id="efm-subtitle" style="font-size:12px; color:var(--text-muted); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Társasházi törzsadatok és elérhetőségek</span>
+                </div>
+            </div>
+            <div id="efm-header-actions" style="display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0;">
+                <!-- Header action buttons dynamically populated in app.js -->
+            </div>
+        </div>
+        <div class="modal-body" id="efm-body" style="padding: 20px 24px; max-height: 72vh; overflow-y: auto;">
+            <!-- Form fields populated dynamically in app.js -->
+        </div>
+        <div class="modal-footer" id="efm-footer" style="padding: 14px 24px; border-top: 1px solid var(--border-color); display:flex; justify-content:flex-end; gap:10px; background:var(--bg-card);">
+            <!-- Footer buttons populated dynamically in app.js -->
+        </div>
+    </div>
+</div>
+
+
+
+
+<!-- ================================================================
+     GLOBAL BALANCES EDIT MODAL
+     ================================================================ -->
+<div id="global-balances-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3 data-i18n="set_balances_title">Jelenlegi Számlafőösszegek Beállítása</h3>
+            <button class="btn btn-outline btn-sm btn-icon-only" onclick="closeGlobalBalancesModal()">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:16px;font-size:13px;color:var(--text-muted);">
+                Add meg, hogy <b>jelenleg</b> pontosan mennyi pénz van a bankszámlákon. A rendszer ez alapján visszaszámolja az induló egyenleget a háttérben, így a jövőbeli tranzakciók továbbra is hibátlanul fognak hozzáadódni.
+            </p>
+            <form id="global-balances-form" style="display:flex;flex-direction:column;gap:12px;">
+                <div class="form-group">
+                    <label for="global-start-common" data-i18n="global_start_common">Közös Költség JELENLEGI egyenlege (Ft)</label>
+                    <input id="global-start-common" type="text" class="form-input" required />
+                </div>
+                <div class="form-group">
+                    <label for="global-start-renovation" data-i18n="global_start_renovation">Felújítási Alap JELENLEGI egyenlege (Ft)</label>
+                    <input id="global-start-renovation" type="text" class="form-input" required />
+                </div>
+                <div class="modal-footer" style="padding:16px 0 0 0;margin-top:8px;">
+                    <button type="button" class="btn btn-outline" onclick="closeGlobalBalancesModal()">Mégse</button>
+                    <button type="submit" class="btn btn-primary">Mentés</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     FULLSCREEN TRANSACTIONS MODAL
+     ================================================================ -->
+<!-- ================================================================
+     TENANT FULLSCREEN TRANSACTIONS MODAL
+     ================================================================ -->
+<div id="tenant-fullscreen-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; z-index:9998; background:var(--bg-body); flex-direction:column;">
+    <!-- Sticky header -->
+    <div style="display:flex; flex-direction:column; background:var(--bg-card); border-bottom:1px solid var(--border-color); flex-shrink:0; position:sticky; top:0; z-index:10;">
+        <!-- Top bar -->
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 20px; gap:12px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <button class="btn btn-outline btn-sm btn-icon-only" onclick="closeTenantFullscreen()" title="Vissza">
+                    <i data-lucide="arrow-left" style="width:16px;height:16px;"></i>
+                </button>
+                <h3 id="tenant-fullscreen-title" style="margin:0; font-size:17px; font-weight:600;" data-i18n="transactions">Tranzakciók</h3>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <button class="btn btn-outline btn-sm" onclick="exportCombinedFlatLedgerToExcel()" style="display:flex;align-items:center;gap:6px;font-size:13px;" title="Exportálás Excelbe">
+                    <i data-lucide="download" style="width:16px;height:16px;"></i>
+                    <span>Excel</span>
+                </button>
+            </div>
+        </div>
+        <!-- Search bar -->
+        <div style="padding:0 20px 14px; display:flex; align-items:center; gap:10px;">
+            <div style="flex:1; position:relative; max-width:500px; display:flex; align-items:center;">
+                <i data-lucide="search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:15px; height:15px; color:var(--text-muted); pointer-events:none;"></i>
+                <input id="tenant-fullscreen-search" type="text"
+                    placeholder="Keresés dátum, összeg, megjegyzés alapján..."
+                    data-i18n-placeholder="search_fullscreen_placeholder"
+                    class="form-control"
+                    style="padding-left:34px; padding-right:30px; height:36px; font-size:13px; width:100%;"
+                    oninput="filterTenantFullscreen(this.value)">
+                <button id="tenant-fullscreen-search-clear" style="display:none; position:absolute; right:10px; border:none; background:transparent; cursor:pointer; color:var(--text-muted); padding:2px; align-items:center; justify-content:center;"
+                    onclick="document.getElementById('tenant-fullscreen-search').value=''; document.getElementById('tenant-fullscreen-search-clear').style.display='none'; filterTenantFullscreen('');" title="Keresés törlése">
+                    <i data-lucide="x" style="width:14px;height:14px;"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    <div style="flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:24px;">
+        <div style="max-width:860px; margin:0 auto; width:100%; background:var(--bg-card); border-radius:16px; border:1px solid var(--border-color); overflow:hidden;">
+            <table class="data-table" style="margin:0;">
+                <thead>
+                    <tr>
+                        <th data-i18n="th_date">Dátum</th>
+                        <th data-i18n="th_account">Számla</th>
+                        <th data-i18n="th_type">Típus</th>
+                        <th data-i18n="th_amount">Összeg</th>
+                        <th data-i18n="th_comment">Megjegyzés</th>
+                    </tr>
+                </thead>
+                <tbody id="tenant-fullscreen-tbody">
+                    <tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Betöltés…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="fullscreen-tx-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; z-index:9999; background:var(--bg-body); flex-direction:column;">
+    <!-- Sticky header -->
+    <div style="display:flex; flex-direction:column; background:var(--bg-card); border-bottom:1px solid var(--border-color); flex-shrink:0; position:sticky; top:0; z-index:10;">
+        <!-- Top bar -->
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 20px; gap:12px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <button class="btn btn-outline btn-sm btn-icon-only" onclick="closeFullscreenTx()" title="Vissza">
+                    <i data-lucide="arrow-left" style="width:16px;height:16px;"></i>
+                </button>
+                <h3 id="fullscreen-tx-title" style="margin:0; font-size:17px; font-weight:600;">Összes tranzakció</h3>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <button id="fullscreen-edit-btn" class="btn btn-outline btn-sm" onclick="toggleFullscreenEditMode()" style="display:flex; align-items:center; gap:6px; font-size:13px;">
+                    <i data-lucide="pencil" style="width:16px;height:16px;"></i>
+                    <span data-i18n="edit">Szerkesztés</span>
+                </button>
+                <button class="btn btn-outline btn-sm" onclick="exportFullscreenToExcel()" style="display:flex; align-items:center; gap:6px; font-size:13px;" title="Exportálás Excelbe">
+                    <i data-lucide="download" style="width:16px;height:16px;"></i>
+                    <span>Excel</span>
+                </button>
+            </div>
+        </div>
+        <!-- Search bar -->
+        <div style="padding:0 20px 14px; display:flex; align-items:center; gap:10px;">
+            <div style="flex:1; position:relative; max-width:500px; display:flex; align-items:center;">
+                <i data-lucide="search" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:15px; height:15px; color:var(--text-muted); pointer-events:none;"></i>
+                <input id="fullscreen-search-input" type="text" placeholder="Keresés dátum, összeg, megjegyzés alapján..." data-i18n-placeholder="search_fullscreen_placeholder" class="form-control" style="padding-left:34px; padding-right:30px; height:36px; font-size:13px;" oninput="fullscreenSearchQuery=this.value; toggleSearchClear('fullscreen-search-input', 'fullscreen-search-clear'); renderFullscreenList();">
+                <button id="fullscreen-search-clear" style="display:none; position:absolute; right:10px; border:none; background:transparent; cursor:pointer; color:var(--text-muted); padding:2px; align-items:center; justify-content:center;" onclick="fullscreenSearchQuery=''; clearSearchInput('fullscreen-search-input', 'fullscreen-search-clear', renderFullscreenList)" title="Keresés törlése">
+                    <i data-lucide="x" style="width:14px;height:14px;"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    <div style="flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:24px;">
+        <div id="fullscreen-tx-tbody" class="modern-list" style="max-width:860px; margin:0 auto; width:100%; display:flex; flex-direction:column; gap:0; background:var(--bg-card); border-radius:16px; border:1px solid var(--border-color); min-height: 580px;">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- ================================================================
+     FORGOT PASSWORD MODAL
+     ================================================================ -->
+<div id="forgot-password-modal" class="modal-overlay" style="display:none; z-index:10000;">
+    <div class="modal-box" style="max-width: 440px;">
+        <div class="modal-header">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center;">
+                    <i data-lucide="key-round" style="width:18px; height:18px;"></i>
+                </div>
+                <h3 data-i18n="forgot_password_title" style="margin:0; font-size:17px; font-weight:700;">Jelszó visszaállítása</h3>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm btn-icon-only" onclick="closeForgotPasswordModal()">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <!-- Form view -->
+            <div id="forgot-form-view">
+                <p style="margin-bottom:16px; font-size:13px; color:var(--text-muted); line-height:1.5;">
+                    Add meg a regisztrált e-mail címedet. Ha szerepel a nyilvántartásban, azonnal megkapod a jelszó visszaállítási hivatkozást.
+                </p>
+                <form id="forgot-password-form" onsubmit="handleForgotPasswordSubmit(event)" style="display:flex; flex-direction:column; gap:14px;">
+                    <div id="forgot-error-msg" class="login-error" style="display:none; margin-bottom:0;">
+                        <i data-lucide="alert-circle"></i>
+                        <span id="forgot-error-text">Ez az e-mail cím nem található a nyilvántartásban.</span>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label for="forgot-email" data-i18n="email">E-mail cím</label>
+                        <div class="input-wrapper">
+                            <i data-lucide="mail" class="input-icon"></i>
+                            <input id="forgot-email" type="email" placeholder="gipsz.jakab@gmail.com" required class="form-control" style="padding-left:36px;" />
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+                        <button type="button" class="btn btn-outline" onclick="closeForgotPasswordModal()" data-i18n="cancel">Mégse</button>
+                        <button type="submit" class="btn btn-primary" style="background:#1E3A8A;">
+                            <i data-lucide="send" style="width:14px;height:14px;"></i>
+                            <span data-i18n="send_reset_link">Hivatkozás kérése</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Success view: User MUST check their real email inbox -->
+            <div id="forgot-success-view" style="display:none; flex-direction:column; gap:14px; text-align:center; padding:10px 0;">
+                <div style="width:56px; height:56px; border-radius:50%; background:#dcfce7; color:#16a34a; display:flex; align-items:center; justify-content:center; margin:0 auto;">
+                    <i data-lucide="mail-check" style="width:30px; height:30px;"></i>
+                </div>
+                <div>
+                    <h4 style="margin:0 0 8px 0; font-size:17px; font-weight:700; color:var(--text-main);">E-mail elküldve!</h4>
+                    <p style="margin:0; font-size:13px; color:var(--text-muted); line-height:1.6;">
+                        Kiküldtünk egy biztonsági jelszó-visszaállító hivatkozást a(z) <br><strong id="forgot-sent-email" style="color:var(--text-main); font-size:14px;"></strong> címre.
+                    </p>
+                </div>
+                <div style="background:var(--bg-body); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:14px; text-align:left; font-size:12.5px; color:var(--text-muted); line-height:1.5;">
+                    <div style="font-weight:600; color:var(--primary); margin-bottom:4px; display:flex; align-items:center; gap:5px;">
+                        <i data-lucide="shield-alert" style="width:14px; height:14px;"></i> Biztonsági lépés:
+                    </div>
+                    Kérlek, <b>nyisd meg az e-mail fiókodat</b> és kattints a levélben érkező hivatkozásra az új jelszavad megadásához. A link 1 órán keresztül érvényes.
+                </div>
+                <div style="display:flex; justify-content:center; margin-top:4px;">
+                    <button type="button" class="btn btn-primary" onclick="closeForgotPasswordModal()" style="background:#1E3A8A; width:100%;" data-i18n="close">Rendben, megnézem az e-mailjeimet</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     RESET PASSWORD MODAL (Set New Password)
+     ================================================================ -->
+<div id="reset-password-modal" class="modal-overlay" style="display:none; z-index:10000;">
+    <div class="modal-box" style="max-width: 440px;">
+        <div class="modal-header">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:#dcfce7; color:#16a34a; display:flex; align-items:center; justify-content:center;">
+                    <i data-lucide="shield-check" style="width:18px; height:18px;"></i>
+                </div>
+                <h3 data-i18n="reset_password_title" style="margin:0; font-size:17px; font-weight:700;">Új jelszó beállítása</h3>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm btn-icon-only" onclick="closeResetPasswordModal()">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:14px; font-size:13px; color:var(--text-muted);">
+                Fiók: <strong id="reset-user-email" style="color:var(--text-main);">-</strong>
+            </p>
+            <form id="reset-password-form" onsubmit="handleResetPasswordSubmit(event)" style="display:flex; flex-direction:column; gap:14px;">
+                <div id="reset-error-msg" class="login-error" style="display:none; margin-bottom:0;">
+                    <i data-lucide="alert-circle"></i>
+                    <span id="reset-error-text">A két jelszó nem egyezik.</span>
+                </div>
+                <input type="hidden" id="reset-token-hidden" />
+                <input type="hidden" id="reset-email-hidden" />
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="reset-new-pass" data-i18n="new_password_label">Új jelszó</label>
+                    <div class="input-wrapper" style="position:relative;">
+                        <i data-lucide="lock" class="input-icon"></i>
+                        <input id="reset-new-pass" type="password" placeholder="Legalább 4 karakter" required minlength="4" class="form-control" style="padding-left:36px; padding-right:40px;" />
+                        <button type="button" class="btn-password-peek" onmousedown="peekPassword('reset-new-pass', true)" onmouseup="peekPassword('reset-new-pass', false)" onmouseleave="peekPassword('reset-new-pass', false)" ontouchstart="peekPassword('reset-new-pass', true)" ontouchend="peekPassword('reset-new-pass', false)" ontouchcancel="peekPassword('reset-new-pass', false)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; padding:6px; display:flex; align-items:center; justify-content:center; z-index:2;" title="Jelszó mutatása nyomva tartáskor">
+                            <i data-lucide="eye" style="width:16px;height:16px;"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="reset-confirm-pass" data-i18n="new_password_confirm_label">Új jelszó megerősítése</label>
+                    <div class="input-wrapper" style="position:relative;">
+                        <i data-lucide="lock" class="input-icon"></i>
+                        <input id="reset-confirm-pass" type="password" placeholder="Ismételd meg az új jelszót" required minlength="4" class="form-control" style="padding-left:36px; padding-right:40px;" />
+                        <button type="button" class="btn-password-peek" onmousedown="peekPassword('reset-confirm-pass', true)" onmouseup="peekPassword('reset-confirm-pass', false)" onmouseleave="peekPassword('reset-confirm-pass', false)" ontouchstart="peekPassword('reset-confirm-pass', true)" ontouchend="peekPassword('reset-confirm-pass', false)" ontouchcancel="peekPassword('reset-confirm-pass', false)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; padding:6px; display:flex; align-items:center; justify-content:center; z-index:2;" title="Jelszó mutatása nyomva tartáskor">
+                            <i data-lucide="eye" style="width:16px;height:16px;"></i>
+                        </button>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+                    <button type="submit" class="btn btn-primary" style="background:#1E3A8A; width:100%;">
+                        <i data-lucide="check" style="width:15px;height:15px;"></i>
+                        <span data-i18n="save_new_password">Új jelszó mentése és belépés</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     HELP & CONTACT MODAL
+     ================================================================ -->
+<div id="help-modal" class="modal-overlay" style="display:none; z-index:10000;">
+    <div class="modal-box" style="max-width: 480px;">
+        <div class="modal-header">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center;">
+                    <i data-lucide="headphones" style="width:18px; height:18px;"></i>
+                </div>
+                <h3 data-i18n="help_title" style="margin:0; font-size:17px; font-weight:700;">Segítség és Kapcsolat</h3>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm btn-icon-only" onclick="closeHelpModal()">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body" style="display:flex; flex-direction:column; gap:18px;">
+            <p style="font-size:13.5px; color:var(--text-muted); margin:0; line-height:1.5;">
+                Bejelentkezési nehézség, adatmódosítási kérelem vagy egyéb társasházi kérdés esetén forduljon bizalommal a support csapathoz:
+            </p>
+
+            <div style="background:var(--bg-body); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px; display:flex; flex-direction:column; gap:14px;">
+                <div style="font-size:14px; font-weight:700; color:var(--primary);">
+                    Baltay Benedek <span style="font-size:12px; font-weight:500; color:var(--text-muted);">– Közös képviselő</span>
+                </div>
+
+                <!-- Phone -->
+                <div class="help-contact-card" style="display:flex; justify-content:space-between; align-items:center; gap:10px; background:var(--bg-card); padding:12px 14px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                    <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+                        <div style="width:32px; height:32px; border-radius:8px; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            <i data-lucide="phone" style="width:16px; height:16px;"></i>
+                        </div>
+                        <div style="min-width:0;">
+                            <div style="font-size:11px; color:var(--text-muted);">Telefonszám</div>
+                            <a href="tel:+36203971253" style="font-weight:700; font-size:14px; color:var(--text-main); text-decoration:none;">+36 20 397 1253</a>
+                        </div>
+                    </div>
+                    <div class="help-contact-actions" style="display:flex; gap:6px; flex-shrink:0;">
+                        <a href="tel:+36203971253" class="btn btn-primary btn-xs" style="background:#1E3A8A; padding:6px 10px; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Hívás">
+                            <i data-lucide="phone-call" style="width:12px;height:12px;"></i> Hívás
+                        </a>
+                        <button type="button" class="btn btn-outline btn-xs" onclick="copyValue('+36203971253', this)" style="padding:6px 8px;" title="Másolás">
+                            <i data-lucide="copy" style="width:12px;height:12px;"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Email -->
+                <div class="help-contact-card" style="display:flex; justify-content:space-between; align-items:center; gap:10px; background:var(--bg-card); padding:12px 14px; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                    <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+                        <div style="width:32px; height:32px; border-radius:8px; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            <i data-lucide="mail" style="width:16px; height:16px;"></i>
+                        </div>
+                        <div style="min-width:0;">
+                            <div style="font-size:11px; color:var(--text-muted);">E-mail cím</div>
+                            <a href="mailto:benedek.baltay@gmail.com" style="font-weight:700; font-size:13px; color:var(--text-main); text-decoration:none; word-break:break-all;">benedek.baltay@gmail.com</a>
+                        </div>
+                    </div>
+                    <div class="help-contact-actions" style="display:flex; gap:6px; flex-shrink:0;">
+                        <a href="mailto:benedek.baltay@gmail.com" class="btn btn-primary btn-xs" style="background:#1E3A8A; padding:6px 10px; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Levélírás">
+                            <i data-lucide="send" style="width:12px;height:12px;"></i> Levél
+                        </a>
+                        <button type="button" class="btn btn-outline btn-xs" onclick="copyValue('benedek.baltay@gmail.com', this)" style="padding:6px 8px;" title="Másolás">
+                            <i data-lucide="copy" style="width:12px;height:12px;"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end;">
+                <button type="button" class="btn btn-primary" onclick="closeHelpModal()" style="background:#1E3A8A;" data-i18n="close">Bezárás</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     CHANGE PASSWORD MODAL (Logged-in User Profile)
+     ================================================================ -->
+<div id="change-password-modal" class="modal-overlay" style="display:none; z-index:10000;">
+    <div class="modal-box" style="max-width: 440px;">
+        <div class="modal-header">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center;">
+                    <i data-lucide="key" style="width:18px; height:18px;"></i>
+                </div>
+                <h3 data-i18n="change_password_title" style="margin:0; font-size:17px; font-weight:700;">Jelszó módosítása</h3>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm btn-icon-only" onclick="closeChangePasswordModal()">
+                <i data-lucide="x" style="width:16px;height:16px;"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="change-password-form" onsubmit="handleChangePasswordSubmit(event)" style="display:flex; flex-direction:column; gap:14px;">
+                <div id="change-pass-error-msg" class="login-error" style="display:none; margin-bottom:0;">
+                    <i data-lucide="alert-circle"></i>
+                    <span id="change-pass-error-text">A régi jelszó helytelen.</span>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="change-old-pass" data-i18n="old_password_label">Jelenlegi (régi) jelszó</label>
+                    <div class="input-wrapper" style="position:relative;">
+                        <i data-lucide="lock" class="input-icon"></i>
+                        <input id="change-old-pass" type="password" placeholder="Jelenlegi jelszó" required class="form-control" style="padding-left:36px; padding-right:40px;" />
+                        <button type="button" class="btn-password-peek" onmousedown="peekPassword('change-old-pass', true)" onmouseup="peekPassword('change-old-pass', false)" onmouseleave="peekPassword('change-old-pass', false)" ontouchstart="peekPassword('change-old-pass', true)" ontouchend="peekPassword('change-old-pass', false)" ontouchcancel="peekPassword('change-old-pass', false)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; padding:6px; display:flex; align-items:center; justify-content:center; z-index:2;" title="Jelszó mutatása nyomva tartáskor">
+                            <i data-lucide="eye" style="width:16px;height:16px;"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="change-new-pass" data-i18n="new_password_label">Új jelszó</label>
+                    <div class="input-wrapper" style="position:relative;">
+                        <i data-lucide="lock" class="input-icon"></i>
+                        <input id="change-new-pass" type="password" placeholder="Legalább 4 karakter" required minlength="4" class="form-control" style="padding-left:36px; padding-right:40px;" />
+                        <button type="button" class="btn-password-peek" onmousedown="peekPassword('change-new-pass', true)" onmouseup="peekPassword('change-new-pass', false)" onmouseleave="peekPassword('change-new-pass', false)" ontouchstart="peekPassword('change-new-pass', true)" ontouchend="peekPassword('change-new-pass', false)" ontouchcancel="peekPassword('change-new-pass', false)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; padding:6px; display:flex; align-items:center; justify-content:center; z-index:2;" title="Jelszó mutatása nyomva tartáskor">
+                            <i data-lucide="eye" style="width:16px;height:16px;"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="change-confirm-pass" data-i18n="new_password_confirm_label">Új jelszó megerősítése</label>
+                    <div class="input-wrapper" style="position:relative;">
+                        <i data-lucide="lock" class="input-icon"></i>
+                        <input id="change-confirm-pass" type="password" placeholder="Ismételd meg az új jelszót" required minlength="4" class="form-control" style="padding-left:36px; padding-right:40px;" />
+                        <button type="button" class="btn-password-peek" onmousedown="peekPassword('change-confirm-pass', true)" onmouseup="peekPassword('change-confirm-pass', false)" onmouseleave="peekPassword('change-confirm-pass', false)" ontouchstart="peekPassword('change-confirm-pass', true)" ontouchend="peekPassword('change-confirm-pass', false)" ontouchcancel="peekPassword('change-confirm-pass', false)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; padding:6px; display:flex; align-items:center; justify-content:center; z-index:2;" title="Jelszó mutatása nyomva tartáskor">
+                            <i data-lucide="eye" style="width:16px;height:16px;"></i>
+                        </button>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+                    <button type="button" class="btn btn-outline" onclick="closeChangePasswordModal()" data-i18n="cancel">Mégse</button>
+                    <button type="submit" class="btn btn-primary" style="background:#1E3A8A;">
+                        <i data-lucide="check" style="width:15px;height:15px;"></i>
+                        <span data-i18n="save_password_btn">Jelszó mentése</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     iOS STYLE SIDEBAR DRAWER MENU
+     ================================================================ -->
+<div id="ios-side-drawer" class="ios-drawer-overlay" onclick="if(event.target===this)window.closeIosSideDrawer()">
+    <div id="ios-drawer-backdrop" class="ios-drawer-backdrop" onclick="window.closeIosSideDrawer()"></div>
+    <div id="ios-drawer-panel" class="ios-drawer-panel" onclick="event.stopPropagation()">
+        <!-- Header -->
+        <div class="ios-drawer-header">
+            <div class="ios-drawer-title-group">
+                <div class="ios-drawer-avatar">
+                    <i data-lucide="building-2" style="width:20px;height:20px;"></i>
+                </div>
+                <div class="ios-drawer-header-text">
+                    <h3 id="ios-drawer-building-name" class="ios-drawer-title">Társasház</h3>
+                    <span id="ios-drawer-user-role" class="ios-drawer-subtitle">Menü</span>
+                </div>
+            </div>
+            <button class="ios-drawer-close-btn" onclick="window.closeIosSideDrawer()" title="Bezárás">
+                <i data-lucide="x" style="width:18px;height:18px;"></i>
+            </button>
+        </div>
+
+        <!-- Menu List -->
+        <div class="ios-drawer-body">
+            <div class="ios-menu-group">
+                <a href="#" class="ios-menu-item" onclick="window.handleMenuOption('main', event)">
+                    <div class="ios-menu-icon" style="background:#3B82F6; color:white;">
+                        <i data-lucide="layout-dashboard" style="width:18px;height:18px;"></i>
+                    </div>
+                    <div class="ios-menu-label">
+                        <span data-i18n="menu_main">Főmenü</span>
+                    </div>
+                    <i data-lucide="chevron-right" class="ios-menu-arrow"></i>
+                </a>
+
+                <a href="#" class="ios-menu-item" id="ios-drawer-menu-finance" onclick="window.handleMenuOption('finance', event)">
+                    <div class="ios-menu-icon" id="ios-drawer-menu-finance-icon" style="background:#10B981; color:white;">
+                        <i data-lucide="line-chart" style="width:18px;height:18px;"></i>
+                    </div>
+                    <div class="ios-menu-label">
+                        <span id="ios-drawer-menu-finance-label" data-i18n="menu_finance">A ház pénzügyi helyzete</span>
+                    </div>
+                    <i data-lucide="chevron-right" class="ios-menu-arrow"></i>
+                </a>
+
+                <a href="#" class="ios-menu-item" onclick="window.handleMenuOption('loans', event)">
+                    <div class="ios-menu-icon" style="background:#8B5CF6; color:white;">
+                        <i data-lucide="landmark" style="width:18px;height:18px;"></i>
+                    </div>
+                    <div class="ios-menu-label">
+                        <span data-i18n="menu_loans">Hitelek</span>
+                    </div>
+                    <i data-lucide="chevron-right" class="ios-menu-arrow"></i>
+                </a>
+
+                <a href="#" class="ios-menu-item" onclick="window.handleMenuOption('docs', event)">
+                    <div class="ios-menu-icon" style="background:#F59E0B; color:white;">
+                        <i data-lucide="folder-open" style="width:18px;height:18px;"></i>
+                    </div>
+                    <div class="ios-menu-label">
+                        <span data-i18n="menu_docs">Dokumentumok</span>
+                    </div>
+                    <i data-lucide="chevron-right" class="ios-menu-arrow"></i>
+                </a>
+
+                <a href="#" class="ios-menu-item" onclick="window.handleMenuOption('profile', event)">
+                    <div class="ios-menu-icon" style="background:#0284C7; color:white;">
+                        <i data-lucide="user" style="width:18px;height:18px;"></i>
+                    </div>
+                    <div class="ios-menu-label">
+                        <span data-i18n="menu_profile">Profilom</span>
+                    </div>
+                    <i data-lucide="chevron-right" class="ios-menu-arrow"></i>
+                </a>
+            </div>
+
+            <!-- Logout Group -->
+            <div class="ios-menu-group" style="margin-top:16px;">
+                <a href="#" class="ios-menu-item" onclick="window.handleMenuOption('logout', event)">
+                    <div class="ios-menu-icon" style="background:#EF4444; color:white;">
+                        <i data-lucide="log-out" style="width:18px;height:18px;"></i>
+                    </div>
+                    <div class="ios-menu-label">
+                        <span data-i18n="logout" style="color:var(--danger, #ef4444); font-weight:600;">Kijelentkezés</span>
+                    </div>
+                    <i data-lucide="chevron-right" class="ios-menu-arrow"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer Info -->
+        <div class="ios-drawer-footer">
+            <span style="font-size:12px; color:var(--text-muted); font-weight:500;">Társasházkezelő Portál</span>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================
+     SCRIPTS
+     ================================================================ -->
+<!-- Firebase SDK (Compat mode for seamless integration) -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+<script src="app.js?v=227"></script> 
+</body>
+</html>

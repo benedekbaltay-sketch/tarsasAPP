@@ -1,0 +1,111 @@
+window.openFullscreenTx = function(type) {
+    const tbody = document.getElementById("fullscreen-tx-tbody");
+    const title = document.getElementById("fullscreen-tx-title");
+    
+    // We removed the table and thead, so just clear the modern-list container
+    tbody.innerHTML = "";
+    
+    if (type === 'flat') {
+        title.textContent = `${state.currentFlatDetailNum}. Lakás teljes tranzakció előzménye (${state.currentFlatDetailTab})`;
+        
+        const timeline = getFlatLedgerTimeline(state.currentFlatDetailNum, state.currentFlatDetailTab);
+        timeline.forEach(item => {
+            const itemEl = document.createElement("div");
+            itemEl.className = "tx-item";
+            
+            let typeBadge = "";
+            let iconHtml = "";
+            let iconClass = "";
+            
+            if (item.type === "Debit") {
+                iconClass = "expense";
+                iconHtml = `<i data-lucide="arrow-down" style="width:18px;height:18px;"></i>`;
+                typeBadge = "Előírás";
+            } else {
+                iconClass = "income";
+                iconHtml = `<i data-lucide="arrow-up" style="width:18px;height:18px;"></i>`;
+                typeBadge = "Befizetés";
+            }
+            
+            const balanceClass = item.runningBalance < 0 ? "negative" : (item.runningBalance > 0 ? "positive" : "");
+            const amountPrefix = item.type === "Debit" ? "-" : "+";
+            const amountDisp = `${amountPrefix}${formatCurrency(Math.abs(item.amount))}`;
+            
+            let deleteBtnHtml = "";
+            if (item.id && item.id.startsWith("t-")) {
+                deleteBtnHtml = `
+                <button class="btn btn-outline btn-sm btn-icon-only" style="border:none; color:var(--danger); padding:4px;" onclick="deleteLedgerTransaction('${item.id}')" title="Törlés">
+                    <i data-lucide="trash-2" style="width:16px;height:16px;"></i>
+                </button>`;
+            }
+            
+            itemEl.innerHTML = `
+                <div class="tx-icon ${iconClass}">${iconHtml}</div>
+                <div class="tx-details">
+                    <div class="tx-title">${typeBadge}</div>
+                    <div class="tx-subtitle">${item.date} ${item.comment ? "• " + item.comment : ""}</div>
+                </div>
+                <div class="tx-amount-group">
+                    <div class="tx-amount ${item.type === 'Debit' ? 'negative' : 'positive'}">${amountDisp}</div>
+                    <div class="tx-balance ${balanceClass}">Egyenleg: ${formatCurrency(item.runningBalance)}</div>
+                </div>
+                ${deleteBtnHtml ? `<div class="tx-actions">${deleteBtnHtml}</div>` : ""}
+            `;
+            tbody.appendChild(itemEl);
+        });
+        
+    } else if (type === 'global') {
+        title.textContent = `Minden tranzakció és kiadás teljes listája`;
+        
+        const paymentsList = state.transactions.map(t => ({
+            ...t,
+            type: "Befizetés",
+            displayName: `${t.flatNum}. Lakás`,
+            categoryDisplay: `${translateMethod(t.method)} (${t.targetAccount})`,
+            amountDisplay: `+${formatCurrency(t.amount)}`,
+            icon: t.targetAccount === "Közös Költség" ? "check" : "piggy-bank"
+        }));
+        
+        const expensesList = state.expenses.map(e => ({
+            ...e,
+            type: "Kiadás",
+            displayName: e.provider,
+            categoryDisplay: translateCategory(e.category),
+            amountDisplay: `-${formatCurrency(e.amount)}`,
+            icon: "minus"
+        }));
+        
+        const combined = [...paymentsList, ...expensesList].sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        combined.forEach(item => {
+            const itemEl = document.createElement("div");
+            itemEl.className = "tx-item";
+            
+            let iconHtml = `<i data-lucide="${item.icon}" style="width:18px;height:18px;"></i>`;
+            let iconClass = item.type === "Befizetés" ? "income" : "expense";
+            
+            itemEl.innerHTML = `
+                <div class="tx-icon ${iconClass}">${iconHtml}</div>
+                <div class="tx-details">
+                    <div class="tx-title">${item.displayName}</div>
+                    <div class="tx-subtitle">${item.date} • ${item.categoryDisplay} ${item.comment ? "• " + item.comment : ""}</div>
+                </div>
+                <div class="tx-amount-group">
+                    <div class="tx-amount ${item.type === 'Befizetés' ? 'positive' : 'negative'}">${item.amountDisplay}</div>
+                </div>
+                <div class="tx-actions">
+                    <button class="btn btn-outline btn-sm btn-icon-only" style="border:none; padding:4px;" onclick="openEditModal('${item.id}', '${item.type}')" title="Módosítás">
+                        <i data-lucide="edit-3" style="width:16px;height:16px;"></i>
+                    </button>
+                    <button class="btn btn-outline btn-sm btn-icon-only" style="border:none; color:var(--danger); padding:4px;" onclick="deleteTransaction('${item.id}', '${item.type}')" title="Törlés">
+                        <i data-lucide="trash-2" style="width:16px;height:16px;"></i>
+                    </button>
+                </div>
+            `;
+            tbody.appendChild(itemEl);
+        });
+    }
+    
+    document.getElementById("fullscreen-tx-modal").style.display = "flex";
+    lucide.createIcons();
+};

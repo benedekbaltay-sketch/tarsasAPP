@@ -1,0 +1,57 @@
+function renderFlatDetailTimeline(showAll = false) {
+    const flatNum = state.currentFlatDetailNum;
+    const targetAccount = state.currentFlatDetailTab;
+    const timelineContainer = document.getElementById("flat-detail-ledger-tbody");
+    timelineContainer.innerHTML = "";
+    
+    const timeline = getFlatLedgerTimeline(flatNum, targetAccount);
+    
+    if (timeline.length === 0) {
+        timelineContainer.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Nincs tranzakció előzmény.</td></tr>`;
+    } else {
+        const displayTimeline = showAll ? timeline : timeline.slice(-5);
+        
+        if (timeline.length > 5 && !showAll) {
+            const row = document.createElement("tr");
+            row.innerHTML = `<td colspan="6" style="text-align: center; background: var(--bg-hover); cursor: pointer; color: var(--primary); font-weight: 500;" onclick="openFullscreenTx('flat')">
+                <i data-lucide="expand" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"></i> Mutasd az összeset
+            </td>`;
+            timelineContainer.appendChild(row);
+        }
+        
+        displayTimeline.forEach(item => {
+            const row = document.createElement("tr");
+            
+            let typeBadge = "";
+            let amountHtml = "";
+            
+            if (item.type === "Debit") {
+                const color = targetAccount === "Közös Költség" ? "status-expense" : "status-pending";
+                typeBadge = `<span class="status-badge ${color}"><i data-lucide="arrow-down" style="width:12px;height:12px;"></i> Előírás</span>`;
+                amountHtml = `<span class="text-danger" style="font-weight:600;">-${formatCurrency(Math.abs(item.amount))}</span>`;
+            } else {
+                const color = targetAccount === "Közös Költség" ? "status-verified" : "status-pending";
+                typeBadge = `<span class="status-badge ${color}"><i data-lucide="arrow-up" style="width:12px;height:12px;"></i> Befizetés</span>`;
+                amountHtml = `<span class="text-success" style="font-weight:600;">+${formatCurrency(item.amount)}</span>`;
+            }
+            
+            const balanceClass = item.runningBalance < 0 ? "text-danger" : (item.runningBalance > 0 ? "text-success" : "");
+            
+            let deleteBtnHtml = "";
+            if (item.id && item.id.startsWith("t-")) {
+                deleteBtnHtml = `<button class="btn btn-outline btn-xs" style="color:var(--danger);border-color:var(--danger-light);padding:2px 4px;" onclick="deleteLedgerTransaction('${item.id}')"><i data-lucide="trash-2" style="width:12px;height:12px;"></i></button>`;
+            }
+            
+            row.innerHTML = `
+                <td><strong>${item.date}</strong></td>
+                <td>${typeBadge}</td>
+                <td>${amountHtml}</td>
+                <td class="${balanceClass}" style="font-weight:600;">${formatCurrency(item.runningBalance)}</td>
+                <td><span style="color:var(--text-muted); font-style:italic;">${item.comment || '-'}</span></td>
+                <td style="text-align:right;">${deleteBtnHtml}</td>
+            `;
+            timelineContainer.appendChild(row);
+        });
+    }
+    lucide.createIcons();
+}

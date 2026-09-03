@@ -1,0 +1,193 @@
+import React, { useState } from 'react';
+import { useApp } from '../../context/AppContext';
+import { X, Building2, Plus } from 'lucide-react';
+
+export function AddBuildingModal({ isOpen, onClose }) {
+  const { t, addBuilding } = useApp();
+
+  const [name, setName] = useState('');
+  const [address, setAddress] = useState('');
+  const [bankKKName, setBankKKName] = useState('');
+  const [bankKKBank, setBankKKBank] = useState('OTP');
+  const [bankKKAccount, setBankKKAccount] = useState('');
+  const [bankFAName, setBankFAName] = useState('');
+  const [bankFABank, setBankFABank] = useState('OTP');
+  const [bankFAAccount, setBankFAAccount] = useState('');
+  const [reserveKK, setReserveKK] = useState('0');
+  const [reserveFA, setReserveFA] = useState('0');
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    const buildingId = `b-${Date.now()}`;
+    addBuilding({
+      id: buildingId,
+      name: name.trim(),
+      address: address.trim(),
+      bankKK: {
+        name: bankKKName.trim() || name.trim(),
+        bank: bankKKBank.trim() || 'OTP',
+        account: bankKKAccount.trim()
+      },
+      bankFA: {
+        name: bankFAName.trim() || name.trim(),
+        bank: bankFABank.trim() || 'OTP',
+        account: bankFAAccount.trim()
+      },
+      buildingInitialReserveCommon: Number(reserveKK) || 0,
+      buildingInitialReserveRenovation: Number(reserveFA) || 0,
+      flats: [],
+      transactions: [],
+      expenses: [],
+      manualDebits: [],
+      documents: []
+    });
+
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden my-auto">
+        
+        {/* Header */}
+        <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-[#1E3A8A]" />
+            <h3 className="text-sm font-bold text-gray-900 font-display">
+              {t.add_building_title}
+            </h3>
+          </div>
+          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-700">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-5 space-y-3.5 overflow-y-auto text-xs">
+          <div>
+            <label className="block font-semibold text-gray-700 mb-1">{t.building_name}</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="pl. Kossuth Lajos utca 12. Társasház"
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block font-semibold text-gray-700 mb-1">{t.building_address_label}</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="pl. 1053 Budapest, Kossuth Lajos utca 12."
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg"
+              required
+            />
+          </div>
+
+          {/* KK Bank */}
+          <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2">
+            <span className="font-bold text-[#1E3A8A] block">Közös Költség banki adatok</span>
+            <input
+              type="text"
+              value={bankKKName}
+              onChange={(e) => setBankKKName(e.target.value)}
+              placeholder="Kedvezményezett neve"
+              className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded"
+            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={bankKKAccount}
+                onChange={(e) => setBankKKAccount(e.target.value)}
+                placeholder="Bankszámlaszám (11702005 12345678)"
+                className="flex-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded"
+              />
+              <input
+                type="text"
+                value={bankKKBank}
+                onChange={(e) => setBankKKBank(e.target.value)}
+                placeholder="Bank (OTP)"
+                className="w-20 px-2.5 py-1.5 bg-white border border-gray-200 rounded"
+              />
+            </div>
+          </div>
+
+          {/* FA Bank */}
+          <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2">
+            <span className="font-bold text-purple-700 block">Felújítási Alap banki adatok</span>
+            <input
+              type="text"
+              value={bankFAName}
+              onChange={(e) => setBankFAName(e.target.value)}
+              placeholder="Kedvezményezett neve"
+              className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded"
+            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={bankFAAccount}
+                onChange={(e) => setBankFAAccount(e.target.value)}
+                placeholder="Bankszámlaszám (11702005 87654321)"
+                className="flex-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded"
+              />
+              <input
+                type="text"
+                value={bankFABank}
+                onChange={(e) => setBankFABank(e.target.value)}
+                placeholder="Bank (OTP)"
+                className="w-20 px-2.5 py-1.5 bg-white border border-gray-200 rounded"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-semibold text-gray-700 mb-1">{t.initial_reserve_kk}</label>
+              <input
+                type="number"
+                value={reserveKK}
+                onChange={(e) => setReserveKK(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-gray-700 mb-1">{t.initial_reserve_fa}</label>
+              <input
+                type="number"
+                value={reserveFA}
+                onChange={(e) => setReserveFA(e.target.value)}
+                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-50"
+            >
+              {t.cancel}
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-1.5 bg-[#1E3A8A] text-white rounded-lg text-xs font-bold hover:bg-[#1e40af] flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t.create_building_btn}</span>
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  );
+}

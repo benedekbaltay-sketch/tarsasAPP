@@ -1,0 +1,121 @@
+window.openFullscreenTx = function(type) {
+    const tbody = document.getElementById("fullscreen-tx-tbody");
+    const thead = document.getElementById("fullscreen-tx-thead-tr");
+    const title = document.getElementById("fullscreen-tx-title");
+    tbody.innerHTML = "";
+    thead.innerHTML = "";
+    
+    if (type === 'flat') {
+        title.textContent = `${state.currentFlatDetailNum}. Lakás teljes tranzakció előzménye (${state.currentFlatDetailTab})`;
+        thead.innerHTML = `
+            <th>Dátum</th>
+            <th>Típus</th>
+            <th>Összeg</th>
+            <th>Egyenleg</th>
+            <th>Megjegyzés</th>
+            <th style="width:60px;text-align:right;">Műveletek</th>
+        `;
+        
+        const timeline = getFlatLedgerTimeline(state.currentFlatDetailNum, state.currentFlatDetailTab);
+        timeline.forEach(item => {
+            const row = document.createElement("tr");
+            let typeBadge = "";
+            let amountHtml = "";
+            
+            if (item.type === "Debit") {
+                const color = state.currentFlatDetailTab === "Közös Költség" ? "status-expense" : "status-pending";
+                typeBadge = `<span class="status-badge ${color}"><i data-lucide="arrow-down" style="width:12px;height:12px;"></i> Előírás</span>`;
+                amountHtml = `<span class="text-danger" style="font-weight:600;">-${formatCurrency(Math.abs(item.amount))}</span>`;
+            } else {
+                const color = state.currentFlatDetailTab === "Közös Költség" ? "status-verified" : "status-pending";
+                typeBadge = `<span class="status-badge ${color}"><i data-lucide="arrow-up" style="width:12px;height:12px;"></i> Befizetés</span>`;
+                amountHtml = `<span class="text-success" style="font-weight:600;">+${formatCurrency(item.amount)}</span>`;
+            }
+            
+            const balanceClass = item.runningBalance < 0 ? "text-danger" : (item.runningBalance > 0 ? "text-success" : "");
+            
+            let deleteBtnHtml = "";
+            if (item.id && item.id.startsWith("t-")) {
+                deleteBtnHtml = `<button class="btn btn-outline btn-xs" style="color:var(--danger);border-color:var(--danger-light);padding:2px 4px;" onclick="deleteLedgerTransaction('${item.id}')"><i data-lucide="trash-2" style="width:12px;height:12px;"></i></button>`;
+            }
+            
+            row.innerHTML = `
+                <td><strong>${item.date}</strong></td>
+                <td>${typeBadge}</td>
+                <td>${amountHtml}</td>
+                <td class="${balanceClass}" style="font-weight:600;">${formatCurrency(item.runningBalance)}</td>
+                <td><span style="color:var(--text-muted); font-style:italic;">${item.comment || '-'}</span></td>
+                <td style="text-align:right;">${deleteBtnHtml}</td>
+            `;
+            tbody.appendChild(row);
+        });
+        
+    } else if (type === 'global') {
+        title.textContent = `Minden tranzakció és kiadás teljes listája`;
+        thead.innerHTML = `
+            <th>Dátum</th>
+            <th>Típus</th>
+            <th>Név / Lakás</th>
+            <th>Összeg</th>
+            <th>Kategória / Egyenleg</th>
+            <th>Megjegyzés</th>
+            <th style="width:60px;text-align:right;">Műveletek</th>
+        `;
+        
+        const paymentsList = state.transactions.map(t => ({
+            ...t,
+            type: "Befizetés",
+            displayName: `${t.flatNum}. Lakás`,
+            categoryDisplay: `${translateMethod(t.method)} (${t.targetAccount})`,
+            amountDisplay: `+${formatCurrency(t.amount)}`,
+            amountClass: "text-success",
+            badgeClass: t.targetAccount === "Közös Költség" ? "status-verified" : "status-pending",
+            badgeText: t.targetAccount === "Közös Költség" ? "Közös Költség" : "Felújítási Alap",
+            icon: t.targetAccount === "Közös Költség" ? "check" : "piggy-bank"
+        }));
+        
+        const expensesList = state.expenses.map(e => ({
+            ...e,
+            type: "Kiadás",
+            displayName: e.provider,
+            categoryDisplay: translateCategory(e.category),
+            amountDisplay: `-${formatCurrency(e.amount)}`,
+            amountClass: "text-danger",
+            badgeClass: "status-expense",
+            badgeText: "Kiadás",
+            icon: "minus"
+        }));
+        
+        const combined = [...paymentsList, ...expensesList].sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        combined.forEach(item => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td><strong>${item.date}</strong></td>
+                <td>
+                    <span class="status-badge ${item.badgeClass}">
+                        <i data-lucide="${item.icon}" style="width:12px;height:12px;"></i> ${item.badgeText}
+                    </span>
+                </td>
+                <td>${item.displayName}</td>
+                <td class="${item.amountClass}" style="font-weight:600;">${item.amountDisplay}</td>
+                <td>${item.categoryDisplay}</td>
+                <td><span style="color:var(--text-muted); font-style:italic;">${item.comment || '-'}</span></td>
+                <td style="text-align:right;">
+                    <div class="actions-cell">
+                        <button class="btn btn-outline btn-sm btn-icon-only btn-action-edit" onclick="openEditModal('${item.id}', '${item.type}')" title="Módosítás">
+                            <i data-lucide="edit-3" style="width:14px;height:14px;"></i>
+                        </button>
+                        <button class="btn btn-outline btn-sm btn-icon-only btn-action-delete" onclick="deleteTransaction('${item.id}', '${item.type}')" title="Törlés">
+                            <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    document.getElementById("fullscreen-tx-modal").style.display = "flex";
+    lucide.createIcons();
+};

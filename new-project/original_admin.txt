@@ -1,0 +1,84 @@
+function renderAdminTransactions(showAll = false) {
+    const query = document.getElementById("admin-search").value.toLowerCase();
+    const tbody = document.getElementById("admin-transactions-tbody");
+    tbody.innerHTML = "";
+    
+    const paymentsList = state.transactions.map(t => ({
+        ...t,
+        type: "Befizetés",
+        displayName: `${t.flatNum}. Lakás`,
+        categoryDisplay: `${translateMethod(t.method)} (${t.targetAccount})`,
+        amountDisplay: `+${formatCurrency(t.amount)}`,
+        amountClass: "text-success",
+        badgeClass: t.targetAccount === "Közös Költség" ? "status-verified" : "status-pending",
+        badgeText: t.targetAccount === "Közös Költség" ? "Közös Költség" : "Felújítási Alap",
+        icon: t.targetAccount === "Közös Költség" ? "check" : "piggy-bank"
+    }));
+    
+    const expensesList = state.expenses.map(e => ({
+        ...e,
+        type: "Kiadás",
+        displayName: e.provider,
+        categoryDisplay: translateCategory(e.category),
+        amountDisplay: `-${formatCurrency(e.amount)}`,
+        amountClass: "text-danger",
+        badgeClass: "status-expense",
+        badgeText: "Kiadás",
+        icon: "minus"
+    }));
+    
+    const combined = [...paymentsList, ...expensesList]
+        .filter(item => {
+            return item.date.includes(query) || 
+                   item.displayName.toLowerCase().includes(query) ||
+                   item.categoryDisplay.toLowerCase().includes(query) ||
+                   item.amountDisplay.includes(query) ||
+                   item.type.toLowerCase().includes(query) ||
+                   (item.comment && item.comment.toLowerCase().includes(query));
+        })
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+    if (combined.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="padding: 24px; text-align: center; color: var(--text-muted);">Nem található tranzakció.</td></tr>`;
+        return;
+    }
+    
+    const displayList = (showAll || query) ? combined : combined.slice(0, 5);
+    
+    displayList.forEach(item => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td><strong>${item.date}</strong></td>
+            <td>
+                <span class="status-badge ${item.badgeClass}">
+                    <i data-lucide="${item.icon}" style="width:12px;height:12px;"></i> ${item.badgeText}
+                </span>
+            </td>
+            <td>${item.displayName}</td>
+            <td class="${item.amountClass}" style="font-weight:600;">${item.amountDisplay}</td>
+            <td>${item.categoryDisplay}</td>
+            <td><span style="color:var(--text-muted); font-style:italic;">${item.comment || '-'}</span></td>
+            <td style="text-align:right;">
+                <div class="actions-cell">
+                    <button class="btn btn-outline btn-sm btn-icon-only btn-action-edit" onclick="openEditModal('${item.id}', '${item.type}')" title="Módosítás">
+                        <i data-lucide="edit-3" style="width:14px;height:14px;"></i>
+                    </button>
+                    <button class="btn btn-outline btn-sm btn-icon-only btn-action-delete" onclick="deleteTransaction('${item.id}', '${item.type}')" title="Törlés">
+                        <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+    
+    if (!query && combined.length > 5) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="7" style="text-align: center; background: var(--bg-hover); cursor: pointer; color: var(--primary); font-weight: 500;" onclick="openFullscreenTx('global')">
+            <i data-lucide="expand" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"></i> Mutasd az összeset
+        </td>`;
+        tbody.appendChild(row);
+    }
+    
+    lucide.createIcons();
+}

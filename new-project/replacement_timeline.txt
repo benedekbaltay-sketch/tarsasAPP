@@ -1,0 +1,72 @@
+function renderFlatDetailTimeline(showAll = false) {
+    const flatNum = state.currentFlatDetailNum;
+    const targetAccount = state.currentFlatDetailTab;
+    const timelineContainer = document.getElementById("flat-detail-ledger-tbody");
+    timelineContainer.innerHTML = "";
+    
+    const timeline = getFlatLedgerTimeline(flatNum, targetAccount);
+    
+    if (timeline.length === 0) {
+        timelineContainer.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--text-muted);">Nincs tranzakció előzmény.</div>`;
+    } else {
+        const displayTimeline = showAll ? timeline : timeline.slice(-5);
+        
+        if (timeline.length > 5 && !showAll) {
+            const itemEl = document.createElement("div");
+            itemEl.className = "tx-item";
+            itemEl.style.justifyContent = "center";
+            itemEl.style.color = "var(--primary)";
+            itemEl.style.fontWeight = "500";
+            itemEl.style.cursor = "pointer";
+            itemEl.onclick = () => openFullscreenTx('flat');
+            itemEl.innerHTML = `<i data-lucide="expand" style="width:16px;height:16px;margin-right:8px;vertical-align:middle;"></i> Mutasd az összeset`;
+            timelineContainer.appendChild(itemEl);
+        }
+        
+        displayTimeline.forEach(item => {
+            const itemEl = document.createElement("div");
+            itemEl.className = "tx-item";
+            
+            let typeBadge = "";
+            let iconHtml = "";
+            let iconClass = "";
+            
+            if (item.type === "Debit") {
+                iconClass = "expense";
+                iconHtml = `<i data-lucide="arrow-down" style="width:18px;height:18px;"></i>`;
+                typeBadge = "Előírás";
+            } else {
+                iconClass = "income";
+                iconHtml = `<i data-lucide="arrow-up" style="width:18px;height:18px;"></i>`;
+                typeBadge = "Befizetés";
+            }
+            
+            const balanceClass = item.runningBalance < 0 ? "negative" : (item.runningBalance > 0 ? "positive" : "");
+            const amountPrefix = item.type === "Debit" ? "-" : "+";
+            const amountDisp = `${amountPrefix}${formatCurrency(Math.abs(item.amount))}`;
+            
+            let deleteBtnHtml = "";
+            if (item.id && item.id.startsWith("t-")) {
+                deleteBtnHtml = `
+                <button class="btn btn-outline btn-sm btn-icon-only" style="border:none; color:var(--danger); padding:4px;" onclick="deleteLedgerTransaction('${item.id}')" title="Törlés">
+                    <i data-lucide="trash-2" style="width:16px;height:16px;"></i>
+                </button>`;
+            }
+            
+            itemEl.innerHTML = `
+                <div class="tx-icon ${iconClass}">${iconHtml}</div>
+                <div class="tx-details">
+                    <div class="tx-title">${typeBadge}</div>
+                    <div class="tx-subtitle">${item.date} ${item.comment ? "• " + item.comment : ""}</div>
+                </div>
+                <div class="tx-amount-group">
+                    <div class="tx-amount ${item.type === 'Debit' ? 'negative' : 'positive'}">${amountDisp}</div>
+                    <div class="tx-balance ${balanceClass}">Egyenleg: ${formatCurrency(item.runningBalance)}</div>
+                </div>
+                ${deleteBtnHtml ? `<div class="tx-actions">${deleteBtnHtml}</div>` : ""}
+            `;
+            timelineContainer.appendChild(itemEl);
+        });
+    }
+    lucide.createIcons();
+}
