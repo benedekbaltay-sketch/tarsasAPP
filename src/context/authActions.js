@@ -8,17 +8,21 @@ import {
   browserLocalPersistence,
   browserSessionPersistence
 } from 'firebase/auth';
-import { getFirebaseInstance } from '../constants/firebaseConfig';
+import { getFirebaseInstance, IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
 import { ref, get } from 'firebase/database';
 import {
   mergeStateWithCloud,
   stripSensitiveUserFields,
   stripSensitiveBuildingFields
 } from './syncEngine';
+import {
+  hydrateFirestoreSession,
+  purgeSensitiveLocalStorage
+} from '../services/firestoreAdapter';
 
 const MIN_PASSWORD_LENGTH = 10;
 
-export function createAuthActions({ state, setState, persistState, showToast, t, getUserFlats }) {
+export function createAuthActions({ state, setState, persistState, showToast, t, getUserFlats, onFirestoreSessionHydrated }) {
   // Auth: Strictly cloud-verified Firebase Authentication login (zero plaintext fallback, zero client self-signup)
   const login = async (email, pass, rememberMe = false) => {
     const trimmedEmail = (email || "").trim().toLowerCase();
@@ -51,6 +55,43 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         success: false,
         error: t.login_error || (isEn ? "Invalid email address or password." : "Hibás e-mail cím vagy jelszó!")
       };
+    }
+
+    // 1b. Cloud Firestore Multi-Tenant Mode (zero RTDB, zero PII/financial data in localStorage)
+    if (IS_FIRESTORE_MODE) {
+      try {
+        purgeSensitiveLocalStorage();
+        if (rememberMe) {
+          try { localStorage.setItem("tarsashaz_remember_me", "true"); } catch {}
+        } else {
+          try { localStorage.removeItem("tarsashaz_remember_me"); } catch {}
+        }
+
+        const sessionData = await hydrateFirestoreSession(firebaseUser);
+        if (!sessionData || !sessionData.currentUser) {
+          try { await signOut(auth); } catch {}
+          return {
+            success: false,
+            error: isEn
+              ? "Your account is not linked to an active condominium profile. Please contact your representative."
+              : "Ez a fiók nincs hozzárendelve aktív társasházi profilhoz. Kérjük, vedd fel a kapcsolatot a közös képviselettel!"
+          };
+        }
+
+        if (typeof onFirestoreSessionHydrated === 'function') {
+          onFirestoreSessionHydrated(sessionData);
+        }
+        return { success: true };
+      } catch (fsErr) {
+        console.warn("Firestore post-login hydration error:", fsErr.message);
+        try { await signOut(auth); } catch {}
+        return {
+          success: false,
+          error: isEn
+            ? "Could not load your condominium profile from Cloud Firestore. Please try again."
+            : "Nem sikerült betölteni a társasházi profilt a Cloud Firestore-ból. Kérjük, próbáld újra!"
+        };
+      }
     }
 
     // 2. Pull fresh cloud state immediately after Firebase Auth succeeds
@@ -250,12 +291,14 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     const userCopy = stripSensitiveUserFields(JSON.parse(JSON.stringify(user)));
     const targetBuildingId = userCopy.buildingId || state.currentBuildingId || state.buildings?.[0]?.id || null;
 
-    try {
-      if (localStorage.getItem("tarsashaz_remember_me") === "true") {
-        localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(userCopy));
-      }
-      sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(userCopy));
-    } catch (e) {}
+    if (!IS_FIRESTORE_MODE) {
+      try {
+        if (localStorage.getItem("tarsashaz_remember_me") === "true") {
+          localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(userCopy));
+        }
+        sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(userCopy));
+      } catch (e) {}
+    }
 
     persistState(s => {
       const curB = (s.buildings || []).find(b => b.id === targetBuildingId) || s.buildings?.[0];

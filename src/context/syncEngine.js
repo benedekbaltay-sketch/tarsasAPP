@@ -7,6 +7,8 @@ import {
   DEFAULT_REP_PROFILE,
   DEFAULT_GLOBAL_SETTINGS
 } from '../constants/defaultData';
+import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
+import { purgeSensitiveLocalStorage } from '../services/firestoreAdapter';
 import { recalculateFlatBalances } from '../utils/finances';
 
 export function stripSensitiveUserFields(user) {
@@ -355,6 +357,23 @@ export function loadInitialState() {
     isGridEditMode: false,
     impersonatedFrom: null
   };
+
+  // In Cloud Firestore mode: NEVER cache or load financial/PII state from localStorage.
+  // Firebase Auth manages session persistence; React hydrates scoped data directly from Firestore.
+  if (IS_FIRESTORE_MODE) {
+    purgeSensitiveLocalStorage();
+    try {
+      const savedLang = localStorage.getItem('tarsashaz_lang');
+      if (savedLang === 'en' || savedLang === 'hu') {
+        defaultState.currentLang = savedLang;
+      }
+      const soundPref = localStorage.getItem('tarsashaz_sound_effects');
+      if (soundPref === 'false') {
+        defaultState.globalSettings.soundEffectsEnabled = false;
+      }
+    } catch (e) {}
+    return defaultState;
+  }
 
   try {
     const raw = localStorage.getItem("tarsashaz_state");

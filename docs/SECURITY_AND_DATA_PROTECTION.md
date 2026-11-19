@@ -96,18 +96,26 @@ All code-level security controls from the full 21-finding cybersecurity audit (`
 7. **Remaining Role & Client Hygiene Fixes (`ConfirmModals.jsx`, `src/main.jsx` — H-1 / L-3)**:
    - Added `'superadmin'` support to all confirmation modals in `ConfirmModals.jsx`.
    - Hardened root `ErrorBoundary` in `src/main.jsx` to display a clean bilingual generic message in production (hiding raw internal `error.message`).
+8. **D-1 Cloud Firestore Runtime Adapter & Zero-`localStorage` Financial Cache (`src/services/firestoreAdapter.js`, `src/services/firestoreService.js`, `src/context/*`, `src/utils/finances.js`)**:
+   - Wired full `IS_FIRESTORE_MODE` (`VITE_DATA_BACKEND=firestore`) runtime path across `AppContext.jsx`, `authActions.js`, `accountingActions.js`, `buildingActions.js`, `loanActions.js`, `calendarActions.js`, and `syncEngine.js`.
+   - In Firestore mode, **zero PII or financial records are ever stored in `localStorage`** (`purgeSensitiveLocalStorage()` removes legacy `tarsashaz_state`, `tarsashaz_permanent_vault`, and `tarsashaz_logged_in_user`; only UI preferences such as `tarsashaz_lang` remain).
+   - All financial writes route exclusively through Option A atomic Cloud Functions (`mutateTransaction`, `calibrateBuildingBalances`, `mutateLoan`, `provisionBuilding`, `manageUnitLifecycle`); all document/attachment binaries upload to Cloud Storage (`buildings/{bId}/...`).
+   - Authoritative server-computed unit balances, building KK/FA reserves, and GDPR-safe `monthlySummaries` drive UI calculations in `src/utils/finances.js` so Regular Owners see 0-Ft exact building metrics without accessing other units' payments.
+   - Upgraded `functions/` (`firebase-admin@^14.5.1`, `firebase-functions@^7.4.0`) -> **both root (`npm audit`) and `functions/` (`npm --prefix functions audit`) report 0 vulnerabilities**.
+   - Verified with `npm run test:adapter` (4/4 passing), `npm run test:security` (5/5), `npm run test:atomic` (6/6), and `npm run test:rules` (5/5).
 
 ---
 
 ## 5. Remaining Live Cloud / Operational Steps (Require Explicit User Approval — Rule 3)
 
-1. **Frontend Firestore Runtime Cutover (`VITE_DATA_BACKEND=firestore`)**: Wire `src/services/firestoreService.js` adapter into `AppContext.jsx` / action hooks behind `IS_FIRESTORE_MODE` and execute the scheduled 10-minute maintenance window migration (freeze RTDB -> backup -> deploy rules/indexes/functions -> migrate -> 0-Ft parity verification -> flip hosting -> smoke test).
-2. **Firebase Console & Identity Platform Hardening**:
-   - Disable open public user registration / Email Enumeration Protection ON in Firebase Auth.
+1. **Firebase Console & Identity Platform Hardening (D-2)**:
+   - Activate Blaze plan & Cloud Firestore / Storage in EU region (`eur3` / `europe-west1`).
+   - Disable open public user registration (`Enable create (sign up)`) & enable Email Enumeration Protection in Firebase Auth.
    - Enforce TOTP MFA for `admin` and `superadmin` accounts.
    - Enable Firebase App Check (reCAPTCHA Enterprise) and flip `enforceAppCheck: true` on Cloud Functions.
-   - Rotate live pilot admin/resident passwords after migration and remove legacy RTDB `condo_state` once cutover is verified.
-3. **Production OTP Bank mTLS Hosting**:
+2. **Scheduled 10-Minute Live Cutover (D-3)**:
+   - Freeze legacy RTDB writes -> fresh backup -> deploy Firestore/Storage rules, indexes & Cloud Functions -> run live migration -> pass 0-Ft parity gate -> deploy Hosting with `VITE_DATA_BACKEND=firestore` -> smoke test -> rotate pilot passwords -> lock/archive legacy RTDB `condo_state`.
+3. **Production OTP Bank mTLS Hosting (D-4)**:
    - Replace local self-signed test keypair with CA-signed mTLS certificate stored in Google Cloud Secret Manager.
    - Deploy `server/` to Google Cloud Run behind a Cloud NAT static egress IP (whitelisted with OTP Bank) with `FIREBASE_AUTH_ENABLED=true` and `NODE_ENV=production`.
 

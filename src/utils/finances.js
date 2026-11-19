@@ -533,6 +533,19 @@ export function recalculateFlatBalances(state) {
   const customAccounts = currentBuilding?.customBankAccounts || [];
 
   state.flats.forEach(flat => {
+    // In Cloud Firestore mode, unit balances are computed atomically on the server (0-Ft authoritative).
+    // Preserve them directly so paginated or GDPR-scoped client lists never cause drift!
+    if (flat && flat.firestoreBalances) {
+      flat.balance = Math.round(Number(flat.firestoreBalances.KK) || 0);
+      flat.renovationBalance = Math.round(Number(flat.firestoreBalances.FA) || 0);
+      flat.totalRequired = Math.round(Number(flat.firestoreBalances.totalRequiredKK) || 0);
+      flat.totalPaid = Math.round(Number(flat.firestoreBalances.totalPaidKK) || 0);
+      flat.renovationTotalRequired = Math.round(Number(flat.firestoreBalances.totalRequiredFA) || 0);
+      flat.renovationTotalPaid = Math.round(Number(flat.firestoreBalances.totalPaidFA) || 0);
+      flat.customBalances = { ...(flat.firestoreBalances.custom || {}) };
+      return;
+    }
+
     // 1. Account A: Közös Költség
     const timelineA = getFlatLedgerTimeline(flat.flatNum, "Közös Költség", state);
     if (timelineA.length > 0) {
@@ -584,6 +597,10 @@ export function getBuildingAccountReserve(accountNameOrId, state) {
   const acc = (currentBuilding?.customBankAccounts || []).find(a => a.name === accountNameOrId || a.id === accountNameOrId);
   if (!acc) return 0;
 
+  if (currentBuilding?.firestoreBalances?.custom && typeof currentBuilding.firestoreBalances.custom[acc.id] === 'number') {
+    return currentBuilding.firestoreBalances.custom[acc.id];
+  }
+
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
 
   const totalPayments = (state.transactions || [])
@@ -599,6 +616,11 @@ export function getBuildingAccountReserve(accountNameOrId, state) {
 
 export function getBuildingReserve(state) {
   if (!state) return 0;
+  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  if (currentBuilding?.firestoreBalances && typeof currentBuilding.firestoreBalances.KK === 'number') {
+    return currentBuilding.firestoreBalances.KK;
+  }
+
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
   const totalPayments = (state.transactions || [])
     .filter(tx => tx.status === "Verified" && (tx.targetAccount === "Közös Költség" || (!tx.targetAccount && tx.targetAccount !== "Felújítási Alap")) && tx.includeInBalance !== false && tx.type !== "Correction" && isBankTx(tx))
@@ -613,6 +635,11 @@ export function getBuildingReserve(state) {
 
 export function getBuildingRenovationFund(state) {
   if (!state) return 0;
+  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  if (currentBuilding?.firestoreBalances && typeof currentBuilding.firestoreBalances.FA === 'number') {
+    return currentBuilding.firestoreBalances.FA;
+  }
+
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
   const totalRenovationPayments = (state.transactions || [])
     .filter(tx => tx.status === "Verified" && tx.targetAccount === "Felújítási Alap" && tx.includeInBalance !== false && tx.type !== "Correction" && isBankTx(tx))
@@ -628,6 +655,18 @@ export function getBuildingRenovationFund(state) {
 export function getBuildingReserveAsOf(cutoffDateStr, state) {
   if (!state) return 0;
   const cleanCutoff = (cutoffDateStr || '').replace(/\./g, '-').trim();
+  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  if (currentBuilding?.firestoreBalances && currentBuilding?.firestoreMonthlySummaries && cleanCutoff.length >= 7) {
+    const cutoffYm = cleanCutoff.slice(0, 7);
+    let total = Number(currentBuilding.initialReserves?.KK ?? currentBuilding.buildingInitialReserveCommon) || 0;
+    for (const ms of Object.values(currentBuilding.firestoreMonthlySummaries)) {
+      if (ms?.yearMonth && ms.yearMonth <= cutoffYm) {
+        total += (Number(ms.kkInflow) || 0) - (Number(ms.kkOutflow) || 0);
+      }
+    }
+    return Math.round(total);
+  }
+
   const cleanDate = (d) => (d || '').replace(/\./g, '-').trim();
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
 
@@ -645,6 +684,18 @@ export function getBuildingReserveAsOf(cutoffDateStr, state) {
 export function getBuildingRenovationFundAsOf(cutoffDateStr, state) {
   if (!state) return 0;
   const cleanCutoff = (cutoffDateStr || '').replace(/\./g, '-').trim();
+  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  if (currentBuilding?.firestoreBalances && currentBuilding?.firestoreMonthlySummaries && cleanCutoff.length >= 7) {
+    const cutoffYm = cleanCutoff.slice(0, 7);
+    let total = Number(currentBuilding.initialReserves?.FA ?? currentBuilding.buildingInitialReserveRenovation) || 0;
+    for (const ms of Object.values(currentBuilding.firestoreMonthlySummaries)) {
+      if (ms?.yearMonth && ms.yearMonth <= cutoffYm) {
+        total += (Number(ms.faInflow) || 0) - (Number(ms.faOutflow) || 0);
+      }
+    }
+    return Math.round(total);
+  }
+
   const cleanDate = (d) => (d || '').replace(/\./g, '-').trim();
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
 
@@ -666,6 +717,18 @@ export function getMonthlyStats(year, month, state) {
   const curMonth = month || (now.getMonth() + 1);
   const pad = (n) => n.toString().padStart(2, '0');
   const monthStr = `${curYear}-${pad(curMonth)}`;
+
+  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  if (currentBuilding?.firestoreMonthlySummaries && Object.keys(currentBuilding.firestoreMonthlySummaries).length > 0) {
+    const ms = currentBuilding.firestoreMonthlySummaries[monthStr];
+    return {
+      inflow: Math.round(Number(ms?.inflow) || 0),
+      outflow: Math.round(Number(ms?.outflow) || 0),
+      margin: Math.round(Number(ms?.margin ?? ((Number(ms?.inflow) || 0) - (Number(ms?.outflow) || 0))) || 0),
+      year: curYear,
+      month: curMonth,
+    };
+  }
   
   const isBankTx = tx => tx && tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
 

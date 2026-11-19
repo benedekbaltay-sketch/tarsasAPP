@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { translations } from '../constants/translations';
-import { getFirebaseInstance } from '../constants/firebaseConfig';
+import { getFirebaseInstance, IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
 import { ref, onValue, set, get } from 'firebase/database';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { recalculateFlatBalances } from '../utils/finances';
 import { playNotificationSound } from '../utils/sound';
 import { RotateCcw, X } from 'lucide-react';
@@ -17,6 +17,18 @@ import {
   stripSensitiveBuildingFields,
   createCloudPayload
 } from './syncEngine';
+
+import {
+  hydrateFirestoreSession,
+  hydrateFirestoreBuilding,
+  firestoreTransactionsToUiCollections,
+  purgeSensitiveLocalStorage,
+  normalizeRoleForFirestore,
+} from '../services/firestoreAdapter';
+import {
+  fetchPaginatedTransactions,
+  updateUserPreferences,
+} from '../services/firestoreService';
 
 import { createAuthActions } from './authActions';
 import { createAccountingActions } from './accountingActions';
@@ -39,6 +51,8 @@ export function AppProvider({ children }) {
   const cloudSaveTimeoutRef = useRef(null);
   const isCloudSyncingRef = useRef(false);
   const pendingCloudSyncFnRef = useRef(null);
+  const txCursorRef = useRef(null);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
 
   const t = translations[state.currentLang] || translations.hu;
 
@@ -52,14 +66,23 @@ export function AppProvider({ children }) {
   };
 
   const toggleLanguage = () => {
+    const nextLang = state.currentLang === 'hu' ? 'en' : 'hu';
+    try { localStorage.setItem('tarsashaz_lang', nextLang); } catch {}
+    if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
+      updateUserPreferences(state.currentUser.uid, { preferredLang: nextLang }).catch(() => {});
+    }
     persistState(s => ({
       ...s,
-      currentLang: s.currentLang === 'hu' ? 'en' : 'hu'
+      currentLang: nextLang
     }), 'localOnly');
   };
 
   const setLanguage = (lang) => {
     const validLang = lang === 'en' ? 'en' : 'hu';
+    try { localStorage.setItem('tarsashaz_lang', validLang); } catch {}
+    if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
+      updateUserPreferences(state.currentUser.uid, { preferredLang: validLang }).catch(() => {});
+    }
     persistState(s => ({
       ...s,
       currentLang: validLang
@@ -68,26 +91,210 @@ export function AppProvider({ children }) {
 
   const updateRepProfile = (profileData) => {
     if (!isCurrentUserAdmin(state.currentUser, state.users)) return;
+    const nextRepProfile = { ...(state.repProfile || {}), ...profileData };
+    if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
+      updateUserPreferences(state.currentUser.uid, { repProfile: nextRepProfile }).catch((err) => {
+        console.warn('Firestore updateRepProfile error:', err.message);
+      });
+    }
     persistState(s => ({
       ...s,
-      repProfile: {
-        ...(s.repProfile || {}),
-        ...profileData
-      }
+      repProfile: nextRepProfile
     }), true);
     showToast(state.currentLang === 'en' ? "Business profile updated!" : "Vállalkozói profil sikeresen mentve!");
   };
 
   const updateGlobalSettings = (settingsData) => {
     if (!isCurrentUserAdmin(state.currentUser, state.users)) return;
+    const nextGlobalSettings = { ...(state.globalSettings || {}), ...settingsData };
+    if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
+      updateUserPreferences(state.currentUser.uid, { globalSettings: nextGlobalSettings }).catch((err) => {
+        console.warn('Firestore updateGlobalSettings error:', err.message);
+      });
+    }
     persistState(s => ({
       ...s,
-      globalSettings: {
-        ...(s.globalSettings || {}),
-        ...settingsData
-      }
+      globalSettings: nextGlobalSettings
     }), true);
     showToast(state.currentLang === 'en' ? "System preferences updated!" : "Rendszerbeállítások sikeresen mentve!");
+  };
+
+  // --- Cloud Firestore Hydration & Pagination Helpers (D-1.1) ---
+  const applyFirestoreSessionData = (sessionData) => {
+    if (!sessionData || !sessionData.currentUser) return;
+    purgeSensitiveLocalStorage();
+    txCursorRef.current = sessionData.txPagination?.cursorDoc || null;
+    setHasMoreTransactions(Boolean(sessionData.txPagination?.hasMore));
+
+    const userCopy = stripSensitiveUserFields(sessionData.currentUser);
+    const activeB = sessionData.activeBuilding || sessionData.buildings?.[0] || null;
+    const isUserAdmin = userCopy.role === 'admin' || userCopy.role === 'superadmin';
+    const isKkAdmin = userCopy.role === 'admin';
+
+    setState(prev => {
+      const next = {
+        ...prev,
+        currentLang: sessionData.preferredLang || prev.currentLang || 'hu',
+        currentUser: userCopy,
+        impersonatedFrom: null,
+        activeRoleMode: isUserAdmin ? 'kk' : 'tenant',
+        isPortfolioView: isKkAdmin && (sessionData.buildings?.length || 0) > 1 ? true : false,
+        currentBuildingId: activeB ? activeB.id : null,
+        buildings: sessionData.buildings || [],
+        users: sessionData.users || [],
+        flats: activeB?.flats || [],
+        transactions: activeB?.transactions || [],
+        expenses: activeB?.expenses || [],
+        manualDebits: activeB?.manualDebits || [],
+        documents: activeB?.documents || [],
+        docFolders: activeB?.docFolders || [],
+        loans: activeB?.loans || [],
+        infoSections: activeB?.infoSections || [],
+        calendarEvents: sessionData.calendarEvents || [],
+        buildingInitialReserveCommon: activeB?.buildingInitialReserveCommon || 0,
+        buildingInitialReserveRenovation: activeB?.buildingInitialReserveRenovation || 0,
+        repProfile: sessionData.repProfile ? { ...prev.repProfile, ...sessionData.repProfile } : prev.repProfile,
+        globalSettings: sessionData.globalSettings ? { ...prev.globalSettings, ...sessionData.globalSettings } : prev.globalSettings,
+      };
+      recalculateFlatBalances(next);
+      return next;
+    });
+    cloudInitialSyncDoneRef.current = true;
+    setIsInitialSyncDone(true);
+    setIsCloudSyncing(false);
+    setCloudSyncStatus('synced');
+    setCloudSyncError(null);
+    setLastSyncTime(new Date());
+  };
+
+  const reloadCurrentBuilding = async (targetBuildingId = null) => {
+    if (!IS_FIRESTORE_MODE) return null;
+    const { auth } = getFirebaseInstance();
+    const uid = auth?.currentUser?.uid || state.currentUser?.uid;
+    const bId = targetBuildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    if (!uid || !bId) return null;
+
+    setIsCloudSyncing(true);
+    setCloudSyncStatus('syncing');
+    try {
+      const membership = state.currentUser?.memberships?.[bId];
+      const hydrated = await hydrateFirestoreBuilding(bId, {
+        role: state.currentUser?.role || membership?.role || 'owner',
+        uid,
+        unitIds: membership?.unitIds || [],
+        accessFromDate: state.currentUser?.accessFromDate || null,
+      });
+      if (!hydrated) return null;
+
+      txCursorRef.current = hydrated.txPagination?.cursorDoc || null;
+      setHasMoreTransactions(Boolean(hydrated.txPagination?.hasMore));
+
+      setState(prev => {
+        const exists = (prev.buildings || []).some(b => b.id === bId);
+        const updatedBuildings = exists
+          ? (prev.buildings || []).map(b => (b.id === bId ? hydrated.building : b))
+          : [...(prev.buildings || []), hydrated.building];
+
+        const next = {
+          ...prev,
+          buildings: updatedBuildings,
+          currentBuildingId: bId,
+          flats: hydrated.building.flats || [],
+          transactions: hydrated.building.transactions || [],
+          expenses: hydrated.building.expenses || [],
+          manualDebits: hydrated.building.manualDebits || [],
+          documents: hydrated.building.documents || [],
+          docFolders: hydrated.building.docFolders || [],
+          loans: hydrated.building.loans || [],
+          infoSections: hydrated.building.infoSections || [],
+          calendarEvents: hydrated.calendarEvents || [],
+          users: hydrated.users.length > 0 ? hydrated.users : prev.users,
+          buildingInitialReserveCommon: hydrated.building.buildingInitialReserveCommon || 0,
+          buildingInitialReserveRenovation: hydrated.building.buildingInitialReserveRenovation || 0,
+        };
+        recalculateFlatBalances(next);
+        return next;
+      });
+      setCloudSyncStatus('synced');
+      setCloudSyncError(null);
+      setLastSyncTime(new Date());
+      return hydrated;
+    } catch (err) {
+      console.warn('Firestore reloadCurrentBuilding error:', err.message);
+      setCloudSyncStatus('error');
+      setCloudSyncError(err.message);
+      return null;
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  const hydrateAndSwitchBuilding = async (buildingId, isPortfolio = false, refreshSession = false) => {
+    if (!IS_FIRESTORE_MODE) return;
+    if (refreshSession) {
+      const { auth } = getFirebaseInstance();
+      if (auth?.currentUser) {
+        const sessionData = await hydrateFirestoreSession(auth.currentUser);
+        if (sessionData) applyFirestoreSessionData(sessionData);
+      }
+    }
+    if (buildingId) {
+      await reloadCurrentBuilding(buildingId);
+      setState(prev => ({
+        ...prev,
+        currentBuildingId: buildingId,
+        isPortfolioView: Boolean(isPortfolio),
+        currentUser: prev.currentUser ? { ...prev.currentUser, buildingId } : prev.currentUser,
+      }));
+    }
+  };
+
+  const loadMoreTransactions = async () => {
+    if (!IS_FIRESTORE_MODE || !hasMoreTransactions || !txCursorRef.current) return;
+    const bId = state.currentBuildingId || state.buildings?.[0]?.id;
+    if (!bId || !state.currentUser) return;
+    const fsRole = normalizeRoleForFirestore(state.currentUser.role);
+    const isPrivileged = fsRole === 'admin' || fsRole === 'superadmin' || fsRole === 'szvb';
+
+    try {
+      const page = await fetchPaginatedTransactions({
+        buildingId: bId,
+        role: fsRole,
+        visibility: isPrivileged ? null : 'building',
+        pageSize: 50,
+        cursorDoc: txCursorRef.current,
+      });
+      txCursorRef.current = page.nextCursor;
+      setHasMoreTransactions(Boolean(page.hasMore));
+      if (!page.items || page.items.length === 0) return;
+
+      const curB = (state.buildings || []).find(b => b.id === bId);
+      const { transactions: newTxs, expenses: newExps, manualDebits: newDebs } = firestoreTransactionsToUiCollections(
+        page.items,
+        curB?.customBankAccounts || []
+      );
+
+      setState(prev => {
+        const mergeUnique = (existing, incoming) => {
+          const seen = new Set((existing || []).map(x => x.id));
+          return [...(existing || []), ...incoming.filter(x => !seen.has(x.id))];
+        };
+        const mergedTxs = mergeUnique(prev.transactions, newTxs);
+        const mergedExps = mergeUnique(prev.expenses, newExps);
+        const mergedDebs = mergeUnique(prev.manualDebits, newDebs);
+        return {
+          ...prev,
+          transactions: mergedTxs,
+          expenses: mergedExps,
+          manualDebits: mergedDebs,
+          buildings: (prev.buildings || []).map(b =>
+            b.id === bId ? { ...b, transactions: mergedTxs, expenses: mergedExps, manualDebits: mergedDebs } : b
+          ),
+        };
+      });
+    } catch (err) {
+      console.warn('Firestore loadMoreTransactions error:', err.message);
+    }
   };
 
   // Helper to verify active Firebase Auth session (relying strictly on Firebase SDK persistence — never storing plaintext passwords)
@@ -193,7 +400,14 @@ export function AppProvider({ children }) {
 
         recalculateFlatBalances(nextState);
 
-        // LocalStorage write - lightweight synchronous save without binaries, passwords, or banking API secrets
+        // In Cloud Firestore mode: NEVER persist financial or PII state to localStorage or legacy RTDB.
+        if (IS_FIRESTORE_MODE) {
+          purgeSensitiveLocalStorage();
+          resolve(nextState);
+          return nextState;
+        }
+
+        // Legacy RTDB LocalStorage write - lightweight synchronous save without binaries, passwords, or banking API secrets
         if (nextState.currentUser) {
           try {
             const cleanStateForLocal = {
@@ -275,8 +489,83 @@ export function AppProvider({ children }) {
     });
   };
 
-  // Setup Realtime Database synchronization listener
+  // Setup Cloud Firestore (D-1.1) OR Legacy Realtime Database synchronization listener
   useEffect(() => {
+    // === MODE A: CLOUD FIRESTORE (Zero RTDB, Zero localStorage PII) ===
+    if (IS_FIRESTORE_MODE) {
+      purgeSensitiveLocalStorage();
+      const { auth } = getFirebaseInstance();
+      if (!auth) {
+        cloudInitialSyncDoneRef.current = true;
+        setIsInitialSyncDone(true);
+        setIsCloudSyncing(false);
+        return;
+      }
+
+      let isCancelled = false;
+      const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (isCancelled) return;
+        if (firebaseUser) {
+          setIsCloudSyncing(true);
+          setCloudSyncStatus('syncing');
+          try {
+            const sessionData = await hydrateFirestoreSession(firebaseUser);
+            if (isCancelled) return;
+            if (sessionData && sessionData.currentUser) {
+              applyFirestoreSessionData(sessionData);
+            } else {
+              // Fail closed if user has no active Firestore membership
+              try { await signOut(auth); } catch {}
+              cloudInitialSyncDoneRef.current = true;
+              setIsInitialSyncDone(true);
+              setIsCloudSyncing(false);
+            }
+          } catch (err) {
+            if (isCancelled) return;
+            console.warn("Firestore auth hydration warning:", err.message);
+            setCloudSyncStatus('error');
+            setCloudSyncError(err.message);
+            cloudInitialSyncDoneRef.current = true;
+            setIsInitialSyncDone(true);
+            setIsCloudSyncing(false);
+          }
+        } else {
+          purgeSensitiveLocalStorage();
+          try { sessionStorage.removeItem("tarsashaz_session_user"); } catch {}
+          txCursorRef.current = null;
+          setHasMoreTransactions(false);
+          setState(prev => prev.currentUser ? {
+            ...prev,
+            currentUser: null,
+            impersonatedFrom: null,
+            activeRoleMode: null,
+            isPortfolioView: false,
+            currentBuildingId: null,
+            buildings: [],
+            users: [],
+            flats: [],
+            transactions: [],
+            expenses: [],
+            manualDebits: [],
+            documents: [],
+            docFolders: [],
+            loans: [],
+            infoSections: [],
+            calendarEvents: []
+          } : prev);
+          cloudInitialSyncDoneRef.current = true;
+          setIsInitialSyncDone(true);
+          setIsCloudSyncing(false);
+        }
+      });
+
+      return () => {
+        isCancelled = true;
+        unsubscribeAuth();
+      };
+    }
+
+    // === MODE B: LEGACY RTDB ===
     const { rtdb, auth } = getFirebaseInstance();
     if (!rtdb) {
       cloudInitialSyncDoneRef.current = true;
@@ -566,6 +855,23 @@ export function AppProvider({ children }) {
 
   // Manual re-synchronization with cloud on demand
   const refreshFromCloud = async (showNotification = true) => {
+    if (IS_FIRESTORE_MODE) {
+      const res = await reloadCurrentBuilding();
+      if (showNotification) {
+        if (res) {
+          showToast(state.currentLang === 'en' ? "Data refreshed from cloud!" : "Adatok sikeresen frissítve a felhőből!");
+        } else {
+          showToast(
+            state.currentLang === 'en'
+              ? "Failed to refresh from cloud. Please log in again!"
+              : "Nem sikerült a felhőből frissíteni. Kérjük, lépj ki és jelentkezz be újra!",
+            "error"
+          );
+        }
+      }
+      return;
+    }
+
     const { rtdb, auth } = getFirebaseInstance();
     if (!rtdb) return;
     setIsCloudSyncing(true);
@@ -647,9 +953,13 @@ export function AppProvider({ children }) {
     }
   };
 
-  // Force authoritative local state upload to cloud (admin triggered or sync-recovery)
+  // Force authoritative local state upload to cloud (legacy RTDB only; in Firestore mode refreshes server-authoritative data)
   const forceSyncLocalToCloud = async (showNotification = true) => {
     if (!isCurrentUserAdmin(state.currentUser, state.users)) return false;
+    if (IS_FIRESTORE_MODE) {
+      await refreshFromCloud(showNotification);
+      return true;
+    }
     const { rtdb, auth } = getFirebaseInstance();
     if (!rtdb) return false;
     setIsCloudSyncing(true);
@@ -711,10 +1021,42 @@ export function AppProvider({ children }) {
   };
 
   // Initialize modular domain actions
-  const authActions = createAuthActions({ state, setState, persistState, showToast, t, ensureFirebaseAuth, getUserFlats });
-  const accountingActions = createAccountingActions({ state, persistState, showToast, t, copiedTx, setCopiedTx, ensureFirebaseAuth });
-  const buildingActions = createBuildingActions({ state, setState, persistState, showToast, t });
-  const loanActions = createLoanActions({ state, persistState, showToast, t });
+  const authActions = createAuthActions({
+    state,
+    setState,
+    persistState,
+    showToast,
+    t,
+    ensureFirebaseAuth,
+    getUserFlats,
+    onFirestoreSessionHydrated: applyFirestoreSessionData,
+  });
+  const accountingActions = createAccountingActions({
+    state,
+    persistState,
+    showToast,
+    t,
+    copiedTx,
+    setCopiedTx,
+    ensureFirebaseAuth,
+    reloadCurrentBuilding,
+  });
+  const buildingActions = createBuildingActions({
+    state,
+    setState,
+    persistState,
+    showToast,
+    t,
+    reloadCurrentBuilding,
+    hydrateAndSwitchBuilding,
+  });
+  const loanActions = createLoanActions({
+    state,
+    persistState,
+    showToast,
+    t,
+    reloadCurrentBuilding,
+  });
   const calendarActions = createCalendarActions({ state, persistState, showToast, t });
 
   // Helper to check if current user is admin/KK authorized
@@ -749,19 +1091,23 @@ export function AppProvider({ children }) {
     const updatedUser = stripSensitiveUserFields({
       ...adminUser,
       id: adminUser.id || "admin",
+      uid: state.currentUser?.uid || adminUser.uid,
       name: adminUser.name || state.currentUser?.name || (isEn ? "Common Representative" : "Közös Képviselő"),
       email: userEmail || adminUser.email || "",
       role: adminUser.role === 'superadmin' ? 'superadmin' : 'admin',
       flatNum: "0",
       buildingId: targetBuildingId,
-      isAdminUser: true
+      isAdminUser: true,
+      memberships: state.currentUser?.memberships,
     });
 
-    try {
-      localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
-      localStorage.setItem("tarsashaz_role_mode", "kk");
-      localStorage.setItem("tarsashaz_is_portfolio", buildingId ? "false" : "true");
-    } catch (e) {}
+    if (!IS_FIRESTORE_MODE) {
+      try {
+        localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+        localStorage.setItem("tarsashaz_role_mode", "kk");
+        localStorage.setItem("tarsashaz_is_portfolio", buildingId ? "false" : "true");
+      } catch (e) {}
+    }
 
     persistState(s => ({
       ...s,
@@ -779,6 +1125,10 @@ export function AppProvider({ children }) {
       buildingInitialReserveCommon: curB ? curB.buildingInitialReserveCommon : 0,
       buildingInitialReserveRenovation: curB ? curB.buildingInitialReserveRenovation : 0
     }), 'localOnly');
+
+    if (IS_FIRESTORE_MODE && targetBuildingId && !curB?.hydrated) {
+      reloadCurrentBuilding(targetBuildingId);
+    }
 
     showToast(isEn ? "Switched to Common Representative Portfolio" : "Átváltva: Közös Képviseleti Portfólió");
   };
@@ -802,19 +1152,24 @@ export function AppProvider({ children }) {
 
     const updatedUser = stripSensitiveUserFields({
       id: `${targetBuildingId}-${chosenFlat.flatNum}`,
+      uid: state.currentUser?.uid,
       name: chosenFlat.ownerName || state.currentUser?.name,
       email: state.currentUser?.email || chosenFlat.email,
       role: "Owner",
       flatNum: chosenFlat.flatNum,
+      unitId: chosenFlat.unitId || chosenFlat.id,
       buildingId: targetBuildingId,
-      isAdminUser: false
+      isAdminUser: state.currentUser?.isAdminUser === true,
+      memberships: state.currentUser?.memberships,
     });
 
-    try {
-      localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
-      localStorage.setItem("tarsashaz_role_mode", "tenant");
-      localStorage.setItem("tarsashaz_is_portfolio", "false");
-    } catch (e) {}
+    if (!IS_FIRESTORE_MODE) {
+      try {
+        localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+        localStorage.setItem("tarsashaz_role_mode", "tenant");
+        localStorage.setItem("tarsashaz_is_portfolio", "false");
+      } catch (e) {}
+    }
 
     persistState(s => ({
       ...s,
@@ -833,14 +1188,20 @@ export function AppProvider({ children }) {
       buildingInitialReserveRenovation: curB ? curB.buildingInitialReserveRenovation : 0
     }), 'localOnly');
 
+    if (IS_FIRESTORE_MODE && targetBuildingId && !curB?.hydrated) {
+      reloadCurrentBuilding(targetBuildingId);
+    }
+
     showToast(isEn ? `Switched to Flat ${chosenFlat.flatNum}` : `Átváltva: ${chosenFlat.flatNum}. lakás`);
   };
 
   // Open Portfolio view ("Társasházaim")
   const openPortfolio = () => {
-    try {
-      localStorage.setItem("tarsashaz_is_portfolio", "true");
-    } catch (e) {}
+    if (!IS_FIRESTORE_MODE) {
+      try {
+        localStorage.setItem("tarsashaz_is_portfolio", "true");
+      } catch (e) {}
+    }
     persistState(s => {
       let updatedBuildings = s.buildings || [];
       if (s.buildings && s.currentBuildingId) {
@@ -874,9 +1235,15 @@ export function AppProvider({ children }) {
 
   // Open specific building in Admin view
   const openBuildingAdmin = (buildingId) => {
-    try {
-      localStorage.setItem("tarsashaz_is_portfolio", "false");
-    } catch (e) {}
+    if (!IS_FIRESTORE_MODE) {
+      try {
+        localStorage.setItem("tarsashaz_is_portfolio", "false");
+      } catch (e) {}
+    }
+    if (IS_FIRESTORE_MODE && buildingId) {
+      hydrateAndSwitchBuilding(buildingId, false);
+      return;
+    }
     persistState(s => {
       let updatedBuildings = s.buildings || [];
       if (s.buildings && s.currentBuildingId && s.currentBuildingId !== buildingId) {
@@ -922,12 +1289,16 @@ export function AppProvider({ children }) {
   const value = {
     state,
     t,
+    isFirestoreMode: IS_FIRESTORE_MODE,
     isInitialSyncDone,
     isCloudSyncing,
     cloudSyncStatus,
     cloudSyncError,
     lastSyncTime,
     refreshFromCloud,
+    reloadCurrentBuilding,
+    loadMoreTransactions,
+    hasMoreTransactions,
     forceSyncLocalToCloud,
     showToast,
     toggleLanguage,

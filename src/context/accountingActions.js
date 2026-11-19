@@ -1,7 +1,19 @@
 import { getPermanentVault, savePermanentVault } from './syncEngine';
 import { getFlatLedgerTimeline } from '../utils/finances';
+import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
+import {
+  callMutateTransaction,
+  callCalibrateBuildingBalances,
+  updateUnitMasterData,
+} from '../services/firestoreService';
+import {
+  uiItemToFirestoreTxPayload,
+  uploadAttachmentsToStorage,
+  uiFlatMasterToFirestoreUnitUpdate,
+  slugifyUnitId,
+} from '../services/firestoreAdapter';
 
-export function createAccountingActions({ state, persistState, showToast, t, copiedTx, setCopiedTx, ensureFirebaseAuth }) {
+export function createAccountingActions({ state, persistState, showToast, t, copiedTx, setCopiedTx, ensureFirebaseAuth, reloadCurrentBuilding }) {
   const isAdmin = () => Boolean(
     state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'superadmin')
   );
@@ -15,9 +27,69 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
     return false;
   };
 
+  const getActiveBuildingContext = () => {
+    const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+    const building = (state.buildings || []).find(b => b.id === buildingId) || state.buildings?.[0];
+    return {
+      buildingId,
+      flats: state.flats || building?.flats || [],
+      customAccounts: building?.customBankAccounts || [],
+    };
+  };
+
+  // Option A Firestore atomic helper: uploads any Base64 attachments to Cloud Storage, then executes mutateTransaction
+  const executeFirestoreTxMutation = async ({ action, uiItem, kindHint, txId = null }) => {
+    const { buildingId, flats, customAccounts } = getActiveBuildingContext();
+    if (!buildingId) throw new Error('No active building selected.');
+
+    let payload = null;
+    if (action !== 'delete') {
+      const prepared = uiItemToFirestoreTxPayload(uiItem, kindHint, { flats, customAccounts });
+      const targetId = txId || prepared.id || `tx-${Date.now()}`;
+      if (Array.isArray(prepared.attachments) && prepared.attachments.length > 0) {
+        prepared.attachments = await uploadAttachmentsToStorage(
+          buildingId,
+          `attachments/${targetId}`,
+          prepared.attachments
+        );
+      }
+      payload = prepared;
+    }
+
+    const result = await callMutateTransaction({
+      action,
+      buildingId,
+      txId: txId || payload?.id || null,
+      payload,
+    });
+
+    if (typeof reloadCurrentBuilding === 'function') {
+      await reloadCurrentBuilding(buildingId);
+    }
+    return result;
+  };
+
   // Add Transaction
   const addTransaction = (newTx) => {
     if (!requireAdmin()) return;
+    if (IS_FIRESTORE_MODE) {
+      executeFirestoreTxMutation({ action: 'create', uiItem: newTx, kindHint: 'payment' })
+        .then((res) => {
+          const createdId = res?.txId || newTx?.id;
+          const handleUndo = () => {
+            executeFirestoreTxMutation({ action: 'delete', txId: createdId })
+              .then(() => showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info"))
+              .catch(() => showToast(state.currentLang === 'en' ? "Undo failed." : "Visszavonás sikertelen.", "error"));
+          };
+          showToast(state.currentLang === 'en' ? "Payment saved!" : "Befizetés mentve!", 'success', handleUndo);
+        })
+        .catch((err) => {
+          console.warn('Firestore addTransaction error:', err.message);
+          showToast(state.currentLang === 'en' ? "Failed to save payment." : "Nem sikerült rögzíteni a befizetést.", "error");
+        });
+      return;
+    }
+
     const txId = newTx.id;
     newTx.lastUpdated = newTx.lastUpdated || Date.now();
     persistState(s => ({
@@ -37,6 +109,24 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   // Add Expense
   const addExpense = (newExpense) => {
     if (!requireAdmin()) return;
+    if (IS_FIRESTORE_MODE) {
+      executeFirestoreTxMutation({ action: 'create', uiItem: newExpense, kindHint: 'expense' })
+        .then((res) => {
+          const createdId = res?.txId || newExpense?.id;
+          const handleUndo = () => {
+            executeFirestoreTxMutation({ action: 'delete', txId: createdId })
+              .then(() => showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info"))
+              .catch(() => showToast(state.currentLang === 'en' ? "Undo failed." : "Visszavonás sikertelen.", "error"));
+          };
+          showToast(state.currentLang === 'en' ? "Expense saved!" : "Kiadás mentve!", 'success', handleUndo);
+        })
+        .catch((err) => {
+          console.warn('Firestore addExpense error:', err.message);
+          showToast(state.currentLang === 'en' ? "Failed to save expense." : "Nem sikerült rögzíteni a kiadást.", "error");
+        });
+      return;
+    }
+
     const expId = newExpense.id;
     newExpense.lastUpdated = newExpense.lastUpdated || Date.now();
     persistState(s => ({
@@ -48,7 +138,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
         ...s,
         expenses: (s.expenses || []).filter(e => e.id !== expId)
       }), true);
-      showToast(state.currentLang === 'en' ? "Recording undone!" : "Kiadás mentve!", "info");
+      showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info");
     };
     showToast(state.currentLang === 'en' ? "Expense saved!" : "Kiadás mentve!", 'success', handleUndo);
   };
@@ -56,6 +146,24 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   // Add Manual Debit
   const addManualDebit = (newDebit) => {
     if (!requireAdmin()) return;
+    if (IS_FIRESTORE_MODE) {
+      executeFirestoreTxMutation({ action: 'create', uiItem: newDebit, kindHint: 'debit' })
+        .then((res) => {
+          const createdId = res?.txId || newDebit?.id;
+          const handleUndo = () => {
+            executeFirestoreTxMutation({ action: 'delete', txId: createdId })
+              .then(() => showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info"))
+              .catch(() => showToast(state.currentLang === 'en' ? "Undo failed." : "Visszavonás sikertelen.", "error"));
+          };
+          showToast(state.currentLang === 'en' ? "Debit item saved!" : "Terhelés rögzítve!", 'success', handleUndo);
+        })
+        .catch((err) => {
+          console.warn('Firestore addManualDebit error:', err.message);
+          showToast(state.currentLang === 'en' ? "Failed to save debit." : "Nem sikerült rögzíteni a terhelést.", "error");
+        });
+      return;
+    }
+
     const debId = newDebit.id;
     newDebit.lastUpdated = newDebit.lastUpdated || Date.now();
     persistState(s => ({
@@ -75,6 +183,51 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   // Add Multiple Items (Batch / Universal)
   const addMultipleItems = ({ transactions = [], expenses = [], debits = [] }) => {
     if (!requireAdmin()) return;
+    if (IS_FIRESTORE_MODE) {
+      const { buildingId, flats, customAccounts } = getActiveBuildingContext();
+      if (!buildingId) return;
+      (async () => {
+        const createdIds = [];
+        try {
+          const allJobs = [
+            ...(transactions || []).map(item => ({ item, kindHint: 'payment' })),
+            ...(expenses || []).map(item => ({ item, kindHint: 'expense' })),
+            ...(debits || []).map(item => ({ item, kindHint: 'debit' })),
+          ];
+          for (const job of allJobs) {
+            if (!job.item) continue;
+            const prepared = uiItemToFirestoreTxPayload(job.item, job.kindHint, { flats, customAccounts });
+            const targetId = prepared.id || `tx-${Date.now()}`;
+            if (Array.isArray(prepared.attachments) && prepared.attachments.length > 0) {
+              prepared.attachments = await uploadAttachmentsToStorage(
+                buildingId,
+                `attachments/${targetId}`,
+                prepared.attachments
+              );
+            }
+            const res = await callMutateTransaction({
+              action: 'create',
+              buildingId,
+              txId: prepared.id || null,
+              payload: prepared,
+            });
+            if (res?.txId && !res.duplicate) createdIds.push(res.txId);
+          }
+          if (typeof reloadCurrentBuilding === 'function') {
+            await reloadCurrentBuilding(buildingId);
+          }
+          const totalCount = allJobs.length;
+          const msg = state.currentLang === 'en'
+            ? (totalCount > 1 ? `${totalCount} items saved successfully!` : "Item saved successfully!")
+            : (totalCount > 1 ? `${totalCount} tétel sikeresen rögzítve!` : "Tétel sikeresen rögzítve!");
+          showToast(msg, 'success');
+        } catch (err) {
+          console.warn('Firestore addMultipleItems error:', err.message);
+          showToast(state.currentLang === 'en' ? "Failed to save items." : "Nem sikerült rögzíteni a tételeket.", "error");
+        }
+      })();
+      return;
+    }
     const now = Date.now();
     transactions.forEach(t => { if (t) t.lastUpdated = t.lastUpdated || now; });
     expenses.forEach(e => { if (e) e.lastUpdated = e.lastUpdated || now; });
@@ -253,6 +406,37 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   // Edit Transaction / Expense / ManualDebit / Recurring Prescription
   const editItem = (id, type, updatedFields, flatNumHint = null) => {
     if (!requireAdmin()) return;
+    if (IS_FIRESTORE_MODE) {
+      const existingExp = (state.expenses || []).find(e => e.id === id);
+      const existingDeb = (state.manualDebits || []).find(d => d.id === id);
+      const existingTx = (state.transactions || []).find(t => t.id === id);
+      const currentItem = existingExp || existingDeb || existingTx || { id, flatNum: flatNumHint };
+      const targetKindHint =
+        type === 'Expense'
+          ? 'expense'
+          : type === 'Debit'
+            ? 'debit'
+            : (existingExp ? 'expense' : (existingDeb ? 'debit' : 'payment'));
+      const mergedItem = {
+        ...currentItem,
+        ...updatedFields,
+        flatNum: updatedFields.flatNum !== undefined ? updatedFields.flatNum : (currentItem.flatNum || flatNumHint),
+      };
+      const isRecurringVirtual = id && typeof id === 'string' && id.startsWith('d-') && !existingDeb && !existingTx && !existingExp;
+      executeFirestoreTxMutation({
+        action: isRecurringVirtual ? 'create' : 'update',
+        uiItem: isRecurringVirtual ? { ...mergedItem, id: `deb-${Date.now()}` } : mergedItem,
+        kindHint: targetKindHint,
+        txId: isRecurringVirtual ? null : id,
+      })
+        .then(() => showToast(state.currentLang === 'en' ? "Item updated!" : "Tétel módosítva!"))
+        .catch((err) => {
+          console.warn('Firestore editItem error:', err.message);
+          showToast(state.currentLang === 'en' ? "Failed to update item." : "Nem sikerült módosítani a tételt.", "error");
+        });
+      return;
+    }
+
     persistState(s => {
       let updatedTransactions = s.transactions || [];
       let updatedExpenses = s.expenses || [];
@@ -430,6 +614,20 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   // Delete Item (Payment, Expense, or ManualDebit / Recurring Prescription)
   const deleteItem = (id, type, flatNum = null, date = null, account = null) => {
     if (!requireAdmin()) return;
+    if (IS_FIRESTORE_MODE) {
+      if (!id) return;
+      executeFirestoreTxMutation({ action: 'delete', txId: id })
+        .then(() => {
+          const isEn = state.currentLang === 'en';
+          showToast(isEn ? "Item deleted successfully!" : "Tétel sikeresen törölve!", 'success');
+        })
+        .catch((err) => {
+          console.warn('Firestore deleteItem error:', err.message);
+          showToast(state.currentLang === 'en' ? "Failed to delete item." : "Nem sikerült törölni a tételt.", "error");
+        });
+      return;
+    }
+
     const deletedTx = (state.transactions || []).find(t => t.id === id);
     const deletedExp = (state.expenses || []).find(e => e.id === id);
     const deletedDebit = (state.manualDebits || []).find(d => d.id === id);
@@ -562,6 +760,29 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   const setGlobalBalances = async (currentCommon, currentRenovation, customBalances = {}, customBankAccountsList = null) => {
     if (!requireAdmin()) return null;
     if (ensureFirebaseAuth) await ensureFirebaseAuth();
+
+    if (IS_FIRESTORE_MODE) {
+      const { buildingId } = getActiveBuildingContext();
+      if (!buildingId) return null;
+      try {
+        await callCalibrateBuildingBalances({
+          buildingId,
+          targetKK: Math.round(Number(currentCommon) || 0),
+          targetFA: Math.round(Number(currentRenovation) || 0),
+          customTargets: customBalances || {},
+        });
+        if (typeof reloadCurrentBuilding === 'function') {
+          await reloadCurrentBuilding(buildingId);
+        }
+        showToast(t.balances_updated || (state.currentLang === 'en' ? "Account balances successfully updated!" : "Számlafőösszegek sikeresen beállítva!"));
+        return state;
+      } catch (err) {
+        console.warn('Firestore setGlobalBalances error:', err.message);
+        showToast(state.currentLang === 'en' ? "Failed to calibrate balances." : "Nem sikerült beállítani a számlafőösszegeket.", "error");
+        return null;
+      }
+    }
+
     const updatedState = await persistState(s => {
       const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
 
@@ -636,6 +857,111 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
     const curYear = now.getFullYear();
     const curMonth = (now.getMonth() + 1).toString().padStart(2, '0');
     const currentMonthStr = `${curYear}-${curMonth}-01`;
+
+    if (IS_FIRESTORE_MODE) {
+      const { buildingId, flats } = getActiveBuildingContext();
+      const targetFlat = (flats || []).find(f => f.flatNum === flatNum);
+      const unitId = targetFlat?.unitId || targetFlat?.id || slugifyUnitId(flatNum);
+      if (!buildingId || !targetFlat || !unitId) return;
+
+      (async () => {
+        try {
+          const updated = { ...targetFlat };
+          if (newMonthlyFee !== undefined && newMonthlyFee !== null && newMonthlyFee !== '' && !isNaN(Number(newMonthlyFee))) {
+            const numFee = Math.round(Number(newMonthlyFee));
+            let changesKK = [...(updated.feeChangesKK || [])];
+            let foundCurrent = false;
+            changesKK = changesKK.map(c => {
+              if (c.date >= currentMonthStr) {
+                if (c.date === currentMonthStr) foundCurrent = true;
+                return { ...c, amount: numFee };
+              }
+              return c;
+            });
+            if (!foundCurrent) changesKK.push({ amount: numFee, date: currentMonthStr });
+            changesKK.sort((a, b) => new Date(a.date) - new Date(b.date));
+            updated.feeChangesKK = changesKK;
+            updated.monthlyFee = numFee;
+          }
+          if (newRenovationFee !== undefined && newRenovationFee !== null && newRenovationFee !== '' && !isNaN(Number(newRenovationFee))) {
+            const numFee = Math.round(Number(newRenovationFee));
+            let changesFA = [...(updated.feeChangesFA || [])];
+            let foundCurrent = false;
+            changesFA = changesFA.map(c => {
+              if (c.date >= currentMonthStr) {
+                if (c.date === currentMonthStr) foundCurrent = true;
+                return { ...c, amount: numFee };
+              }
+              return c;
+            });
+            if (!foundCurrent) changesFA.push({ amount: numFee, date: currentMonthStr });
+            changesFA.sort((a, b) => new Date(a.date) - new Date(b.date));
+            updated.feeChangesFA = changesFA;
+            updated.renovationFee = numFee;
+          }
+          if (customFees && typeof customFees === 'object') {
+            const nextCustomFees = { ...(updated.customFees || {}) };
+            Object.keys(customFees).forEach(accId => {
+              const val = customFees[accId];
+              if (val !== undefined && val !== null && val !== '' && !isNaN(Number(val))) {
+                nextCustomFees[accId] = Math.round(Number(val));
+              }
+            });
+            updated.customFees = nextCustomFees;
+          }
+
+          await updateUnitMasterData(buildingId, unitId, uiFlatMasterToFirestoreUnitUpdate(updated, targetFlat));
+
+          // Route any manual balance calibration through Option A atomic correction transactions
+          const todayIso = new Date().toISOString().slice(0, 10);
+          const createCorrection = async (fund, diffHuf) => {
+            if (!diffHuf) return;
+            await callMutateTransaction({
+              action: 'create',
+              buildingId,
+              payload: {
+                kind: 'correction',
+                direction: diffHuf > 0 ? 'credit' : 'debit',
+                amountHuf: Math.abs(diffHuf),
+                date: todayIso,
+                unitId,
+                unitCode: targetFlat.flatNum,
+                fund,
+                paymentMethod: 'offset',
+                affectsBankBalance: false,
+                includeInFlatBalance: true,
+                comment: state.currentLang === 'en' ? 'Manual balance calibration' : 'Kézi egyenleg korrekció',
+              },
+            });
+          };
+
+          if (newBalance !== undefined && newBalance !== null && newBalance !== '' && !isNaN(Number(newBalance))) {
+            const diffKK = Math.round(Number(newBalance)) - Math.round(Number(targetFlat.balance) || 0);
+            if (diffKK !== 0) await createCorrection('KK', diffKK);
+          }
+          if (newRenovationBalance !== undefined && newRenovationBalance !== null && newRenovationBalance !== '' && !isNaN(Number(newRenovationBalance))) {
+            const diffFA = Math.round(Number(newRenovationBalance)) - Math.round(Number(targetFlat.renovationBalance) || 0);
+            if (diffFA !== 0) await createCorrection('FA', diffFA);
+          }
+          if (customBalances && typeof customBalances === 'object') {
+            for (const accId of Object.keys(customBalances)) {
+              const val = customBalances[accId];
+              if (val !== undefined && val !== null && val !== '' && !isNaN(Number(val))) {
+                const diffC = Math.round(Number(val)) - Math.round(Number(targetFlat.customBalances?.[accId]) || 0);
+                if (diffC !== 0) await createCorrection(accId, diffC);
+              }
+            }
+          }
+
+          if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+          showToast(state.currentLang === 'en' ? "Flat finances updated!" : "Lakás egyenlegek és előírások frissítve!");
+        } catch (err) {
+          console.warn('Firestore updateFlatFees error:', err.message);
+          showToast(state.currentLang === 'en' ? "Failed to update flat finances." : "Nem sikerült frissíteni a lakás pénzügyeit.", "error");
+        }
+      })();
+      return;
+    }
 
     persistState(s => {
       const updatedFlats = (s.flats || []).map(flat => {

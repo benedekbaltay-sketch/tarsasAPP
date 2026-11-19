@@ -148,8 +148,9 @@ npm run build
 # Preview production build locally
 npm run preview
 
-# Run automated security controls, atomic math & Firestore rules tests
+# Run automated security controls, Firestore adapter, atomic math & Firestore rules tests
 npm run test:security
+npm run test:adapter
 npm run test:atomic
 npm run test:rules
 ```

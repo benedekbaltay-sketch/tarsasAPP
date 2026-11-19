@@ -1,6 +1,8 @@
 import { getPermanentVault, savePermanentVault } from './syncEngine';
+import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
+import { callMutateLoan } from '../services/firestoreService';
 
-export function createLoanActions({ state, persistState, showToast, t }) {
+export function createLoanActions({ state, persistState, showToast, t, reloadCurrentBuilding }) {
   const requireAdmin = () => {
     if (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'superadmin')) {
       return true;
@@ -13,8 +15,8 @@ export function createLoanActions({ state, persistState, showToast, t }) {
   };
 
   // Add new Loan
-  const addLoan = (loanData) => {
-    if (!requireAdmin()) return Promise.resolve(null);
+  const addLoan = async (loanData) => {
+    if (!requireAdmin()) return null;
     const isEn = state.currentLang === 'en';
     const now = Date.now();
     const newLoan = {
@@ -53,6 +55,21 @@ export function createLoanActions({ state, persistState, showToast, t }) {
       newLoan.currentBalance = newLoan.principalAmount;
     }
 
+    if (IS_FIRESTORE_MODE) {
+      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+      if (!buildingId) return null;
+      try {
+        await callMutateLoan({ action: 'create', buildingId, loanId: newLoan.id, payload: newLoan });
+        if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+        showToast(isEn ? "Loan added successfully!" : "Hitel sikeresen rögzítve!");
+        return newLoan;
+      } catch (err) {
+        console.warn("Firestore addLoan error:", err.message);
+        showToast(isEn ? "Failed to save loan." : "Nem sikerült rögzíteni a hitelt.", "error");
+        return null;
+      }
+    }
+
     return persistState(s => {
       const curLoans = Array.isArray(s.loans) ? s.loans : [];
       return {
@@ -66,10 +83,24 @@ export function createLoanActions({ state, persistState, showToast, t }) {
   };
 
   // Update existing Loan
-  const updateLoan = (loanId, updatedData) => {
-    if (!requireAdmin()) return Promise.resolve();
+  const updateLoan = async (loanId, updatedData) => {
+    if (!requireAdmin()) return;
     const isEn = state.currentLang === 'en';
     const now = Date.now();
+
+    if (IS_FIRESTORE_MODE) {
+      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+      if (!buildingId) return;
+      try {
+        await callMutateLoan({ action: 'update', buildingId, loanId, payload: updatedData });
+        if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+        showToast(isEn ? "Loan updated successfully!" : "Hitel adatai sikeresen frissítve!");
+      } catch (err) {
+        console.warn("Firestore updateLoan error:", err.message);
+        showToast(isEn ? "Failed to update loan." : "Nem sikerült frissíteni a hitelt.", "error");
+      }
+      return;
+    }
 
     return persistState(s => {
       const curLoans = Array.isArray(s.loans) ? s.loans : [];
@@ -82,14 +113,12 @@ export function createLoanActions({ state, persistState, showToast, t }) {
           lastUpdated: now
         };
 
-        // Recalculate lump sum collected from participants if participants are updated
         if (Array.isArray(updatedData.participants)) {
           merged.lumpSumTotalCollected = updatedData.participants.reduce((sum, p) => {
             return sum + (p.paymentMethod === 'lump_sum' ? (Number(p.lumpSumAmountPaid) || 0) : 0);
           }, 0);
         }
 
-        // Check if balance reached 0 to auto switch status to 'paid_off'
         if (Number(merged.currentBalance) <= 0 && merged.status === 'active') {
           merged.status = 'paid_off';
         }
@@ -107,9 +136,24 @@ export function createLoanActions({ state, persistState, showToast, t }) {
   };
 
   // Delete Loan
-  const deleteLoan = (loanId) => {
-    if (!requireAdmin()) return Promise.resolve();
+  const deleteLoan = async (loanId) => {
+    if (!requireAdmin()) return;
     const isEn = state.currentLang === 'en';
+
+    if (IS_FIRESTORE_MODE) {
+      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+      if (!buildingId) return;
+      try {
+        await callMutateLoan({ action: 'delete', buildingId, loanId });
+        if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+        showToast(isEn ? "Loan deleted!" : "Hitel törölve!", "info");
+      } catch (err) {
+        console.warn("Firestore deleteLoan error:", err.message);
+        showToast(isEn ? "Failed to delete loan." : "Nem sikerült törölni a hitelt.", "error");
+      }
+      return;
+    }
+
     const vault = getPermanentVault();
     vault.deletedIds = vault.deletedIds || [];
     if (!vault.deletedIds.includes(loanId)) {
@@ -129,10 +173,24 @@ export function createLoanActions({ state, persistState, showToast, t }) {
   };
 
   // Record a payment towards a Loan
-  const recordLoanPayment = (loanId, paymentData) => {
-    if (!requireAdmin()) return Promise.resolve();
+  const recordLoanPayment = async (loanId, paymentData) => {
+    if (!requireAdmin()) return;
     const isEn = state.currentLang === 'en';
     const now = Date.now();
+
+    if (IS_FIRESTORE_MODE) {
+      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+      if (!buildingId) return;
+      try {
+        await callMutateLoan({ action: 'recordPayment', buildingId, loanId, paymentData });
+        if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+        showToast(isEn ? "Payment recorded successfully!" : "Törlesztés sikeresen rögzítve!");
+      } catch (err) {
+        console.warn("Firestore recordLoanPayment error:", err.message);
+        showToast(isEn ? "Failed to record payment." : "Nem sikerült rögzíteni a törlesztést.", "error");
+      }
+      return;
+    }
 
     return persistState(s => {
       const curLoans = Array.isArray(s.loans) ? s.loans : [];
@@ -160,7 +218,6 @@ export function createLoanActions({ state, persistState, showToast, t }) {
         };
 
         const updatedPayments = [newPayment, ...(loan.payments || [])];
-        // Sort payments by date descending
         updatedPayments.sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate));
 
         const isFullyPaidOff = remainingBalanceAfter <= 0;
@@ -184,10 +241,24 @@ export function createLoanActions({ state, persistState, showToast, t }) {
   };
 
   // Delete a recorded payment from Loan history
-  const deleteLoanPayment = (loanId, paymentId) => {
-    if (!requireAdmin()) return Promise.resolve();
+  const deleteLoanPayment = async (loanId, paymentId) => {
+    if (!requireAdmin()) return;
     const isEn = state.currentLang === 'en';
     const now = Date.now();
+
+    if (IS_FIRESTORE_MODE) {
+      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+      if (!buildingId) return;
+      try {
+        await callMutateLoan({ action: 'deletePayment', buildingId, loanId, paymentId });
+        if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+        showToast(isEn ? "Payment removed!" : "Törlesztési tétel törölve!", "info");
+      } catch (err) {
+        console.warn("Firestore deleteLoanPayment error:", err.message);
+        showToast(isEn ? "Failed to delete payment." : "Nem sikerült törölni a törlesztési tételt.", "error");
+      }
+      return;
+    }
 
     return persistState(s => {
       const curLoans = Array.isArray(s.loans) ? s.loans : [];
@@ -196,7 +267,6 @@ export function createLoanActions({ state, persistState, showToast, t }) {
 
         const filteredPayments = (loan.payments || []).filter(p => p.id !== paymentId);
         
-        // Recalculate remaining balance from initial principal minus all remaining payments
         const totalPrincipalPaid = filteredPayments.reduce((sum, p) => sum + (Number(p.principalPaid) || 0), 0);
         const newBalance = Math.max(0, (Number(loan.principalAmount) || 0) - totalPrincipalPaid);
 
