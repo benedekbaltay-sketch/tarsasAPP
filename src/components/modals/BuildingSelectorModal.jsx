@@ -1,11 +1,11 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Users, Plus, Check, Building2, Shield, Home } from 'lucide-react';
+import { X, Users, Plus, Check, Building2, Shield, Home, LayoutGrid } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 
-export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onProfileSwitched }) {
-  const { state, t, switchBuilding, quickLogin, switchActiveFlat, getUserFlats, showToast } = useApp();
-  const { buildings, currentBuildingId, users, currentUser, currentLang } = state;
+export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGoPortfolio, onProfileSwitched }) {
+  const { state, t, switchBuilding, openBuildingAdmin, quickLogin, switchActiveFlat, getUserFlats, showToast } = useApp();
+  const { buildings, currentBuildingId, users, currentUser, currentLang, isPortfolioView } = state;
   const isEn = currentLang === 'en';
 
   const backdropProps = useBackdropClose(onClose);
@@ -21,7 +21,11 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onPr
   );
 
   const handleSelectBuilding = (buildingId) => {
-    switchBuilding(buildingId);
+    if (isAdminAuthorized && typeof openBuildingAdmin === 'function') {
+      openBuildingAdmin(buildingId);
+    } else {
+      switchBuilding(buildingId);
+    }
     if (onProfileSwitched) onProfileSwitched();
     onClose();
   };
@@ -124,9 +128,33 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onPr
 
         {/* Body */}
         <div className="p-4 overflow-y-auto flex-1 space-y-4">
+
+          {/* Return to Portfolio Overview (Admin inside a building) */}
+          {isAdminAuthorized && !isPortfolioView && onGoPortfolio && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onGoPortfolio();
+              }}
+              className="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 text-left transition-all cursor-pointer group"
+            >
+              <div className="w-8 h-8 rounded-xl bg-[#1E3A8A] text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                <LayoutGrid className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] truncate">
+                  {t.portfolio_back_to_buildings || (isEn ? "My Condos (Portfolio)" : "Társasházaim (Portfólió)")}
+                </div>
+                <div className="text-[11px] text-gray-500 truncate">
+                  {t.header_portfolio_view_desc || (isEn ? "Overview of all managed condominiums" : "Összes kezelt társasház áttekintése")}
+                </div>
+              </div>
+            </button>
+          )}
           
-          {/* Condominiums List (if admin or multiple buildings) */}
-          {isAdminAuthorized && (buildings || []).length > 1 && (
+          {/* Condominiums List (if admin) */}
+          {isAdminAuthorized && (buildings || []).length > 0 && (
             <div>
               <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
                 {t.select_building}

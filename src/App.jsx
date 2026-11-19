@@ -646,6 +646,10 @@ function MainLayout() {
             openPortfolio();
             closeAllModals();
           }}
+          onSelectBuilding={(bId) => {
+            openBuildingAdmin(bId);
+            closeAllModals();
+          }}
           onOpenCalendar={() => {
             setCalendarBuildingId(isAdmin && (state.isPortfolioView || !state.currentBuildingId) ? 'all' : state.currentBuildingId);
             setIsCalendarOpen(true);
@@ -874,6 +878,10 @@ function MainLayout() {
         isOpen={isBuildingSelectorOpen}
         onClose={() => setIsBuildingSelectorOpen(false)}
         onOpenAddBuilding={() => setIsAddBuildingOpen(true)}
+        onGoPortfolio={() => {
+          openPortfolio();
+          closeAllModals();
+        }}
         onProfileSwitched={handleGoHome}
       />
 

@@ -2,9 +2,13 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import { RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-export function CloudSyncBadge() {
+export function CloudSyncBadge({ hideWhenSynced = false }) {
   const { isCloudSyncing, cloudSyncStatus, lastSyncTime, refreshFromCloud, forceSyncLocalToCloud, state, t } = useApp();
   const isEn = state.currentLang === 'en';
+
+  if (hideWhenSynced && cloudSyncStatus !== 'error') {
+    return null;
+  }
 
   const formatTime = (d) => {
     if (!d) return '';

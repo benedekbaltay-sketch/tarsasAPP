@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Menu, Building2, Home, Shield, Calendar } from 'lucide-react';
+import { Menu, Building2, Calendar, ChevronDown, Check, LayoutGrid } from 'lucide-react';
 import { ProfileSwitcherButton } from './ProfileSwitcherButton';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { CloudSyncBadge } from './CloudSyncBadge';
@@ -11,10 +11,41 @@ export function Header({
   onOpenProfileSelector, 
   onGoHome, 
   onGoPortfolio,
+  onSelectBuilding,
   onOpenCalendar
 }) {
   const { state, t, toggleLanguage } = useApp();
   const { currentUser, currentLang, buildings, currentBuildingId, isPortfolioView } = state;
+
+  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+  const switcherRef = useRef(null);
+
+  useEffect(() => {
+    setIsSwitcherOpen(false);
+  }, [currentBuildingId, isPortfolioView]);
+
+  useEffect(() => {
+    if (!isSwitcherOpen) return;
+
+    const handleOutsideClick = (event) => {
+      if (switcherRef.current && !switcherRef.current.contains(event.target)) {
+        setIsSwitcherOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsSwitcherOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSwitcherOpen]);
 
   if (!currentUser) return null;
 
@@ -93,18 +124,131 @@ export function Header({
 
         {/* Right: Cloud Sync Badge, Role Switchers, Language toggle */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 flex-shrink-0">
-          <CloudSyncBadge />
+          <CloudSyncBadge hideWhenSynced={isInBuilding} />
 
-          {/* Quick Return to Portfolio (when inside building in KK mode) */}
-          {isCurrentlyAdminMode && !isPortfolioView && onGoPortfolio && (
-            <button
-              onClick={onGoPortfolio}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs shadow-2xs transition-all hover:border-gray-300 cursor-pointer"
-              title={isHu ? "Visszalépés a társasházaim listájához" : "Back to my condominiums"}
-            >
-              <Building2 className="w-3.5 h-3.5 text-[#1E3A8A]" />
-              <span className="hidden md:inline">{t.portfolio_back_to_buildings || "Társasházaim"}</span>
-            </button>
+          {/* Unified Portfolio & Managed Buildings Switcher (when inside a building in KK mode) */}
+          {isCurrentlyAdminMode && !isPortfolioView && (onGoPortfolio || onSelectBuilding) && (
+            <div className="relative" ref={switcherRef}>
+              <button
+                type="button"
+                onClick={() => setIsSwitcherOpen(prev => !prev)}
+                aria-expanded={isSwitcherOpen}
+                aria-haspopup="menu"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-semibold text-xs shadow-2xs transition-all cursor-pointer active:scale-95 ${
+                  isSwitcherOpen
+                    ? 'border-[#1E3A8A] bg-blue-50 text-[#1E3A8A]'
+                    : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-gray-800'
+                }`}
+                title={t.header_switcher_tooltip || (isHu ? "Vissza a portfólió nézetbe vagy váltás másik társasházra" : "Return to portfolio view or switch to another condominium")}
+              >
+                <Building2 className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
+                <span className="hidden sm:inline whitespace-nowrap">
+                  {t.header_switcher_btn || (isHu ? "Társasházak" : "Condominiums")}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-gray-500 transition-transform duration-150 flex-shrink-0 ${
+                    isSwitcherOpen ? 'rotate-180 text-[#1E3A8A]' : ''
+                  }`}
+                />
+              </button>
+
+              {isSwitcherOpen && (
+                <div
+                  role="menu"
+                  className="absolute -right-12 sm:right-0 mt-2 w-[min(18.5rem,calc(100vw-1.5rem))] sm:w-80 bg-white rounded-2xl border border-gray-200 shadow-xl z-50 overflow-hidden animate-fadeIn"
+                >
+                  {/* Portfolio Overview Action */}
+                  {onGoPortfolio && (
+                    <div className="p-2 border-b border-gray-100 bg-slate-50/70">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setIsSwitcherOpen(false);
+                          onGoPortfolio();
+                        }}
+                        className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-white hover:bg-blue-50 border border-gray-200/80 hover:border-blue-200 text-left transition-all cursor-pointer group"
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-[#1E3A8A] text-white flex items-center justify-center flex-shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                          <LayoutGrid className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] truncate">
+                            {t.portfolio_back_to_buildings || (isHu ? "Társasházaim (Portfólió)" : "My Condos (Portfolio)")}
+                          </div>
+                          <div className="text-[11px] text-gray-500 truncate">
+                            {t.header_portfolio_view_desc || (isHu ? "Összes kezelt társasház áttekintése" : "Overview of all managed condominiums")}
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Managed Condominiums Direct Switcher */}
+                  {(buildings || []).length > 0 && (
+                    <div className="p-2">
+                      <div className="px-2 pt-0.5 pb-1.5 flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          {t.header_managed_buildings || (isHu ? "Kezelt társasházak" : "Managed Condominiums")}
+                        </span>
+                        <span className="text-[10px] font-bold text-gray-400">
+                          {(buildings || []).length}
+                        </span>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto space-y-1">
+                        {(buildings || []).map((b) => {
+                          const isActive = b.id === currentBuildingId;
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setIsSwitcherOpen(false);
+                                if (!isActive && onSelectBuilding) {
+                                  onSelectBuilding(b.id);
+                                }
+                              }}
+                              className={`w-full flex items-center justify-between gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                                isActive
+                                  ? 'bg-blue-50/90 border-blue-200 text-[#1E3A8A]'
+                                  : 'bg-white border-transparent hover:bg-gray-50 hover:border-gray-200/70 text-gray-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <Building2
+                                  className={`w-4 h-4 flex-shrink-0 ${
+                                    isActive ? 'text-[#1E3A8A]' : 'text-gray-400'
+                                  }`}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className={`text-xs truncate ${isActive ? 'font-bold text-[#1E3A8A]' : 'font-semibold text-gray-800'}`}>
+                                    {b.name}
+                                  </div>
+                                  {b.address && (
+                                    <div className="text-[11px] text-gray-500 truncate">
+                                      {b.address}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              {isActive && (
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  <span className="px-1.5 py-0.5 rounded-md bg-blue-100 text-[#1E3A8A] text-[10px] font-bold">
+                                    {t.header_active_building_badge || (isHu ? "Aktív" : "Active")}
+                                  </span>
+                                  <Check className="w-3.5 h-3.5 text-[#1E3A8A] stroke-[2.5]" />
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Quick Calendar button in Header */}
@@ -120,8 +264,10 @@ export function Header({
             </button>
           )}
 
-          {/* Profile Switcher (for multi-flat residents) */}
-          <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />
+          {/* Profile Switcher (for multi-flat residents; admins use the unified building/portfolio switcher above) */}
+          {!isCurrentlyAdminMode && (
+            <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />
+          )}
 
           {/* Language Flag Switcher */}
           <button
