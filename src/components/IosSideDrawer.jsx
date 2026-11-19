@@ -15,8 +15,7 @@ import {
   FileSpreadsheet,
   Calendar,
   Settings,
-  Users,
-  ArrowLeft
+  Users
 } from 'lucide-react';
 
 export function IosSideDrawer({ 
@@ -207,36 +206,7 @@ export function IosSideDrawer({
             {/* B) BUILDING-SPECIFIC MODE (When Common Representative is inside a specific building) */}
             {isAdmin && !isPortfolioMode && (
               <div className="space-y-3">
-                {/* 1. Prominent eye-catching button: [ ← Vissza a Társasházaimhoz ] */}
-                <button
-                  onClick={() => handleAction('portfolio')}
-                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-[#1E3A8A] via-blue-700 to-indigo-800 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all group cursor-pointer active:scale-[0.99] border border-blue-400/20"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <ArrowLeft className="w-4 h-4 text-blue-200 group-hover:-translate-x-1 transition-transform" />
-                    <span className="tracking-wide">
-                      {t.menu_back_to_portfolio || (isHu ? "← Vissza a Társasházaimhoz" : "← Back to My Condos")}
-                    </span>
-                  </div>
-                  <Building2 className="w-4 h-4 text-blue-200/90" />
-                </button>
-
-                {/* 2. Active Building Name Indicator */}
-                <div className="p-3 bg-blue-50/90 border border-blue-200/80 rounded-2xl flex items-center gap-3 shadow-2xs">
-                  <div className="w-8 h-8 rounded-xl bg-blue-100 text-[#1E3A8A] flex items-center justify-center flex-shrink-0 font-bold shadow-2xs">
-                    <Building2 className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-blue-600 block">
-                      {t.menu_active_building || (isHu ? "Aktív ház" : "Active Building")}
-                    </span>
-                    <span className="text-xs font-bold text-gray-900 truncate block">
-                      {currentBuilding?.name || (isHu ? "Kiválasztott társasház" : "Selected Building")}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 3. House-Specific Modules */}
+                {/* House-Specific Modules */}
                 <div className="bg-gray-50/80 rounded-2xl p-2 border border-gray-100 space-y-1">
                   
                   {/* 🏠 Főmenü (Dashboard) */}
@@ -325,6 +295,22 @@ export function IosSideDrawer({
                         <FolderOpen className="w-4 h-4" />
                       </div>
                       <span className="text-sm font-semibold text-gray-800">{t.menu_docs}</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* ⚙️ Ház adatai & Bank */}
+                  <button
+                    onClick={() => handleAction('building-settings')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-slate-700 text-white flex items-center justify-center shadow-xs">
+                        <Settings className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">
+                        {t.bld_settings_btn || (isHu ? "Ház adatai & Bank" : "Building Details & Bank")}
+                      </span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>

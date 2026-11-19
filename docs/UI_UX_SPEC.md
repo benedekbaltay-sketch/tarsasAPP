@@ -101,7 +101,11 @@ Every flat balance is labeled with an unmistakable status badge:
   - SheetJS Excel export button.
   - 3 most recent items shown by default with inline expand/collapse toggle and dedicated Fullscreen History button.
 
-### 2.3 Representative Dashboard (`AdminView.jsx`)
+### 2.3 Representative Dashboard (`AdminView.jsx`), Header & Side Drawer (`Header.jsx`, `IosSideDrawer.jsx`)
+- **Clean Building Header & Navigation**:
+  - When inside an active condominium, the top header (`Header.jsx` and `NavLogoButton.jsx`) displays the **active condominium's name** (`currentBuilding.name`) as the primary bold title instead of the generic application title (*„Közös Költség Nyilvántartó”*), paired with the user's role or flat number as a concise subtitle.
+  - The redundant in-page blue context bar (`← Vissza a Társasházaimhoz`, `Aktív ház`, `Ház adatai & Bank`) has been removed from `AdminView.jsx`, and the redundant `← Vissza a Társasházaimhoz` button and `Aktív ház` card have been removed from the 3-line side drawer (`IosSideDrawer.jsx`).
+  - **Ház adatai & Bank / Building Details & Bank** is placed directly as a dedicated menu item (`building-settings`) inside the building-specific 3-line side drawer (`IosSideDrawer.jsx`), opening `GlobalBalancesModal` cleanly for Admins.
 - **Top Navigation Tabs**:
   - **Vezérlőpult (Dashboard)**: Core administrative dashboard (KPIs, Arrears Grid, Transactions).
   - **Közgyűlés (General Assembly)**: Dedicated section for generating official assembly financial statements and accounting packages.

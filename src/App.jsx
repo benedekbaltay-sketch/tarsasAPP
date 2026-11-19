@@ -556,6 +556,12 @@ function MainLayout() {
       case 'docs':
         setIsDocumentsOpen(true);
         break;
+      case 'building-settings':
+        if (isAdmin) {
+          setBuildingSettingsTargetId(state.currentBuildingId);
+          setIsGlobalBalancesOpen(true);
+        }
+        break;
       case 'profile':
         setIsProfileOpen(true);
         break;

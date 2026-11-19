@@ -23,11 +23,29 @@ export function Header({
   const isEn = !isHu;
 
   const isCurrentlyAdminMode = currentUser.role === 'admin' || currentUser.role === 'superadmin';
+  const isInBuilding = Boolean(currentBuilding && (!isCurrentlyAdminMode || (!isPortfolioView && currentBuildingId)));
 
-  // Subtitle in header
-  const headerSubtitle = isCurrentlyAdminMode
-    ? ((isPortfolioView || !currentBuildingId) ? (t.portfolio_title || "Társasházaim") : (currentBuilding ? currentBuilding.name : t.building_address))
-    : (currentBuilding ? `${currentBuilding.name} • ${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : t.building_address));
+  // Primary header title: active condominium name when inside a building; portfolio/app title otherwise
+  const headerTitle = isInBuilding
+    ? currentBuilding.name
+    : (isCurrentlyAdminMode
+        ? (t.portfolio_title || (isHu ? "Társasházaim" : "My Condominiums"))
+        : t.app_title);
+
+  // Secondary subtitle under title (avoids duplicating the building name)
+  const headerSubtitle = isInBuilding
+    ? (isCurrentlyAdminMode
+        ? (currentUser.role === 'superadmin'
+            ? (isHu ? 'Rendszergazda' : 'SuperAdmin')
+            : (isHu ? 'Közös Képviselet' : 'Property Management'))
+        : (currentUser.role === 'szvb'
+            ? (isHu ? 'Számvizsgáló Bizottság (SZVB)' : 'Accounting Committee (SZVB)')
+            : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || ''))))
+    : (isCurrentlyAdminMode
+        ? (currentUser.role === 'superadmin'
+            ? (isHu ? 'Rendszergazda' : 'SuperAdmin')
+            : (isHu ? 'Közös Képviselet' : 'Property Management'))
+        : (t.building_address || ''));
 
   return (
     <div className="sticky top-0 z-30 w-full shadow-sm">
@@ -64,7 +82,7 @@ export function Header({
             </div>
             <div className="flex flex-col min-w-0">
               <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 leading-tight font-display truncate">
-                {t.app_title}
+                {headerTitle}
               </h1>
               <span className="text-[11px] sm:text-xs text-gray-500 font-medium truncate max-w-[120px] xs:max-w-[170px] sm:max-w-[220px] md:max-w-none">
                 {headerSubtitle}

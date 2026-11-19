@@ -22,9 +22,7 @@ import {
   Shield,
   Filter,
   Minus,
-  Calendar,
-  ArrowLeft,
-  Settings
+  Calendar
 } from 'lucide-react';
 import { 
   formatCurrency, 
@@ -255,39 +253,6 @@ export function AdminView({
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 md:py-8 space-y-6">
       
-      {/* Context Bar: Back to Portfolio & Current Building Indicator */}
-      {onBackToPortfolio && (
-        <div className="flex items-center justify-between bg-blue-50/60 border border-blue-100/80 rounded-2xl p-2.5 sm:px-4 shadow-2xs">
-          <button
-            onClick={onBackToPortfolio}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-blue-200 text-xs font-bold text-[#1E3A8A] hover:bg-blue-50 hover:border-blue-300 shadow-2xs transition-all cursor-pointer group active:scale-98"
-          >
-            <ArrowLeft className="w-3.5 h-3.5 text-[#1E3A8A] transition-transform group-hover:-translate-x-1" />
-            <span>{t.menu_back_to_portfolio || (isEn ? "← Back to My Condos" : "← Vissza a Társasházaimhoz")}</span>
-          </button>
-          
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[11px] uppercase tracking-wider font-bold text-blue-600 hidden sm:inline">
-              {t.menu_active_building || (isEn ? "Active Building" : "Aktív ház")}:
-            </span>
-            <span className="text-xs font-bold text-gray-900 truncate">
-              {currentBuilding?.name}
-            </span>
-            {onOpenGlobalBalances && (
-              <button
-                type="button"
-                onClick={onOpenGlobalBalances}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-blue-200 text-xs font-bold text-[#1E3A8A] hover:bg-blue-50 hover:border-blue-300 shadow-2xs transition-all cursor-pointer active:scale-95 flex-shrink-0"
-                title={t.bld_settings_title || (isEn ? "Building Settings & Banking" : "Társasház Beállításai & Bank")}
-              >
-                <Settings className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                <span className="hidden md:inline">{t.bld_settings_btn || (isEn ? "Building Details & Bank" : "Ház adatai & Bank")}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* 1. Top KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         
