@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "condo_state": {
+      ".read": "auth != null",
+      ".write": "auth != null && newData.exists() && newData.hasChildren(['buildings', 'users', 'lastUpdated'])"
+    },
+    "condo_files": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}

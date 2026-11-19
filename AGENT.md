@@ -1,0 +1,524 @@
+# AGENT.md — Developer & AI Agent Guide & Router
+
+Welcome! If you are an AI assistant or human developer working on this codebase, **this file is your primary entry point and operational router**.
+
+---
+
+## 1. Golden Operating Rules (Alapszabályok)
+
+A rendszer fejlesztése és karbantartása során az alábbi 4 alapszabály és kötelező irányelv betartása minden esetben megkerülhetetlen:
+
+> [!CAUTION]
+> ### 🛑 SZABÁLY 3: SZIGORÚ ADATBÁZIS-MÓDOSÍTÁSI ÉS JÓVÁHAGYÁSI SZABÁLY (STRICT DATA PERMISSION RULE)
+> **AZ ADATBÁZISBAN (Firebase RTDB, LocalStorage, mock állapot) LÉVŐ ADATOKAT MÓDOSÍTANI, TÖRÖLNI, FELÜLÍRNI VAGY TESZTELNI KIZÁRÓLAG A FELHASZNÁLÓ KIFEJEZETT ELŐZETES ENGEDÉLYÉVEL SZABAD! HA NEM AD UTASÍTÁST, TILOS VÁLTOZTATNI RAJTA.**
+> 1. **Tilos automatikus tesztekből éles adatot írni/törölni:** Semmilyen automatizált böngésző script (pl. headless browser), teszt script vagy CLI script NEM módosíthatja az éles adatbázist (`https://tarsashaz-cfe5d.web.app`, Firebase RTDB). Tesztek kizárólag mock / memória adatokkal futhatnak.
+> 2. **Kötelező előzetes jóváhagyás:** Bármilyen könyvelési tétel (befizetés, kiadás, terhelés, lakásadat, induló egyenleg) felvitele, módosítása vagy törlése előtt az AI asszisztensnek **mindig meg kell kérdeznie a felhasználót, és csak explicit engedéllyel végezheti el**.
+> 3. **Állandó és visszavonhatatlan érvényesség:** Ez a szabály a projekt minden jelenlegi és jövőbeli beszélgetésére, minden feladatra és minden agentre kötelező érvényű.
+
+> [!IMPORTANT]
+> ### 🌐 SZABÁLY 1: KÉTNYELVŰSÉGI SZABÁLY (BILINGUAL MANDATE)
+> **Mindent angolra is le kell fordítani**, hogy a felhasználó bármikor zökkenőmentesen tudjon váltani a magyar (`hu`) és az angol (`en`) nyelv között. Bármilyen új felhasználói felület, gomb, címke, felugró ablak, hibaüzenet vagy tájékoztató szöveg hozzáadásakor kötelező mind a magyar, mind az angol szótárt frissíteni a `src/constants/translations.js` fájlban.
+
+> [!IMPORTANT]
+> ### 📚 SZABÁLY 2: DOKUMENTÁCIÓS SZABÁLY (DOCUMENTATION MANDATE)
+> **Mindent dokumentálni kell.** A rendszer dokumentációját (`/docs`, `AGENT.md`, `GEMINI.md`) minden változás, új funkció, képlet vagy sémamódosítás esetén kötelező azonnal bővíteni és frissíteni a munkafolyamat lezárása előtt.
+> **Kötelező mankóként használni:** Minden új feladat megkezdése előtt kötelező áttekinteni a releváns dokumentumokat, és azokra támaszkodva elvégezni a feladatot, fenntartva a rendszer integritását.
+
+> [!IMPORTANT]
+> ### 🔒 SZABÁLY 4: ADATBIZTONSÁG ÉS FELTÖRHETETLENSÉG (SECURITY & INVIOLABILITY MANDATE)
+> **Mindig arra kell törekedni, hogy az adatbiztonság és a feltörhetetlenség előre haladjon.** Minden újratervezésnél és funkciónál a legszigorúbb biztonsági alapelveket (autentikáció, szerepkör-alapú jogosultságok, adatfertőtlenítés, adatizoláció) kell alkalmazni. Esetleges gyenge pont, rés vagy sebezhetőség észlelése esetén az AI asszisztensnek azonnal proaktív javaslatot kell tennie a védelem megerősítésére (lásd: [docs/SECURITY_AND_DATA_PROTECTION.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/SECURITY_AND_DATA_PROTECTION.md)).
+
+> [!WARNING]
+> ### 🛡️ TOVÁBBI OPERATÍV SZABÁLYOK:
+> 1. **Never Touch `new-project/`**: A `new-project/` mappa a korábbi verzió archívuma, szigorúan **csak olvasható**. Soha ne szerkessz, ne mozgass és ne törölj semmit benne.
+> 2. **Protect State Revision & Concurrency**: Soha ne kerüld meg a 3-szintű perzisztencia modellt (`Firebase RTDB` + `LocalStorage` + `Permanent Vault`). Bármilyen adatmódosításnál növelni kell a `state.revision` számlálót.
+
+---
+
+## 2. Technology Stack Quick Reference
+
+| Layer | Technology | Key Details |
+| :--- | :--- | :--- |
+| **Framework** | **React 18** (SPA) | Pure client-side React with functional components, hooks, and Context API. |
+| **Build Tool** | **Vite 5** | Fast HMR and Rollup-based production build (`npm run dev`, `npm run build`). |
+| **Styling** | **Tailwind CSS 3** | Utility classes + custom design tokens (`#1E3A8A` deep blue, `#F3F4F6` background). |
+| **Cloud Database**| **Firebase 10 RTDB**| Realtime Database (`https://tarsashaz-cfe5d-default-rtdb.europe-west1.firebasedatabase.app`). Node: `condo_state`. |
+| **Local Storage** | **Browser LocalStorage**| Cached under key `tarsashaz_state`. Session under `tarsashaz_logged_in_user`. |
+| **Deletion Tombstones**| **Permanent Vault** | Stored in `localStorage["tarsashaz_permanent_vault"]` to prevent deleted items from resurrecting. |
+| **Spreadsheet** | **SheetJS (`xlsx`)** | Client-side Excel export for global and flat-specific ledgers. |
+| **Icons** | **Lucide React** | Feather-based lightweight vector icons. |
+| **QR Code / Payments** | **qrcode.react** | MNB / qvik instant payment QR code generation (SVG format). |
+| **Typography** | **Google Fonts** | `Inter` for general UI text; `Outfit` for numerical financial indicators. |
+| **Localization**| **Custom i18n** | Full Hungarian (`hu`) and English (`en`) support via [translations.js](file:///c:/Users/bened/Documents/tarsasAPP/src/constants/translations.js). |
+
+For full details, see [docs/TECH_STACK.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/TECH_STACK.md).
+
+---
+
+## 3. Documentation Router — Where to Look
+
+All system knowledge is organized in the [`/docs`](file:///c:/Users/bened/Documents/tarsasAPP/docs/) directory:
+
+| What do you need to know? | Consult Document | Description |
+| :--- | :--- | :--- |
+| **Product Purpose & Philosophy** | [docs/PROJECT_CONTEXT.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/PROJECT_CONTEXT.md) | High-level conceptual model, owner-first UX, long-term multi-building vision. |
+| **Technical Stack & Tooling** | [docs/TECH_STACK.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/TECH_STACK.md) | Packages, scripts, dependencies, build configurations, browser support. |
+| **Architecture & Persistence** | [docs/ARCHITECTURE.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/ARCHITECTURE.md) | Component tree, Context API, Firebase sync, concurrency merge, wake-up listeners. |
+| **Data Models & Schema** | [docs/DATABASE_SCHEMA.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/DATABASE_SCHEMA.md) | Complete schemas for Buildings, Flats, Transactions, Expenses, Users, Vault. |
+| **Financial Ledger Formulas** | [docs/FINANCIAL_RULES.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/FINANCIAL_RULES.md) | Monthly debits, running balances, KK vs FA accounts, starting balance calibration. |
+| **Authentication & Roles** | [docs/AUTH_AND_PERMISSIONS.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/AUTH_AND_PERMISSIONS.md) | Representative vs Owner vs IT Manager, demo accounts, password resets. |
+| **UI, Views & Modals** | [docs/UI_UX_SPEC.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/UI_UX_SPEC.md) | Specifications for LoginView, TenantView, AdminView, 14 Modals, iOS drawer. |
+| **Security & Inviolability** | [docs/SECURITY_AND_DATA_PROTECTION.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/SECURITY_AND_DATA_PROTECTION.md) | Threat modeling, weak point analysis, and actionable security hardening proposals. |
+
+---
+
+## 4. Repository Structure
+
+```
+tarsasAPP/
+├── AGENT.md                     <-- YOU ARE HERE (Master agent router)
+├── package.json                 <-- Dependencies & build scripts
+├── vite.config.js               <-- Vite SPA configuration
+├── tailwind.config.js           <-- Tailwind brand colors & typography tokens
+├── postcss.config.js            <-- PostCSS with Autoprefixer
+├── index.html                   <-- Root HTML referencing /src/main.jsx
+├── public/
+│   └── favicon.svg              <-- Brand building SVG icon
+├── docs/                        <-- Central System Documentation
+│   ├── PROJECT_CONTEXT.md       <-- Authoritative product vision & domain model
+│   ├── TECH_STACK.md            <-- Technology stack details
+│   ├── ARCHITECTURE.md          <-- Software architecture & persistence
+│   ├── DATABASE_SCHEMA.md       <-- Database schemas & RTDB structure
+│   ├── FINANCIAL_RULES.md       <-- Ledger mathematics & calculations
+│   ├── AUTH_AND_PERMISSIONS.md  <-- Roles, auth flow, and credentials
+│   ├── UI_UX_SPEC.md            <-- Views, modals, and design tokens
+│   └── SECURITY_AND_DATA_PROTECTION.md <-- Threat model, vulnerabilities & hardening proposals
+├── src/
+│   ├── main.jsx                 <-- React DOM mounting & root ErrorBoundary
+│   ├── App.jsx                  <-- Layout router & modal orchestrator
+│   ├── index.css                <-- Tailwind directives, custom scrollbars, animations
+│   ├── constants/
+│   │   ├── firebaseConfig.js    <-- Firebase app & RTDB connection
+│   │   ├── translations.js      <-- Hungarian (hu) & English (en) dictionaries
+│   │   └── defaultData.js       <-- Initial buildings, users, documents dataset
+│   ├── context/
+│   │   ├── AppContext.jsx       <-- Central state store, provider, RTDB WebSocket listener, Toast & dispatch
+│   │   ├── syncEngine.js        <-- CRDT merge, tombstone vault, binary stripping & cloud sanitization
+│   │   ├── authActions.js       <-- Zero-trust login, impersonation, profile/role switching, password change
+│   │   ├── calendarActions.js   <-- Calendar events, tasks, deadlines, completion toggle
+│   │   ├── accountingActions.js <-- Financial transactions, expenses, manual debits, balances, clipboard
+│   │   └── buildingActions.js   <-- Building & flat CRUD, document upload/fetch/delete
+│   ├── utils/
+│   │   ├── finances.js          <-- Financial math engine & ledger generators
+│   │   ├── qvik.js              <-- MNB / qvik instant payment QR URL generator & Hungarian IBAN helper
+│   │   ├── assembly.js          <-- Tht. General Assembly accounting & statement calculations
+│   │   ├── exportExcel.js       <-- SheetJS Excel export utilities & Tht. reports
+│   │   ├── phone.js             <-- Hungarian & international phone number normalization
+│   │   └── sound.js             <-- Web Audio API notification feedback sounds
+│   ├── components/
+│   │   ├── Header.jsx           <-- App header with profile, role switchers & language toggles
+│   │   ├── ImpersonationBanner.jsx <-- Pinned banner during SuperAdmin act-as mode
+│   │   ├── ProfileSwitcherButton.jsx <-- Universal top header profile & flat switcher
+│   │   ├── NavLogoButton.jsx    <-- Brand logo button for header navigation
+│   │   ├── IosSideDrawer.jsx    <-- Slide-in iOS drawer navigation (Társasházaim, Naptár, etc.)
+│   │   └── modals/              <-- CalendarModal, UniversalTransactionModal, AssemblyModal, SmartMobilePayModal, QuickPay, etc.
+│   └── views/
+│       ├── LoginView.jsx        <-- Login form, credentials, & 1-click demo tiles
+│       ├── PortfolioView.jsx    <-- Representative portfolio dashboard (Társasházaim, aggregates, cards)
+│       ├── TenantView.jsx       <-- Resident dashboard, bank details, statements
+│       ├── AdminView.jsx        <-- Representative KPIs, arrears matrix, 8-item tx feed, Assembly tab
+│       └── SuperAdminView.jsx   <-- System administrator tree view & representative impersonation
+└── new-project/                 <-- LEGACY ARCHIVE (DO NOT TOUCH)
+```
+
+---
+
+## 5. Development & Testing Commands
+
+Run all commands from the project root (`c:\Users\bened\Documents\tarsasAPP\`):
+
+```powershell
+# Start local development server (http://localhost:3000)
+npm run dev
+
+# Build for production (verifies syntax, JSX, TypeScript/Rollup bundling)
+npm run build
+
+# Preview production build locally
+npm run preview
+```
+
+---
+
+## 6. Clipboard & Keyboard Copy/Paste Behavior
+- **Billentyűzetes másolás (`Ctrl+C` / `Ctrl+V`)**: A táblázatokban kijelölt tétel másolható (`Ctrl+C`) és beilleszthető (`Ctrl+V`), ha egy tétel aktívan ki van jelölve.
+- **Fejléc gomb eltávolítva**: A korábbi zöld „Beillesztés (Ctrl+V)” gomb el lett távolítva a fejlécekből (`AdminView.jsx`, `FlatDetailModal.jsx`), így a felület letisztult, a másolás és beillesztés pedig kizárólag a gyors és tiszta billentyűparancsokkal működik.
+- **Szigorú hitelesítés (Security Rule 4)**: A bejelentkezés szigorúan csak a felhasználó által begépelt érvényes jelszóval engedélyezett; minden korábbi beégetett jelszó-fallback és bypass el lett távolítva a kódból.
+
+---
+
+## 7. Condominium Loans & Renovation Funds Module (Hitelek és célbefizetések modul)
+- **Célja**: Társasház által felvett felújítási hitelek rögzítése, törlesztési napló vezetése, lakói egyösszegű előtörlesztések/önrészek nyilvántartása és mentesülése, valamint a hitelben maradó lakók arányos törlesztőrészleteinek havi automatikus előírása a felújítási alapban.
+- **Komponensek & Fájlok**:
+  - `src/components/modals/LoansModal.jsx`: Fő hitelek modul dashboard KPI kártyákkal és 4 füllel (Aktív hitelek, Résztvevők & Mentesülések, Törlesztési napló, Lezárt/Archívum).
+  - `src/components/modals/LoanModals/NewLoanModal.jsx`: Új hitel felvétele és szerkesztése validációval, lejárati dátum automatikus számításával, és lakásonkénti fizetési mód / előleg kezeléssel.
+  - `src/components/modals/LoanModals/RecordPaymentModal.jsx`: Banki havi törlesztés rögzítése tőke, kamat, banki díj bontással és automatikus tőketartozás-csökkentéssel (`currentBalance`).
+  - `src/context/loanActions.js`: `addLoan`, `updateLoan`, `deleteLoan`, `recordLoanPayment`, `deleteLoanPayment`.
+  - `src/utils/loans.js`: Dátumszámítások, részesedés-szétosztás (`ownership_ratio`, `equal`, `fixed_amount`), törlesztési haladás számítása.
+  - `src/utils/exportExcel.js`: SheetJS Excel (`.xlsx`) és `.csv` export a törlesztési naplóhoz és lakói részvételi névsorhoz.
+  - `src/utils/finances.js`: A havi előírásokban kizárólag a `financed` lakók kapják meg a törlesztő sort; a zsebből fizetett (`lump_sum`) lakók teljes mentesülést élveznek.
+
+---
+
+## 8. Professional & Minimalist Filtering Engine (`TransactionFilterBar.jsx`)
+- **Letisztult szűrési architektúra**:
+  - `src/components/TransactionFilterBar.jsx`: Minimalista, modern vezérlőpult, amely egyaránt támogatja a globális és lakásszintű tételeket (`mode="global"` vs `"flat"`).
+  - `src/utils/filterUtils.js`: CRDT-biztos szűrési logika: Típus (`all`, `income`, `expense`), Számla (`all`, `KK`, `FA`), Időszak (`thisMonth`, `last30Days`, `last3Months`, `thisYear`, `custom`), és Összegtartomány.
+  - **Mindig látható aktív szűrőcímkék**: Amikor egy szűrő aktív, az összecsukott nézetben is azonnal megjelenik egy vékony, elegáns sáv a címkékkel, egykattintásos `✕` törléssel és találatszámlálóval.
+
+---
+
+## 9. Header Navigation & Side Drawer Architecture
+- **Bal oldali menü gomb elhelyezés**:
+  - A 3 vonalas menü gomb (`<Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-gray-700" />`) a fejléc **bal oldalán**, közvetlenül a logó előtt kapott dedikált helyet és térközt minden felületen (`Header.jsx`, `FlatsDataModal.jsx`, `ProfileModal.jsx`, `DocumentsModal.jsx`, `LoansModal.jsx`, `FinancialSituationModal.jsx`).
+  - A jobb oldali műveleti sávból törlésre került, így nem zsúfolja a profilváltót és a szinkronizáció jelzőt.
+- **Bal oldalról kinyíló fiók (`IosSideDrawer.jsx`)**:
+  - A fiók a bal szélről gördül be (`-translate-x-full` -> `translate-x-0`, `left-0 pr-10`), tökéletesen lekövetve a bal oldali menügomb pozícióját.
+- **Fejléc és Lakások és Egyenlegek felület letisztítása**:
+  - A fejlécből eltávolításra került a „Közös Képviselő” / szerepkör jelvény, ezáltal a fejléc letisztultabb.
+  - A „Lakások és Egyenlegek” panel fejlécéből kikerült a „Közgyűlés” és „Hitelek” gomb, mivel mindkét funkció közvetlenül és zavartalanul elérhető az oldalsó főmenüből (hamburger menüfiók).
+
+---
+
+## 10. Portfolio Navigation & Role-Based Switchers (`PortfolioView.jsx`, `ProfileSwitcherButton.jsx`)
+- **Társasház kártya interakciók (`PortfolioView.jsx`)**:
+  - **Dupla kattintás**: Bármely társasház kártyájára duplán kattintva a rendszer azonnal belép a ház vezérlőpultjába (`onSelectBuilding(b.id)`), pontosan úgy, mintha a „Társasház kezelése” gombra kattintott volna.
+  - **Egyszeri kattintás + Enter**: A kártyára kattintva fókuszba kerül (`tabIndex={0}`, lágy körvonallal), majd az `Enter` billentyű leütésére szintén azonnal megnyílik a társasház.
+  - **Esemény-izoláció**: A kártyán lévő belső naptár és kezelés gombok `e.stopPropagation()`-nal vannak ellátva, így nincsenek duplán lefutó események.
+- **Kontextus-függő profil- és társasházváltó gomb (`ProfileSwitcherButton.jsx`)**:
+  - **Társasházaim (Portfólió) nézetben elrejtve**: Amikor a KK a teljes portfóliót tekinti át (`isPortfolioView === true`), a fejlécben egyáltalán NEM jelenik meg profilváltás / társasházváltás gomb.
+  - **Egy házon belül KK módban**: A gomb neve **„Társasház váltás”** (EN: „Switch Building”), ikonja `<Building2 />`, és a társasházválasztó modált nyitja meg a házak közötti gyors váltáshoz.
+  - **Lakói (tulajdonosi) módban**: Ha egy lakó több lakással is rendelkezik (`myFlats.length > 1`), a gomb neve továbbra is **„Profilváltás”** (EN: „Switch Profile”), ikonja `<Users />`. Ha csak egy lakása van, a gomb rejtve marad.
+- **Naptár és Feladatok modul (`CalendarModal.jsx`)**:
+  - Letisztult elnevezés: „Összesített Naptár” helyett egységesen **„Naptár”** (EN: „Calendar”).
+  - React Hook szabályok betartása: minden hook feltétel nélkül, korai `return` előtt fut le, elhárítva a 310-es React hibát.
+  - Közvetlen 1-kattintásos elérés a felső menüsorból (`Header.jsx`) a dedikált „Naptár” gombbal.
+  - Dinamikus aktuális havi mintaesemények (`DEFAULT_CALENDAR_EVENTS`), így a naptár azonnal feltöltve, látványosan jelenik meg az aktuális hónapban.
+  - `ensureArray` védelem a Firebase RTDB objektumszerializációja ellen, garantálva a hibamentes eseménykezelést és szinkronizációt.
+  - **Közvetlen Napi nézet és statikus egymás melletti nyilak**: A havi naptárban bármely napra kattintva azonnal megnyílik a dedikált **Napi nézet** (`viewMode === 'day'`), amely az adott nap összes feladatát és eseményét listázza. A nézet tetején jól látható **„← Vissza a havi nézethez”** gombbal lehet visszalépni. A napozó nyilak (`<`, `>`) **egymás mellett, statikusan helyezkednek el a bal oldalon** a hónapos nézethez hasonlóan, így a gombok nem mozognak a dátum szövegének változásakor.
+  - **Ismétlődő események motorja (`isEventOnDate`)**: Teljes ismétlődési támogatás (naponta, minden hétköznap, hetente adott napon, kéthetente, havonta adott napon, havonta adott hétköznapon, minden hónap 1. vasárnapján, 3 havonta / negyedévente, 6 havonta, évente) opcionális lejárati határidővel.
+  - **Prioritás mező kivezetése**: A felesleges prioritás választó eltávolításra került a felületről a felhasználói igényeknek megfelelően.
+  - **Dupla kattintásos esemény megnyitás, szerkesztés és törlés**: Bármely eseményre duplán kattintva (akár a havi nézet pill-jén, akár a napi nézetben vagy lista nézetben) felugrik a részletes esemény adatlap (`viewingEvent`), ahol azonnal elérhető a **„Szerkesztés”** és a **„Törlés”** funkció.
+
+---
+
+## 12. Dinamikus Kontextusú Oldalsáv és Portfólió Navigáció (`IosSideDrawer.jsx`)
+- **Kétállapotú oldalsáv (Dinamikus kontextus)**:
+  - **Portfólió Mód (`isPortfolioMode = isAdmin && (isPortfolioView || !currentBuildingId)`)**:
+    - 🏢 **Társasházaim áttekintése** (`menu_portfolio_overview`): Portfólió kártyás nézet.
+    - 📅 **Naptár & Feladatok** (`menu_calendar_and_tasks`): Az összes kezelt társasház eseményeit összesítő naptár.
+    - ⚙️ **Fiók / Rendszerbeállítások** (`menu_account_settings`): Felhasználói profil és rendszerbeállítások.
+    - 🚪 **Kijelentkezés** (`logout`).
+  - **Ház-specifikus Mód (`isAdmin && !isPortfolioMode`)**:
+    - **Figyelemfelkeltő visszalépés gomb legfelül**: `[ ← Vissza a Társasházaimhoz ]` (`menu_back_to_portfolio`), kék-indigo színátmenettel és balra nyíllal, amelyre kattintva a `currentBuildingId` nullázódik és visszaváltunk Portfólió módba.
+    - **Aktív ház neve alatta**: `Aktív ház: [Társasház neve]` (`menu_active_building`) elegáns információs kártyán.
+    - **A 6 ház-specifikus modul**:
+      1. 🏠 **Főmenü** (`menu_main`): Dashboard KPI-k, számlák, könyvelés.
+      2. 💳 **A ház pénzügyi helyzete** (`menu_finance`): Pénzügyi kimutatások.
+      3. 👥 **Lakások adatai** (`menu_flats_data`): Albetétek és tulajdonosok névsora.
+      4. 📝 **Közgyűlés** (`menu_assembly`): Határozatok és jegyzőkönyvek.
+      5. 🏛️ **Hitelek** (`menu_loans`): Hitelek és törlesztések.
+      6. 📂 **Dokumentumok** (`menu_docs`): Házhoz tartozó iratok.
+    - 🚪 **Kijelentkezés** (`logout`).
+- **State és Routing integráció (`AppContext.jsx`)**:
+  - `openPortfolio()`: Automatikusan szinkronizálja az aktív ház memóriabeli adatait a `state.buildings` tömbbe, majd `currentBuildingId = null` és `isPortfolioView = true` értékre áll, garantálva az adatvesztésmentes visszalépést.
+  - `openBuildingAdmin(buildingId)`: Lementi az előző épület adatait, betölti a célépület adatait, beállítja a `currentBuildingId`-t és `isPortfolioView = false`.
+  - `AdminView.jsx`: A fő admin irányítópult tetején is elérhető a `[ ← Vissza a Társasházaimhoz ]` gyorsgomb és az aktív ház indikátor.
+
+---
+
+## 13. Globális Portfólió Beállítások vs Ház-specifikus Beállítások Szétválasztása
+
+A többházas portfólió szemlélethez igazítva a globális képviseleti beállítások és az egyedi társasházi beállítások szigorúan különválasztásra kerültek:
+
+### A) Globális / Portfólió szintű beállítások (`ProfileModal.jsx`)
+Kizárólag a közös képviselő (KK) személyes és vállalkozói profiljának kezelésére szolgál. Nem tartalmaz épületspecifikus vagy banki adatokat:
+1. 🏢 **Vállalkozói profil**: Cégnév (`repProfile.companyName`), Képviselő neve, Központi e-mail és telefonszám (formázással és másolással), Iroda/levelezési cím és ügyfélfogadási idősáv.
+2. 🔒 **Fiók & Biztonság**: Bejelentkezett e-mail, Jelszó módosítás (`onOpenChangePassword()`), „Emlékezz rám” státusz és biztonsági kijelentkezés.
+3. ⚙️ **Alkalmazás-beállítások**: Alapértelmezett nyelv váltó (Magyar / English), Értesítési preferenciák (banki szinkronizációs hibák, lejáró hitelek, közelgő közgyűlések), Alkalmazás hanghatásai Web Audio API tesztgombbal, Fejlesztői diagnosztika és gyorsítótár ürítés.
+- *Lakói nézet*: Nem admin lakó esetén a saját lakás adatai és elérhetőségei jelennek meg, valamint a dedikált **Biztonság & Hitelesítés** kártya, ahol közvetlenül módosíthatja lakásjelszavát.
+- 🔑 **Jelszómódosítás bejelentkezett állapotban (`ChangePasswordModal`)**: Nincs szükség a régi jelszó megadására. Bármely aktív munkamenetben lévő felhasználó (KK vagy lakás) kizárólag az új jelszót adja meg kétszer (Új jelszó + Új jelszó megerősítése, min. 4 karakter).
+- 🛡️ **KK jelszó-visszaállítás megszüntetése (Rule 4 Security)**: A közös képviselő felületéről (`EditFlatMasterModal`) teljes egészében eltávolításra került a lakásjelszó alapértelmezett visszaállítása (`lakas123`). Elfelejtett jelszó esetén a lakó a bejelentkező oldalon lévő önkiszolgáló „Elfelejtettem a jelszavam” (`ForgotPasswordModal`) funkciót használja, így a lakók jelszavának magánszférája garantált.
+
+### B) Ház-specifikus Beállítások & Banki Integráció (`GlobalBalancesModal.jsx` / `BuildingSettingsModal`)
+Minden egyes társasháznak külön banki számlája és egyedi banki API hozzáférése van. Ezek a beállítások az adott házhoz kötődnek:
+1. 🏛️ **Épület adatai & Számlák**: Társasház neve, címe, adószáma, bankszámlaszámok (`bankKK`, `bankFA`), egyedi alszámlák hozzáadása/kezelése, valamint az induló tartalékok összegei.
+2. 🔌 **Banki API Integráció (Ház-specifikus)**:
+   - Szolgáltató kiválasztása (pl. OTP CorpAPI / Open Banking, Erste Bank API, MBH Bank, egyéb PSD2 / Open Banking provider).
+   - Környezet (Teszt / Sandbox vs. Éles / Production).
+   - Ügyfélazonosító (Client ID) és Titkos API kulcs (Client Secret) maszkolással és egykattintásos másolással.
+   - Napi automatikus számlatörténet- és egyenleg-szinkronizáció toggle.
+   - „Kapcsolat ellenőrzése” (Test connection) diagnosztikai funkció.
+- **Kényelmes elérési pontok**:
+  - `PortfolioView`: Minden társasház kártyáján közvetlenül elérhető a `[ ⚙️ Ház beállításai & Bank ]` gombbal.
+  - `AdminView`: A felső kontextus sávban a `[ ⚙️ Ház adatai & Bank ]` gyorsgombbal, valamint a Folyószámlák és Tartalékok kártya `[ Szerkesztés ]` gombjával.
+
+---
+
+## 14. Naptár Ismétlődés és Statikus Lapozás (`CalendarModal.jsx`)
+- **Portál dizájnjához illeszkedő lenyíló ismétlődési menü (`isRecurDropdownOpen`)**:
+  A naptári eseményrögzítőben a lenyíló menü letisztult, fehér-kék (`#1E3A8A`) világos témában, a Google Calendar logikáját követve jelenik meg:
+  1. Nem ismétlődik (`Does not repeat`)
+  2. Naponta (`Daily`)
+  3. Hetente (adott napon, pl. minden szerdán / `Weekly on Wednesday`)
+  4. Havonta a(z) [hanyadik] [hétköznap]on (pl. minden 3. szerdán / `Monthly on the third Wednesday`)
+  5. Évente ekkor: [hónap nap] (pl. minden évben november 18. / `Annually on November 18`)
+  6. Minden hétköznap (hétfőtől péntekig) (`Every weekday (Monday to Friday)`)
+  7. **Egyéni...** (`Custom...`)
+  - **Görgethetőség és teljes láthatóság**: A menü belső görgetéssel (`max-h-56 overflow-y-auto`) rendelkezik, valamint az űrlap kártyája (`max-h-[92vh] flex flex-col overflow-y-auto`) biztosítja, hogy a menü és az űrlap alja (pl. az „Egyéni...” opció és a mentés gomb) minden képernyőméreten akadálytalanul elérhető és görgethető legyen.
+- **Portál stílusú Egyéni Ismétlődés Modál (`Custom recurrence`, `isCustomRecurOpen`)**:
+  Az „Egyéni...” gombra kattintva a honlap dizájnjához tökéletesen illeszkedő, elegáns fehér kártya nyílik meg:
+  - **Ismétlés minden / Repeat every**: Számláló (1, 2, 3...) és mértékegység választó (`nap / day`, `hét / week`, `hónap / month`, `év / year`).
+  - **Ismétlés napjai / Repeat on**: Hetes egységnél a hét napjait jelképező kerek gombok kék (`#1E3A8A`) fehér betűs kiemeléssel a kijelölt napokon.
+  - **Befejezés / Ends**:
+    - `(•) Soha / Never`
+    - `( ) Ekkor / On`: Dátumválasztó mező.
+    - `( ) Ennyi / After`: Számláló és `alkalom után / occurrences`.
+  - **Alsó gombok**: Szürke `Mégse / Cancel` és királykék `Kész / Done` akciógomb.
+  - Az egyéni ismétlődés matematikai kiértékelését a `countOccurrencesUpTo` és `isEventOnDate` motor végzi el a naptár összes nézetében.
+- **Statikus napi lapozó nyilak**:
+  - A napi nézet fejlécében a `[ < ]` és `[ > ]` gombok a bal szélre kerültek a „Vissza a havi nézethez” gomb elé, pixelpontosan megegyezve a havi nézet nyilaival. Ennek köszönhetően a lapozó gombok pozíciója teljesen statikus marad, nem ugrik el a napok váltásakor sem.
+  - Dupla kattintással bármely esemény részletes nézete megnyitható, és ott egy kattintással szerkeszthető vagy törölhető.
+- **Laptop Képernyőre Illesztés & Egysoros Társasház- és Dátumnavigációs Sáv**:
+  - A külön egész sort elfoglaló társasházválasztó eltávolításra került a fejlécből. Helyette a `Társasház:` szűrő közvetlenül a dátumnavigációs sáv jobb oldalán, a kiválasztott dátummal egy sorban helyezkedik el.
+  - A navigációs sáv vékonyabb (`py-1.5 px-3`), a naptárrács dinamikus és rugalmas magasságú (`auto-rows-fr`, `min-h-[44px] - min-h-[62px]`), így laptopképernyőn (1366x768, 1440x900, 1080p skálázással) is teljes egészében elfér vertikális görgetés nélkül.
+
+---
+
+## 11. Banki Tranzakciók Intelligens Importáló és Jóváhagyó Modulja (`BankImportModal.jsx`, `bankParsers.js`)
+
+- **Elhelyezés és Hozzáférés**:
+  - Az aktív társasház felületén a „A ház pénzügyi helyzete” (`FinancialSituationModal.jsx`) menüpontban érhető el egy jól látható, figyelemfelkeltő sávban, valamint a fejlécben található `[ 📂 Banki importálás / Excel feltöltés ]` gombbal.
+  - **Házszintű alapértelmezett bank**: Az ablak megnyitásakor a KK kiválasztja a társasház bankját (pl. OTP Bank HTML/XLS/XLSX). A rendszer ezt elmenti az adott épület adatai közé (`building.defaultBank`), így a jövőben automatikusan ez a bank lesz kiválasztva.
+- **OTP Bank HTML / XLS és Excel Parser (`bankParsers.js`)**:
+  - Az OTP internetbankból letöltött `.xls` valójában HTML táblázat, amelyet a modul kliensoldali `DOMParser` segítségével parse-ol.
+  - Támogatja a valódi `.xlsx` és `.csv` fájlokat is a SheetJS könyvtáron keresztül.
+  - Kinyeri a fejléc adatokat: Számlaszám, Számla elnevezése (pl. "Batyu közös költség (KK)"), Lekérdezési időszak.
+  - Normalizálja a magyar összegformátumokat és dátumokat ISO formátumra (`YYYY-MM-DD`).
+- **Smart Matching Motor**:
+  - Többszintű duplikáció-szűrés: banki tranzakció azonosító (`bankTxId`) és összetett kulcs (`date + amount + flatNum + targetAccount`) alapján.
+  - Lakásbeazonosító pontozó algoritmus (bankszámlaszám, tulajdonos/bérlő név, közlemény lakásszám-minták: "Fsz 2", "2. lakás", "ajtó 2", előírás-összeg egyezés).
+  - Alszámla felismerés: Közös Költség vs. Felújítási Alap a számla neve és közlemény kulcsszavai alapján.
+  - `Verified` státusz: Nagy pontosságú, pozitív egyenlegű jóváírások azonnal lekönyvelhetők 1 kattintással (`[ ✅ Ellenőrzött tételek könyvelése ]`).
+- **Függő Tételek Jóváhagyása (Review Wizard)**:
+  - Interaktív lépésről lépésre haladó varázsló a nem egyértelmű vagy vitatott tételekhez.
+  - Megjeleníti a banki közleményt, összeget, dátumot és partnert.
+  - A KK interaktívan kiválaszthatja a lakást, az alszámlát (KK/FA), a típust (Befizetés / Kiadás) vagy kategóriát, és 1 kattintással jóváhagyhatja (`[ ✅ Jóváhagyás és Könyvelés ]`), ami azonnal rögzíti a tételt a könyvelésben és frissíti a lakás egyenlegét.
+  - A tételek kihagyhatók (`[ Kihagyás ]`) vagy szerkeszthetők.
+- **Kétnyelvűség és Adatbiztonság**:
+  - Minden szöveg, gomb, hibaüzenet és szűrőfelirat megtalálható magyarul és angolul a `src/constants/translations.js` fájlban.
+  - Kliensoldali biztonságos DOM-parsing, nincsenek külső szerverre küldött nyers banki adatok.
+
+---
+
+## 12. Nagyvállalati Portfólió Skálázhatóság (100+ Társasház) & Lista Nézet (`PortfolioView.jsx`)
+
+- **Kompakt KPI Jelvények a Fejlécben**:
+  - A korábban külön nagy kártyákban lévő mutatók helyett közvetlenül a „Társasházaim” cím mellett jelenik meg két diszkrét kapszulajelvény:
+    - `[ 🏢 Kezelt társasház: N ]`
+    - `[ 📑 Összes lakás: M ]`
+  - Megszűnt a feleslegesen sok helyet foglaló külön kártyasor.
+- **Alapértelmezett Lista Nézet (`viewMode: 'list'`)**:
+  - Nagyobb, 100+ társasházat kezelő cégeknél a csempés nézet helyett a kompakt, sűrű táblázatos lista nézet az alapértelmezett.
+  - Oszlopok: Társasház / Cím, Adószám, Lakások száma, Számlavezető bank, Összesített tartalékok (KK és FA bontással), Lakói hátraléki státusz, Műveleti gombok (Megnyitás, Naptár, Beállítások).
+  - Sorra kattintva vagy Entert nyomva közvetlenül megnyílik az adott épület.
+- **Nézetváltó kapcsoló**:
+  - A keresősáv mellett elérhető a `[ ☰ Lista ]` és `[ ⊞ Csempe ]` kapcsoló, így a felhasználó bármikor visszaválthat a kártyás megjelenítésre is.
+
+---
+
+## 13. Lakások Lista és Csempe Nézete (Skálázhatóság Épületen Belül)
+
+- **Adminisztrátori Egyenleg Mátrix (`AdminView.jsx`)**:
+  - Bevezetésre került a nézetválasztó kapcsoló: `[ ☰ Lista ]` és `[ ⊞ Csempe ]`.
+  - **Alapértelmezett Lista Nézet (`flatViewMode: 'list'`)**:
+    - Nagyobb, 50–100+ lakásos társasházaknál áttekinthető, kompakt táblázatban jelennek meg a lakások.
+    - Oszlopok: Albetét/Lakás (státusz pöttyel: piros hátralék esetén, zöld ha rendezett), Tulajdonos (és bérlő ha van), KK egyenleg, FA egyenleg, egyedi számlák egyenlegei, Összegyenleg (színkódolt kapszula: piros/zöld/kék), Gyorsbefizetés gombok (`+KK`, `+FA`, egyedi számlák egyetlen kattintással), Műveletek (Szerkesztés/Törlés mód vagy adatlap megnyitása).
+    - Sorra kattintva azonnal megnyílik a lakás részletes kartonja (`onOpenFlatDetail`).
+  - **Csempe Nézet (`flatViewMode: 'grid'`)**: A klasszikus kártyás megjelenítés egyetlen kattintással bármikor visszakapcsolható.
+
+- **Lakások Törzsadatai Modal (`FlatsDataModal.jsx`)**:
+  - Hasonlóan bekerült a `[ ☰ Lista ]` és `[ ⊞ Csempe ]` váltókapcsoló az összefoglaló fejlécbe.
+  - A lista nézetben kompakt táblázat mutatja a lakásszámot, tulajdonost, elérhetőségeket (email, telefon), lakók számát, alapterületet és tulajdoni hányadot, mellékterületeket (garázs, tároló), valamint gyorselérést a pénzügyi adatlaphoz és a törzsadat-szerkesztőhöz.
+
+---
+
+## 14. OTP Bank Open Banking & mTLS Integrációs Modul (`server/`)
+
+- **Kulcsok és Tanúsítványok Elhelyezése (`server/certs/`)**:
+  - `server/certs/otp_private.key`: RSA 4096 bites privát kulcs.
+  - `server/certs/otp_cert.pem`: X.509 PEM tanúsítvány 10 éves (3650 napos) érvényességgel (2026–2036).
+  - `server/certs/otp_public.pem`: Nyilvános kulcs kinyerve a banki regisztrációhoz.
+  - `.gitignore`: szigorúan védi a teljes `server/certs/` mappát és az összes kulcsfájlt (`*.key`, `*.pem`, `*.crt`, `*.csr`, `*.pfx`, `*.p12`, `.env`).
+- **Környezeti Változók (`.env` és `.env.example`)**:
+  - `PORT=5001`, `OTP_API_BASE_URL`, `OTP_AUTH_URL`, `OTP_CLIENT_ID`, `OTP_CLIENT_SECRET`, `OTP_CERT_PATH`, `OTP_KEY_PATH`, `INTERNAL_API_SECRET`.
+- **Node.js Kliens Modul (`server/otpApiClient.js`)**:
+  - `parseCertificatesFromPem()`: Többrészes PEM láncból kinyeri az összes X.509 tanúsítványt szerepkörökkel (Root CA, Intermediate CA, Kliens tanúsítvány).
+  - `validateOtpCertificateChain()`: Ellenőrzi az **OTP Bank Szabályzat 3.1.1** pontja szerinti szigorú láncsorrendet: 1. Root CA, 2. Intermediate CA (ha van), 3. Kliens tanúsítvány.
+  - `reorderOtpCertChain()`: Automatikusan átrendezi a tetszőleges sorrendű tanúsítványokat a kötelező OTP 3.1.1 sorrendbe.
+  - `validateLocalCertificates()`: Ellenőrzi a fájlok létezését a `server/certs/` könyvtárban, a lánc hierarchiáját és a privát kulcs / kliens tanúsítvány matematikai összetartozását (SHA-256 tesztaláírással).
+  - `createOtpMtlsAgent()`: Kölcsönös TLS (mTLS) HTTPS Agent TLS 1.2+ minimumverzióval a banki PSD2 követelményeknek megfelelően.
+  - `sendOtpRequest()`: Kérések küldése X-Request-ID fejléccel és mTLS kézfogással.
+  - `getOtpOAuthToken()`: OAuth2 Client Credentials tokenlekérés.
+  - `getOtpAccounts()` és `getOtpTransactions()`: Számlák és tranzakciók lekérése.
+  - `normalizeOtpTransaction()`: OTP CAMT.052 / JSON formátumú tételek konvertálása a TarsasApp egységes pénzügyi tranzakciós sémájára (helyes CRDT/DBIT előjelkezeléssel).
+  - `syncBuildingTransactions()`: Társasház szintű szinkronizáció éles mTLS-sel vagy hiteles Sandbox tesztadatokkal.
+- **Hivatalos Integrációs Útmutató és E-mail Sablon (`OTP_INTEGRATION_STEPS.md`)**:
+  - Teljes 6 fázisú ellenőrzőlista a banki csatlakozáshoz.
+  - Hivatalos e-mail sablon a `corpapisupport@otpbank.hu` címre cégnévvel, technikai kapcsolattartóval, ujjlenyomattal és a csatolandó publikus tanúsítványlánccal.
+  - Electra Kiegészítő Megállapodás benyújtási lépései és `.env` konfiguráció.
+- **Backend API Szerver (`server/server.js`)**:
+  - Indítás: `npm run server` (port: 5001).
+  - `GET /api/health`: Szerver és tanúsítvány-érvényesség ellenőrzés.
+  - `GET /api/bank/certs/status`: X.509 metaadatok biztonságos lekérdezése.
+  - `POST /api/bank/sync/:buildingId`: Tranzakciók szinkronizálása az adott társasházhoz.
+  - `POST /api/bank/test-connection`: Élő mTLS kézfogás tesztelése a banki szerverrel.
+- **Frontend Integráció (`BankImportModal.jsx`)**:
+  - Közvetlen `[ 🔄 OTP Corporate API Szinkronizálás (mTLS) ]` gomb a modalban, amely meghívja a backend végpontot és az eredményt azonnal átadja a Smart Matching és Review Wizard motornak.
+
+---
+
+## 15. Dokumentum Mapparendszer és Intuitív Fájlkezelés (`DocumentsModal.jsx`)
+
+A társasházi irattár fejlett, minden korosztály számára könnyen és intuitívan használható mapparendszerrel és fájlkezeléssel bővült:
+1. 📁 **Mapparendszer (`docFolders`)**:
+   - **Mappa létrehozása**: `[ + Új mappa ]` gomb, egyedi név és 6 választható színkód (Kék, Borostyán, Zöld, Indigó, Lila, Piros).
+   - **Mappa átnevezése és törlése**: Bármely mappa átnevezhető. Törlés esetén a benne lévő dokumentumok automatikusan és biztonságosan a főkönyvtárba kerülnek át, megelőzve az adatvesztést (Rule 3 & Rule 4).
+   - **Kenyérmorzsa navigáció**: `[ 🏠 Főkönyvtár ] > [ 📁 Mappa Neve ]` kattintható útvonalsáv és 1-kattintásos visszalépés.
+   - **Mappa számlálók**: Minden mappán látható a benne lévő dokumentumok pontos darabszáma.
+2. ✏️ **Dokumentumok szerkesztése és Fájlcsere (`updateDocument`)**:
+   - Dokumentum címének és fájlnevének módosítása.
+   - **Célmappa áthelyezés**: Lenyíló listából vagy gyors áthelyező modálból bármelyik mappába (vagy vissza a főkönyvtárba) azonnal átmozgatható.
+   - **Fájl megváltoztatása / cseréje**: Új fájl kiválasztása, amely felülírja a korábbi bináris tartalmat a `condo_files/` felhőtárhelyen, frissítve a fájlméretet és típust.
+3. 🖱️ **Maximális Ergonómia Minden Korosztálynak**:
+   - **Natív Jobbklikk Kontextus Menü**:
+     - Mappán: Megnyitás, Átnevezés, Törlés.
+     - Dokumentumon: Letöltés, Szerkesztés / Fájlcsere, Áthelyezés mappába, Törlés.
+     - Üres területen: Új mappa létrehozása, Új dokumentum feltöltése.
+   - **Kijelölés & Delete billentyű támogatás**: Mappára vagy dokumentumra kattintva az elem kiemelést kap; a `Delete` vagy `Backspace` gomb lenyomására azonnal megnyílik a törlési megerősítő párbeszédablak.
+   - **Érintőképernyő és idősebb felhasználók támogatása**: Minden funkció elérhető jól látható, nagy felületű gombokkal és 3-pontos menüvel (`...`) is, nem kötelező az egér jobb gombjának vagy billentyűparancsoknak az ismerete.
+   - **Kétnyelvűség és felhőszinkron**: Teljes körű `hu` / `en` szótár- és Firebase RTDB CRDT szinkronizáció.
+
+---
+
+## 16. Albetét Törzsadatai Multi-Tab Rendszer és Intelligens Banki Párosítás (`EditFlatMasterModal.jsx`)
+
+A lakások törzsadatait kezelő felület (`EditFlatMasterModal.jsx`) és a hozzá kapcsolódó albetét-adatmodell egy professzionális, tágas 5-füles rendszerré alakult át az alábbi architektúrával:
+
+1. 📐 **UX / UI Ergonómia és Elrendezés**:
+   - **Tágas modál**: Kibővítve nagy méretű nézetté (`max-w-5xl`, `h-[88vh]`), megszüntetve a korábbi szűk, zsúfolt elrendezést.
+   - **Rögzített (Sticky) Fejléc és Fülsor**: Az albetét neve, típusa, aktív bérlő jelzője, szerkesztés/mentés/mégse gombok és a 4 fül mindig rögzítve marad felül; csak az aktuális fül tartalma görgethető külön.
+   - **ESC Billentyű és Háttér Kezelés**: Globális `keydown` eseményfigyelővel a felugró ablak azonnal és kényelmesen bezárható az `Escape` billentyű lenyomására vagy a háttérre kattintva.
+
+2. 🏷️ **Önálló Albetét Típusok (`unitType`)**:
+   - A rendszer nemcsak lakásokat, hanem önálló albetétként kezelt egyéb egységeket is támogat:
+     - `flat`: Lakás (`Home`)
+     - `garage`: Garázs / Beálló (`Car`)
+     - `storage`: Tároló / Pince (`Package`)
+     - `commercial`: Üzlethelyiség / Iroda (`Briefcase`)
+     - `other`: Egyéb (`Layers`)
+   - **Fő listanézet (`FlatsDataModal.jsx`)**: Színes típus-jelvényekkel, aktív bérlő címkével, valamint gyorsszűrő gombokkal (`Mind`, `Lakások`, `Garázsok`, `Tárolók`, `Üzlethelyiségek`, `Egyéb`).
+
+3. 📑 **A 4 Logikus Fül (Multi-Tab Struktúra)**:
+   - **A) "Alapadatok" (`tab_flat_basic`)**: Albetét típusa, kódja, helyrajzi szám (`hrsz`), lépcsőház, emelet, ajtó, alapterület (m²), légköbméter (m³), tulajdoni hányad (%), lakók száma (fő), egyedi utaláskód (`paymentCode`), vételi és eladási időpontok, jogi személy jelölő (`isCompany`), rezsiből kihagyva (`excludeUtility`), valamint szabad szöveges megjegyzések.
+   - **B) "Tulajok / Bérlők" (`tab_flat_owners_tenants`) - Egységesített Tulajdonosi és Bérlői Nyilvántartás**:
+     - **Kompakt lista + Rákattintásra lenyíló (Accordion) részletek**: Alapértelmezésben tiszta, átlátható listanézet látható (név, szerepkör-jelvény, tulajdoni hányad, elsődleges kapcsolattartó csillag, e-mail cím és telefonszám).
+     - Rákattintva az elem azonnal lenyílik, megjelenítve a részletes szerkesztőmezőket, levelezési címet, bérleti időszakot és ismert számlaszámokat.
+     - **"Összes kibontása / Összecsukása" gyorsgomb**: Egyszerre nyitja vagy zárja az összes kártyát.
+     - **Gyorsszűrő gombsor a fülön belül**: `Mind`, `Tulajdonosok`, `Bérlők`.
+     - **Megbízható, kattintható kapcsolók (Checkboxes)**: Gomb-alapú pipák az elsődleges kapcsolattartó, e-mail értesítés, SZVB tagság és bérlő aktív státusz kezelésére. A felesleges "Banki utaló" jelölő eltávolítva.
+     - **Tulajdonosok és bérlők megkülönböztetése**: Kék/indigó téma a tulajdonosoknak (szerepkörök, tulajdoni hányadok valós idejű összegezésével), smaragdzöld téma az aktív bérlőknek, szürke téma a korábbi bérlőknek.
+   - **C) "Mérőórák" (`tab_flat_meters`)**:
+     - Albetéti mérőórák (Hideg víz, Meleg víz, Fűtés, Villany, Gáz, Egyéb).
+     - Gyári szám, beszerelés és leszerelés dátuma/állása, aktuális állás, utolsó leolvasás dátuma, hitelesítés lejárata.
+     - **Automatikus lejárati figyelmeztetés**: piros badge lejárt hitelesítésre, narancssárga badge 180 napon belüli lejárathoz.
+   - **D) "Tartozékok" (`tab_flat_annexes`)**:
+     - Nem önálló albetétként kezelt tartozékok (beálló m², tároló db, terasz m², vízátalány).
+     - Kód, megnevezés, mennyiség, mértékegység (`db`, `m²`, `m³`, `Ft`). Visszamenőlegesen kompatibilis a korábbi `garages` és `storages` struktúrákkal.
+
+4. 🧠 **Smart Matching Integráció (`bankParsers.js`)**:
+   - A banki tranzakció-párosító motor kibővítve az új azonosítókkal:
+     1. `flat.paymentCode` / `flat.utalaskod`: 85 pontos prioritású egyezés a közleményre.
+     2. Minden tulajdonos/haszonélvező neve és megadott bankszámlaszáma automatikusan felismeri a partnert.
+     3. Csak az aktuálisan **aktív** bérlők neve, utaló neve és számlaszáma kerül be a felismerési kulcsok közé (a már kiköltözött bérlők kizárva).
+
+---
+
+## 17. Oldalfrissítés (F5 / Reload) és Munkamenet Állapotmegőrzés (`src/App.jsx`)
+
+Az alkalmazás mostantól képes megőrizni az éppen megnyitott nézeteket, modálokat és aktív albetéteket a böngésző oldalfrissítése (`F5`, `Ctrl+R` vagy böngésző újratöltés) során:
+
+1. 🔄 **Megőrzött állapotok & Rétegződés**:
+   - **Albetét Adatlapja (`FlatDetailModal`)**: Ha a felhasználó pl. az 1-es lakásban dolgozott (`flatDetailNum = '1'`), frissítés után azonnal újra megnyílik az 1-es lakás részletes adatlapja (`#flat=1`).
+   - **Törzsadat Nézet (`EditFlatMasterModal`)**: Ha a törzsadat ablakban volt (`#master=1`), újratöltéskor a teljes 4 füles szerkesztőablak jelenik meg újra.
+   - **Rétegzett Megnyitás**: Ha a felhasználó a "Lakások adatai" felületről (`isFlatsDataOpen`) nyitotta meg az albetétet, frissítéskor mindkét modál megfelelően feláll; az albetét bezárásakor a felhasználó a "Lakások adatai" listanézetbe tér vissza.
+   - **Egyéb Fő Modálok**: Pénzügyi helyzet (`#view=finance`), Dokumentumok (`#view=docs`), Közgyűlések (`#view=assembly`), Kölcsönök (`#view=loans`), Naptár (`#view=calendar`), Alapok & Beállítások (`#view=balances`), Profil (`#view=profile`).
+
+2. 🛡️ **Technikai architektúra**:
+   - `sessionStorage["tarsas_nav_state"]`: Biztonságos, fül-specifikus perzisztencia, amely nem szivárog át új böngészőlapokra vagy más bejelentkezésekhez.
+   - `window.history.replaceState`: Letisztult URL hash szinkronizáció előzmény-duplikáció nélkül.
+   - `window.addEventListener('hashchange')`: Natív támogatás a böngésző Vissza/Előre gombjaihoz.
+   - `syncEngine.js` & `authActions.js`: Munkamenet megtartása `sessionStorage["tarsashaz_session_user"]` által frissítéskor, és teljes törlés kijelentkezéskor (`logout()`).
+
+---
+
+## 18. Kettős Görgetősáv Megszüntetése és Mindig Aktív Törzsadat Szerkesztő
+
+1. 🖱️ **Kettős görgetősáv (Double scrollbar) megszüntetése**:
+   - A flexbox `min-height: auto` viselkedése miatt a nagyméretű táblázatok túlcsordították a külső szülő konténert, így a böngésző két függőleges görgetősávot jelenített meg egymás mellett (amelyből a külső inaktív volt).
+   - Javítás: `overflow-hidden` a külső `fixed inset-0` konténeren, valamint `min-h-0` a belső `flex-1 overflow-y-auto` elemen mind a 6 fullscreen modálban (`FlatsDataModal`, `FinancialSituationModal`, `DocumentsModal`, `LoansModal`, `AssemblyModal`, `ProfileModal`, `FullscreenTxModal`).
+   - Eredmény: pontosan egy darab, simán gördülő aktív görgetősáv jelenik meg a jobb szélen.
+
+2. ✏️ **Közvetlen és akadálytalan törzsadat szerkesztés (`EditFlatMasterModal.jsx`)**:
+   - Megszűnt az értelmetlen kezdeti passzív zárolás (`isEditMode = false`), a modál a megnyitás pillanatától azonnal szerkeszthető.
+   - Minden jelölőnégyzet és kapcsoló (`isCompany`, `excludeUtility`, `isPrimaryContact`, `sendEmailNotification`, `isBoardMember`, `isActive`) 100%-ban interaktív, közvetlenül ki/be pipálható a korábbi `disabled={!isEditMode}` blokkolások eltávolításával.
+   - Kiemelt **Mentés** (`<Save />`) és **Mégse** gombok találhatók mind a fejlécben, mind a láblécben; a Mentés elmenti az adatokat és bezárja az ablakot.
+
+---
+
+## 19. Kategóriatörzs, Intelligens Kassza-választás és Fizetési Mód Kezelése a Tranzakciós Modálokban
+
+1. 📂 **Kategória választó és automata kassza-kiválasztás (`UniversalTransactionModal` és `EditTransactionModal`)**:
+   - Új `KATEGÓRIA` legördülő mező közvetlenül a `SZÁMLA / ALAP` mellett.
+   - Dinamikusan betöltődik az adott ház `categories` kollekciójából (fallback: `DEFAULT_CATEGORIES` a `defaultData.js`-ből).
+   - **Típus szerinti automatikus szűrés**:
+     - *Befizetés / Jóváírás (+)* módban kizárólag a `type === 'income'` kategóriák érhetők el (pl. Közös költség, Felújítási hozzájárulás, Bérleti díj bevétel).
+     - *Kiadás / Terhelés (-)* módban kizárólag a `type === 'expense'` kategóriák érhetők el (pl. Karbantartás, Szemétszállítás, Biztosítás, Lift, Közös áram).
+   - **Intelligens kassza-kiválasztás**: Amikor a felhasználó kiválaszt egy kategóriát, a `SZÁMLA / ALAP` mező automatikusan átvált a kategória `defaultFund` értékére (`Közös Költség` vagy `Felújítási Alap`), de a felhasználó manuálisan továbbra is bármikor felülbírálhatja.
+
+2. 💳 **Fizetési mód választó (`Banki átutalás` vs `Készpénz (Pénztár)`)**:
+   - Kétállású gombválasztó az új tétel és szerkesztés ablakban.
+   - **Okos egyenleg-kezelés**:
+     - `Készpénz (Pénztár)` választásakor a rendszer automatikusan kiveszi a pipát a *"Befolyásolja a folyószámla egyenleget?"* mezőből (`affectsBalance = false`), így a készpénzes tételek nem torzítják a társasházi banki egyenleget.
+     - `Banki átutalás`-ra visszaváltva automatikusan visszakerül a pipa (`affectsBalance = true`).
+     - A jelölőnégyzet ettől függetlenül kézzel bármikor ki- és bekapcsolható marad.
+   - **Megjelenítés a tranzakciós listában**:
+     - A rögzített fizetési mód (`paymentMethod` és `method`) elmentésre kerül a tranzakcióhoz/kiadáshoz.
+     - A "Minden tranzakció és kiadás" listában (`AdminView.jsx`) és a teljes képernyős listában (`FullscreenTxModal.jsx`) a jobb oldali összeg alatt megjelenik: a készpénzes tételek feltűnő borostyán (`bg-amber-100 text-amber-800`) jelvénnyel jelennek meg mint `Készpénz (Pénztár)` / `Cash (Register)`, az átutalások pedig `Banki átutalás` / `Bank Transfer` felirattal.
+
+3. 📐 **Elrendezés, UX és billentyűzet-kezelés (ESC)**:
+   - A rövid mezők (Kategória + Számla/Alap, Fizetési mód + Dátum) 2 oszlopos gridbe (`sm:grid-cols-2`) rendeződtek asztali nézetben, így az űrlap kényelmesen, függőleges görgetés nélkül elfér.
+   - Megnövelt belső margó és modál szélesség (`max-w-2xl`): az összeg mező felső része garantáltan nem csúszik be a fejléc alá.
+   - Globális `Escape` (ESC) billentyűfigyelő és háttérkattintás azonnal bezárja az ablakot.
+
+---
+
+## 20. Maintenance Checklist for Future Sessions
+
+Mielőtt bármilyen feladatot befejeznél:
+1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?
+2. **Szabály 2 (Dokumentáció)**: Frissítetted a releváns `/docs/*.md`, `AGENT.md` vagy `GEMINI.md` fájlokat, hogy a változások pontosan dokumentálva legyenek a következő fejlesztési lépéshez?
+3. **Szabály 3 (Adatbázis-védelem)**: Kizárólag a felhasználó kifejezett jóváhagyásával nyúltál hozzá éles adathoz? (Semmilyen automatizált teszt vagy script nem módosított éles RTDB adatot!)
+4. **Szabály 4 (Adatbiztonság)**: Megvizsgáltad a biztonsági vonzatokat, és tettél proaktív javaslatot az esetleges gyenge pontok megerősítésére?
+5. **Build ellenőrzés**: Lefuttattad az `npm run build` parancsot, és 0 hiba/figyelmeztetés keletkezett?
+6. **Legacy védelem**: Érintetlenül hagytad a `new-project/` mappát?

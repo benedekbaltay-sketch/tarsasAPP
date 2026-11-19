@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
+import { getAuth } from 'firebase/auth';
 
 export const firebaseConfig = {
   apiKey: "AIzaSyC31_8JTUntwtTCr6dZQH_VvsfGZ3ypUxc",
@@ -14,9 +15,10 @@ export const firebaseConfig = {
 
 let app = null;
 let rtdb = null;
+let auth = null;
 
 export function getFirebaseInstance() {
-  if (typeof window === 'undefined') return { app: null, rtdb: null };
+  if (typeof window === 'undefined') return { app: null, rtdb: null, auth: null };
   try {
     if (!getApps().length) {
       app = initializeApp(firebaseConfig);
@@ -24,8 +26,9 @@ export function getFirebaseInstance() {
       app = getApp();
     }
     rtdb = getDatabase(app);
+    auth = getAuth(app);
   } catch (err) {
     console.warn("Firebase initialization warning:", err.message);
   }
-  return { app, rtdb };
+  return { app, rtdb, auth };
 }

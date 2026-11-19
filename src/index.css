@@ -39,8 +39,15 @@
     background: rgba(156, 163, 175, 0.4);
     border-radius: 9999px;
   }
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(156, 163, 175, 0.7);
+  /* Disable number input spin buttons / steppers everywhere */
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+  }
+  input[type=number] {
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
   }
 }
 
@@ -51,7 +58,7 @@
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: none;
   }
 }
 

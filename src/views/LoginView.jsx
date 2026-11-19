@@ -1,34 +1,84 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Mail, Lock, Eye, AlertCircle, CheckCircle2, KeyRound, HelpCircle, LogIn, Building2, User } from 'lucide-react';
+import { Mail, Lock, Eye, AlertCircle, KeyRound, HelpCircle, LogIn, Building2, RefreshCw } from 'lucide-react';
 
 export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
-  const { state, t, login, quickLogin, toggleLanguage } = useApp();
-  const [email, setEmail] = useState('');
+  const { state, t, login, toggleLanguage } = useApp();
+  const [email, setEmail] = useState(() => {
+    try {
+      return localStorage.getItem("tarsashaz_last_email") || '';
+    } catch (e) {
+      return '';
+    }
+  });
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(() => {
+    try {
+      return parseInt(sessionStorage.getItem("tarsashaz_failed_attempts") || "0", 10);
+    } catch (e) {
+      return 0;
+    }
+  });
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  useEffect(() => {
+    let timer = null;
+    if (lockoutSeconds > 0) {
+      timer = setInterval(() => {
+        setLockoutSeconds(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [lockoutSeconds]);
 
   const isHu = state.currentLang === 'hu' || !state.currentLang;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (lockoutSeconds > 0 || isSubmitting) return;
     setErrorMsg('');
-    const res = login(email, password, rememberMe);
-    if (!res.success) {
-      setErrorMsg(res.error || t.login_error);
+    try {
+      if (email) localStorage.setItem("tarsashaz_last_email", email.trim().toLowerCase());
+    } catch (err) {}
+    setIsSubmitting(true);
+    try {
+      const res = await login(email, password, rememberMe);
+      if (!res.success) {
+        const nextAttempts = failedAttempts + 1;
+        setFailedAttempts(nextAttempts);
+        try {
+          sessionStorage.setItem("tarsashaz_failed_attempts", String(nextAttempts));
+        } catch (e) {}
+
+        if (nextAttempts >= 5) {
+          setLockoutSeconds(30);
+          const limitMsg = (t.login_rate_limit_exceeded || "Túl sok sikertelen próbálkozás. Biztonsági okokból kérjük várj {seconds} másodpercet.").replace('{seconds}', '30');
+          setErrorMsg(limitMsg);
+        } else {
+          setErrorMsg(res.error || t.login_error);
+        }
+      } else {
+        setFailedAttempts(0);
+        try {
+          sessionStorage.removeItem("tarsashaz_failed_attempts");
+        } catch (e) {}
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
-
-  const adminUser = (state.users || []).find(u => u.role === 'admin') || {
-    id: "admin",
-    name: "Baltay Benedek",
-    email: "benedek.baltay@gmail.com",
-    role: "admin"
-  };
-
-  const residentUsers = (state.users || []).filter(u => u.role === 'Owner');
 
   return (
     <div className="min-h-screen bg-[#F3F4F6] flex flex-col items-center justify-center p-4 sm:p-6 md:p-10">
@@ -37,12 +87,13 @@ export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
       <div className="w-full max-w-md flex justify-end mb-4">
         <button
           onClick={toggleLanguage}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 shadow-sm transition-all"
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 shadow-xs transition-all hover:border-gray-300 cursor-pointer"
         >
           <img
             src={isHu ? "https://flagcdn.com/gb.svg" : "https://flagcdn.com/hu.svg"}
             alt={isHu ? "EN" : "HU"}
-            className="w-4 h-3 rounded-xs object-cover"
+            className="w-5 h-3.5 rounded-[2px] shadow-2xs border border-black/15 object-cover"
+            loading="eager"
           />
           <span>{isHu ? "English" : "Magyar"}</span>
         </button>
@@ -54,15 +105,15 @@ export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
         {/* Header */}
         <div className="text-center mb-7">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-2xl bg-[#1E3A8A] flex items-center justify-center text-white shadow-lg shadow-blue-900/30">
-              <Building2 className="w-6 h-6" />
+            <div className="w-13 h-13 rounded-2xl bg-[#1E3A8A] flex items-center justify-center text-white shadow-lg shadow-blue-900/30">
+              <Building2 className="w-6.5 h-6.5" />
             </div>
             <h2 className="text-2xl font-extrabold text-gray-900 font-display m-0">
               {t.login_title}
             </h2>
           </div>
           <p className="text-sm text-gray-500 font-medium">
-            {t.login_subtitle} &bull; Batyu utca 21.
+            {t.login_subtitle}
           </p>
         </div>
 
@@ -85,7 +136,12 @@ export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  try {
+                    localStorage.setItem("tarsashaz_last_email", e.target.value);
+                  } catch (err) {}
+                }}
                 placeholder="pelda@email.com"
                 required
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
@@ -136,10 +192,21 @@ export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
 
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-sm rounded-xl shadow-md transition-all active:scale-[0.99] cursor-pointer"
+            disabled={lockoutSeconds > 0 || isSubmitting}
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-[#1E3A8A] hover:bg-[#1e40af] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold text-sm rounded-xl shadow-md transition-all active:scale-[0.99] cursor-pointer"
           >
-            <LogIn className="w-4 h-4" />
-            <span>{t.login_title}</span>
+            {isSubmitting ? (
+              <RefreshCw className="w-4 h-4 animate-spin text-white" />
+            ) : (
+              <LogIn className="w-4 h-4" />
+            )}
+            <span>
+              {lockoutSeconds > 0
+                ? (isHu ? `Várakozás (${lockoutSeconds} mp)...` : `Please wait (${lockoutSeconds}s)...`)
+                : isSubmitting
+                ? t.logging_in
+                : t.login_title}
+            </span>
           </button>
         </form>
 
@@ -162,67 +229,6 @@ export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
             <span>{t.help_nav}</span>
           </button>
         </div>
-      </div>
-
-      {/* Quick Login Demo Section */}
-      <div className="w-full max-w-md mt-6 bg-white/70 backdrop-blur-sm border border-gray-200/80 rounded-2xl p-5 shadow-sm">
-        <div className="mb-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-2">
-            <span>{t.quick_login_title}</span>
-          </h4>
-          <p className="text-xs text-gray-500">
-            {t.quick_login_desc}
-          </p>
-        </div>
-
-        {/* Representative */}
-        <div className="mb-3">
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
-            {t.management}
-          </span>
-          <button
-            onClick={() => quickLogin(adminUser)}
-            className="w-full flex items-center justify-between p-2.5 rounded-xl border border-blue-200/70 bg-blue-50/50 hover:bg-blue-100/70 text-left transition-all group"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-[#1E3A8A] text-white flex items-center justify-center font-bold text-xs">
-                KK
-              </div>
-              <div>
-                <div className="text-xs font-bold text-gray-900">{adminUser.name}</div>
-                <div className="text-[11px] text-gray-500">{t.rep_role}</div>
-              </div>
-            </div>
-            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-600 text-white">
-              Admin
-            </span>
-          </button>
-        </div>
-
-        {/* Residents */}
-        <div>
-          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
-            {t.residents}
-          </span>
-          <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
-            {residentUsers.map((user) => (
-              <button
-                key={user.id || user.flatNum}
-                onClick={() => quickLogin(user)}
-                className="flex items-center gap-2 p-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-left transition-all"
-              >
-                <div className="w-6 h-6 rounded-md bg-gray-100 text-gray-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-                  {user.flatNum}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-bold text-gray-800 truncate">{user.name}</div>
-                  <div className="text-[10px] text-gray-400 truncate">{user.flatNum}. lakás</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
       </div>
 
     </div>

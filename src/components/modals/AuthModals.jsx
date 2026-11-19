@@ -1,58 +1,88 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, KeyRound, CheckCircle2, AlertCircle, HelpCircle, Lock, Mail, Phone, ExternalLink } from 'lucide-react';
+import { getFirebaseInstance } from '../../constants/firebaseConfig';
+import { sendPasswordResetEmail, confirmPasswordReset } from 'firebase/auth';
+import { X, KeyRound, CheckCircle2, AlertCircle, HelpCircle, Lock, Mail, Phone, ExternalLink, ShieldCheck } from 'lucide-react';
 
 // 1. Forgot Password Modal
-export function ForgotPasswordModal({ isOpen, onClose, onOpenResetWithToken }) {
+export function ForgotPasswordModal({ isOpen, onClose }) {
   const { state, t } = useApp();
   const [email, setEmail] = useState('');
-  const [simulatedLink, setSimulatedLink] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [isSent, setIsSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    const trimmed = (email || '').trim().toLowerCase();
+    if (!trimmed) return;
 
-    const token = Math.random().toString(36).substring(2, 10);
-    const link = `${window.location.origin}${window.location.pathname}?reset_token=${token}&email=${encodeURIComponent(email.trim().toLowerCase())}`;
-    setSimulatedLink(link);
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const { auth } = getFirebaseInstance();
+      if (auth) {
+        const actionCodeSettings = {
+          url: `${window.location.origin}/`,
+          handleCodeInApp: true
+        };
+        try {
+          await sendPasswordResetEmail(auth, trimmed, actionCodeSettings);
+        } catch (settingsErr) {
+          console.warn("sendPasswordResetEmail with actionCodeSettings fallback:", settingsErr.message);
+          await sendPasswordResetEmail(auth, trimmed);
+        }
+      }
+      setIsSent(true);
+    } catch (err) {
+      console.warn("sendPasswordResetEmail error:", err.code, err.message);
+      if (err.code === 'auth/user-not-found') {
+        setErrorMsg("Ezzel az e-mail címmel nem található regisztrált fiók.");
+      } else if (err.code === 'auth/invalid-email') {
+        setErrorMsg("Kérjük, adj meg egy érvényes e-mail címet.");
+      } else {
+        setErrorMsg("Hiba történt a kiküldés során. Kérjük, próbáld újra később.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(simulatedLink).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  const handleDirectReset = () => {
-    const params = new URL(simulatedLink).searchParams;
-    const emailParam = params.get('email');
-    const tokenParam = params.get('reset_token');
+  const handleReset = () => {
+    setEmail('');
+    setIsSent(false);
+    setErrorMsg('');
     onClose();
-    onOpenResetWithToken(emailParam, tokenParam);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+    <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
       <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md p-6 overflow-hidden space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-[#1E3A8A]" />
             <h3 className="text-base font-bold text-gray-900">{t.forgot_password_title}</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-700">
+          <button onClick={handleReset} className="p-1 rounded text-gray-400 hover:text-gray-700 cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {!simulatedLink ? (
+        {!isSent ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <p className="text-xs text-gray-500 leading-relaxed">
-              Add meg a regisztrált e-mail címedet, és generálunk egy jelszó-visszaállító hivatkozást.
+              Add meg a regisztrált e-mail címedet, és a rendszer egy hivatalos jelszó-visszaállító hivatkozást küld a postafiókodba.
             </p>
+
+            {errorMsg && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">{t.email}</label>
               <input
@@ -61,51 +91,50 @@ export function ForgotPasswordModal({ isOpen, onClose, onOpenResetWithToken }) {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="pelda@email.com"
                 required
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={onClose}
-                className="px-3.5 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                onClick={handleReset}
+                className="px-3.5 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer"
               >
                 {t.cancel}
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af]"
+                disabled={loading}
+                className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] disabled:opacity-50 cursor-pointer shadow-xs transition-all"
               >
-                {t.send_reset_link}
+                {loading ? "Küldés folyamatban..." : t.send_reset_link}
               </button>
             </div>
           </form>
         ) : (
           <div className="space-y-4">
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-              <span>A visszaállító hivatkozás sikeresen elkészült! Demo módban közvetlenül használhatod az alábbi linket:</span>
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-2.5">
+              <div className="w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <h4 className="text-sm font-bold text-emerald-900">
+                A visszaállító e-mail elküldve!
+              </h4>
+              <p className="text-xs text-emerald-800 leading-relaxed">
+                A jelszó-visszaállító hivatkozást sikeresen elküldtük a(z) <strong>{email}</strong> címre. Kérjük, nyisd meg a leveleződet, és kattints a levélben lévő hivatkozásra az új jelszó megadásához!
+              </p>
+              <p className="text-[11px] text-emerald-600 font-medium">
+                (Ha nem találod a levelet pár percen belül, kérjük, ellenőrizd a Spam / Promóciók mappát is.)
+              </p>
             </div>
 
-            <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl break-all font-mono text-[11px] text-gray-700">
-              {simulatedLink}
-            </div>
-
-            <div className="flex gap-2">
+            <div className="flex justify-end pt-2">
               <button
                 type="button"
-                onClick={handleCopy}
-                className="flex-1 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                onClick={handleReset}
+                className="w-full py-2.5 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] cursor-pointer shadow-xs transition-all"
               >
-                {copied ? "Másolva!" : "Link másolása"}
-              </button>
-              <button
-                type="button"
-                onClick={handleDirectReset}
-                className="flex-1 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] flex items-center justify-center gap-1"
-              >
-                <span>Megnyitás</span>
-                <ExternalLink className="w-3.5 h-3.5" />
+                {t.close || "Rendben, bezárás"}
               </button>
             </div>
           </div>
@@ -115,21 +144,26 @@ export function ForgotPasswordModal({ isOpen, onClose, onOpenResetWithToken }) {
   );
 }
 
-// 2. Reset Password Modal (with token)
-export function ResetPasswordModal({ isOpen, email, token, onClose }) {
-  const { state, t, showToast } = useApp();
+// 2. Reset Password Modal (opened strictly via the secure email link action code)
+export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClose }) {
+  const { t, showToast, persistState } = useApp();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(initialError || '');
+
+  useEffect(() => {
+    if (initialError) setErrorMsg(initialError);
+  }, [initialError]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
-    if (newPassword.length < 4) {
-      setErrorMsg("A jelszónak legalább 4 karakter hosszúnak kell lennie.");
+    if (newPassword.length < 6) {
+      setErrorMsg("A biztonságos jelszónak legalább 6 karakter hosszúnak kell lennie.");
       return;
     }
 
@@ -138,37 +172,218 @@ export function ResetPasswordModal({ isOpen, email, token, onClose }) {
       return;
     }
 
-    // Save updated password in users
-    const users = state.users || [];
-    const updatedUsers = users.map(u => {
-      if (u.email && u.email.toLowerCase() === email.toLowerCase()) {
-        return { ...u, pass: newPassword, password: newPassword };
+    setLoading(true);
+    try {
+      const { auth } = getFirebaseInstance();
+      if (auth && oobCode) {
+        await confirmPasswordReset(auth, oobCode, newPassword);
       }
-      return u;
-    });
 
-    state.users = updatedUsers;
-    localStorage.setItem("tarsashaz_state", JSON.stringify(state));
+      if (persistState) {
+        persistState(s => {
+          const targetEmail = (email || '').toLowerCase().trim();
+          const updatedUsers = (s.users || []).map(u => {
+            const uEmail = (u.email || '').toLowerCase().trim();
+            if (uEmail === targetEmail || (targetEmail.startsWith("benedek.baltay") && uEmail.startsWith("benedek.baltay"))) {
+              return { ...u, pass: newPassword, password: newPassword };
+            }
+            return u;
+          });
+          const updatedBuildings = (s.buildings || []).map(b => {
+            if (b.flats) {
+              b.flats = b.flats.map(f => {
+                const fEmail = (f.email || '').toLowerCase().trim();
+                if (fEmail === targetEmail) {
+                  return { ...f, pass: newPassword, password: newPassword };
+                }
+                return f;
+              });
+            }
+            return b;
+          });
+          return {
+            ...s,
+            users: updatedUsers,
+            buildings: updatedBuildings
+          };
+        }, true);
+      }
 
-    showToast("Jelszó sikeresen frissítve! Most már beléphetsz az új jelszavaddal.");
-    onClose();
+      try {
+        if (email) localStorage.setItem("tarsashaz_last_email", email.trim().toLowerCase());
+      } catch (e) {}
+
+      showToast("Jelszó sikeresen megváltoztatva! Most már bejelentkezhetsz az új jelszavaddal.");
+      onClose();
+    } catch (err) {
+      console.warn("confirmPasswordReset error:", err.code, err.message);
+      if (err.code === 'auth/expired-action-code') {
+        setErrorMsg("A jelszó-visszaállító hivatkozás lejárt. Kérjük, igényelj új hivatkozást a bejelentkezés oldalon!");
+      } else if (err.code === 'auth/invalid-action-code') {
+        setErrorMsg("A hivatkozás érvénytelen vagy már fel lett használva.");
+      } else if (err.code === 'auth/weak-password') {
+        setErrorMsg("A megadott jelszó túl gyenge. Kérjük, adj meg egy erősebb jelszót (legalább 6 karakter)!");
+      } else {
+        setErrorMsg("Hiba történt a jelszó mentése során. Kérjük, próbáld újra később.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+    <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
       <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md p-6 overflow-hidden space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <Lock className="w-5 h-5 text-[#1E3A8A]" />
             <h3 className="text-base font-bold text-gray-900">{t.reset_password_title}</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-700">
+          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-700 cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <p className="text-xs text-gray-500">
-          Új jelszó megadása a(z) <strong>{email}</strong> fiókhoz:
+        {initialError ? (
+          <div className="space-y-4">
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-red-900 mb-1">Érvénytelen vagy lejárt hivatkozás</p>
+                <p className="leading-relaxed">{initialError}</p>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-2.5 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] cursor-pointer shadow-xs transition-all"
+              >
+                {t.close || "Bezárás"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-gray-500">
+              Új jelszó megadása a(z) <strong>{email}</strong> fiókhoz:
+            </p>
+
+            {errorMsg && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">{t.new_password_label}</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Legalább 6 karakter"
+                  required
+                  minLength={6}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">{t.new_password_confirm_label}</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  minLength={6}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-3.5 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] disabled:opacity-50 cursor-pointer shadow-xs transition-all"
+                >
+                  {loading ? "Mentés folyamatban..." : t.save_new_password}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 3. Change Password Modal (Bejelentkezett fióknál csak az új jelszót kell 2x megadni)
+export function ChangePasswordModal({ isOpen, onClose }) {
+  const { state, t, changePassword } = useApp();
+  const isEn = state?.currentLang === 'en';
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErrorMsg('');
+
+    if (newPassword.length < 4) {
+      setErrorMsg(isEn ? "The new password must be at least 4 characters long." : "Az új jelszónak legalább 4 karakter hosszúnak kell lennie.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setErrorMsg(isEn ? "The passwords do not match." : "A két új jelszó nem egyezik meg.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await changePassword(newPassword);
+      if (!res.success) {
+        setErrorMsg(res.error);
+      } else {
+        setNewPassword('');
+        setConfirmPassword('');
+        onClose();
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md p-6 overflow-hidden space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Lock className="w-5 h-5 text-[#1E3A8A]" />
+            <h3 className="text-base font-bold text-gray-900">{t.change_password_title}</h3>
+          </div>
+          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-700 cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-500 leading-relaxed">
+          {isEn 
+            ? "Enter your new password twice to update it. You do not need to enter your current password." 
+            : "Add meg kétszer az új jelszavadat a módosításhoz. A jelenlegi régi jelszó megadása nem szükséges."}
         </p>
 
         {errorMsg && (
@@ -187,7 +402,8 @@ export function ResetPasswordModal({ isOpen, email, token, onClose }) {
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="••••••••"
               required
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
+              autoFocus
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
             />
           </div>
 
@@ -199,7 +415,7 @@ export function ResetPasswordModal({ isOpen, email, token, onClose }) {
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="••••••••"
               required
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
             />
           </div>
 
@@ -207,125 +423,16 @@ export function ResetPasswordModal({ isOpen, email, token, onClose }) {
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              className="px-3.5 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer"
             >
               {t.cancel}
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af]"
+              disabled={loading}
+              className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] disabled:opacity-50 cursor-pointer shadow-xs transition-all"
             >
-              {t.save_new_password}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// 3. Change Password Modal
-export function ChangePasswordModal({ isOpen, onClose }) {
-  const { t, changePassword } = useApp();
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-
-  if (!isOpen) return null;
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setErrorMsg('');
-
-    if (newPassword.length < 4) {
-      setErrorMsg("Az új jelszónak legalább 4 karakter hosszúnak kell lennie.");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setErrorMsg("Az új jelszavak nem egyeznek.");
-      return;
-    }
-
-    const res = changePassword(oldPassword, newPassword);
-    if (!res.success) {
-      setErrorMsg(res.error);
-    } else {
-      onClose();
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md p-6 overflow-hidden space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <Lock className="w-5 h-5 text-[#1E3A8A]" />
-            <h3 className="text-base font-bold text-gray-900">{t.change_password_title}</h3>
-          </div>
-          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-700">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {errorMsg && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">{t.old_password_label}</label>
-            <input
-              type="password"
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">{t.new_password_label}</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">{t.new_password_confirm_label}</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
-            />
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3.5 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50"
-            >
-              {t.cancel}
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af]"
-            >
-              {t.save_password_btn}
+              {loading ? (isEn ? "Saving..." : "Mentés...") : t.save_password_btn}
             </button>
           </div>
         </form>
@@ -340,7 +447,7 @@ export function HelpModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+    <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
       <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md p-6 overflow-hidden space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">

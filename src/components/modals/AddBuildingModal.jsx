@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, Building2, Plus } from 'lucide-react';
+import { useBackdropClose } from '../../utils/useBackdropClose';
 
 export function AddBuildingModal({ isOpen, onClose }) {
   const { t, addBuilding } = useApp();
 
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
+  const [taxNumber, setTaxNumber] = useState('');
   const [bankKKName, setBankKKName] = useState('');
   const [bankKKBank, setBankKKBank] = useState('OTP');
   const [bankKKAccount, setBankKKAccount] = useState('');
@@ -15,6 +17,8 @@ export function AddBuildingModal({ isOpen, onClose }) {
   const [bankFAAccount, setBankFAAccount] = useState('');
   const [reserveKK, setReserveKK] = useState('0');
   const [reserveFA, setReserveFA] = useState('0');
+
+  const backdropProps = useBackdropClose(onClose);
 
   if (!isOpen) return null;
 
@@ -27,6 +31,7 @@ export function AddBuildingModal({ isOpen, onClose }) {
       id: buildingId,
       name: name.trim(),
       address: address.trim(),
+      taxNumber: taxNumber.trim(),
       bankKK: {
         name: bankKKName.trim() || name.trim(),
         bank: bankKKBank.trim() || 'OTP',
@@ -50,7 +55,10 @@ export function AddBuildingModal({ isOpen, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn cursor-default"
+      {...backdropProps}
+    >
       <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden my-auto">
         
         {/* Header */}
@@ -89,6 +97,17 @@ export function AddBuildingModal({ isOpen, onClose }) {
               placeholder="pl. 1053 Budapest, Kossuth Lajos utca 12."
               className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg"
               required
+            />
+          </div>
+
+          <div>
+            <label className="block font-semibold text-gray-700 mb-1">{t.portfolio_tax_number || "Társasház adószáma"}</label>
+            <input
+              type="text"
+              value={taxNumber}
+              onChange={(e) => setTaxNumber(e.target.value)}
+              placeholder="pl. 12345678-1-42"
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg"
             />
           </div>
 

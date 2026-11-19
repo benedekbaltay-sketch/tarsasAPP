@@ -29,3 +29,19 @@ dist-ssr
 
 # Firebase cache
 .firebase/
+
+# Backups & Data Dumps
+backup_*.json
+*backup*.json
+condo_state*.json
+test_users.json
+scratch/
+
+# Private keys & certificates (e.g. Bank API, Open Banking, SSL)
+server/certs/
+*.key
+*.pem
+*.crt
+*.csr
+*.pfx
+*.p12
