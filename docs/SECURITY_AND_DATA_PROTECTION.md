@@ -1,6 +1,6 @@
 # Security, Data Protection & Inviolability Specification
 
-This document details the security architecture, authorization principles, vulnerability analysis, and actionable hardening recommendations for the **Társasházkezelő Portál** to ensure enterprise-grade data protection and system inviolability.
+This document details the security architecture, authorization principles, Phase 0 emergency containment controls, and the production hardening roadmap for the **Társasházkezelő Portál**.
 
 ---
 
@@ -9,194 +9,114 @@ This document details the security architecture, authorization principles, vulne
 > [!CAUTION]
 > ### 🔒 ADATBIZTONSÁGI ÉS FELTÖRHETETLENSÉGI ALAPSZABÁLY (RULE 4)
 > **MINDIG ARRA KELL TÖREKEDNI, HOGY AZ ADATBIZTONSÁG ÉS A FELTÖRHETETLENSÉG ELŐRE HALADJON.**
-> 1. **Proaktív sebezhetőség-feltárás**: Bármilyen fejlesztés vagy architektúrális vizsgálat során felismert gyenge pontot, kockázatot vagy potenciális támadási felületet kötelező azonnal dokumentálni és konkrét mérnöki javaslatot tenni annak elhárítására.
-> 2. **Szigorú adatvédelem (Privacy-First)**: Lakók személyes adatai (jelszavak, e-mail címek, telefonszámok, pénzügyi egyenlegek) soha nem szivároghatnak ki illetéktelen személyekhez.
-> 3. **Megváltoztathatatlan felügyelet (Tamper-Resistance)**: A könyvelési tételek, induló egyenlegek és tulajdonosi előírások nem módosulhatnak jogosulatlanul vagy véletlenül.
+> 1. **Proaktív sebezhetőség-feltárás**: Bármilyen fejlesztés vagy architektúrális vizsgálat során felismert gyenge pontot, kockázatot vagy támadási felületet kötelező azonnal dokumentálni és kezelni.
+> 2. **Szigorú adatvédelem (Privacy-First / GDPR)**: Lakók személyes adatai (e-mail címek, telefonszámok, egyedi lakásegyenlegek, hitelek) soha nem szivároghatnak ki illetéktelen személyekhez.
+> 3. **Megváltoztathatatlan felügyelet (Tamper-Resistance)**: A könyvelési tételek, egyenlegek és audit naplók kizárólag szerveroldali szabályokkal és atomi tranzakciókkal módosíthatók.
 
 ---
 
-## 2. Current Security Architecture
+## 2. Phase 0 Emergency Containment Controls (Implemented in Codebase)
 
-```mermaid
-graph TD
-    subgraph Client [Böngésző / React SPA]
-        UI[React UI Views & Modals]
-        Context[AppContext.jsx - In-Memory State]
-        LS[(LocalStorage: tarsashaz_state)]
-        Sanitizer[sanitizeForFirebase Filter]
-    end
+All Phase 0 repo-level security containment fixes have been implemented (prior to live Firebase/Firestore deployment):
 
-    subgraph Firebase_Cloud [Google Firebase Platform]
-        Auth[Firebase Authentication - Identity Platform]
-        RTDB[(Firebase Realtime Database: condo_state)]
-        Rules[database.rules.json - auth != null]
-    end
-
-    UI --> Context
-    Context --> LS
-    Context --> Sanitizer
-    Sanitizer -->|Authenticated WebSocket| RTDB
-    UI --> Auth
-    Auth -.->|JWT ID Token| RTDB
-    RTDB --> Rules
-```
-
-### 2.1 Present Defensive Controls
-1. **Firebase Authentication Enforced**:
-   - `database.rules.json` megköveteli az `auth != null` feltételt mind az olvasási (`.read`), mind az írási (`.write`) műveletekhez.
-   - Névtelen vagy jogosulatlan hálózati kérések azonnali `PERMISSION_DENIED` hibát kapnak a felhőben.
-2. **Payload Schema & Existence Validation**:
-   - A `.write` szabály ellenőrzi: `newData.exists() && newData.hasChildren(['buildings', 'users', 'lastUpdated'])`. Üres vagy csonka adatcsomag nem tudja felülírni a felhő állapotot.
-3. **Payload Sanitization (`sanitizeForFirebase`)**:
-   - A kliens szigorúan eltávolítja az `undefined` értékeket és garantálja a tömb típusok konzisztenciáját, megelőzve az RTDB típusösszeomlásait.
-4. **Permanent Vault (Tombstone Tracking)**:
-   - Megakadályozza a törölt tételek véletlen újraéledését elosztott offline hálózati szinkronizáció esetén.
-5. **Kliensoldali Profilizoláció**:
-   - A lakó nézet (`TenantView`) csak a saját lakásának egyenlegeit jeleníti meg; a profilváltó modal (`BuildingSelectorModal`) kizárólag a bejelentkezett e-mail címhez tartozó profilokat engedi kiválasztani.
-6. **HTTP Biztonsági Fejlécek (`firebase.json`)** (Implementálva):
-   - `X-Frame-Options: SAMEORIGIN` (Clickjacking védelem).
-   - `X-Content-Type-Options: nosniff` (MIME sniffing elleni védelem).
-   - `Referrer-Policy: strict-origin-when-cross-origin`.
-   - `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
-7. **Kliensoldali 2 MB-os Fájlméret és MIME Whitelist Védelem** (Implementálva):
-   - `DocumentsModal.jsx` és `UniversalTransactionModal.jsx` szigorúan ellenőrzi a fájlméretet (max 2 MB) a Base64 konverzió előtt. Megvédi a böngészőt a LocalStorage kvótatúllépéstől (`QUOTA_EXCEEDED_ERR`).
-   - Szigorú típus-whitelist és kiterjesztés-ellenőrzés (.pdf, .jpg, .png, .xlsx, .docx).
-8. **Brute-Force és Rate-Limiting Védelem** (Implementálva):
-   - `LoginView.jsx` számlálja a sikertelen belépési kísérleteket. 5 sikertelen próbálkozás után a felület 30 másodpercre zárolódik, letiltva az automatizált jelszótörést. Kétnyelvű visszaszámláló tájékoztatja a felhasználót.
-9. **Automatikus Firebase Auth Munkamenet-újrahitelesítés (`ensureFirebaseAuth`)** (Implementálva):
-   - Ha a böngésző munkamenetet tölt be a helyi tárhelyből (`tarsashaz_remember_me`), a háttérben automatikusan újra bejelentkezteti a Firebase Auth klienst a megőrzött felhasználói hitelesítő adatokkal. Ez megakadályozza az érvénytelen `auth == null` kapcsolatot és a csendes `PERMISSION_DENIED` hibákat felhőbe íráskor.
-10. **Kanonikus Adatcsomag-generálás és Törlésvédelem (`createCloudPayload` & Anti-Wipe Guard)** (Implementálva):
-    - Minden RTDB mentés a központi `createCloudPayload` függvényen halad át, amely egységesen garantálja a gyökérelemek és az aktív épület mezőinek teljességét.
-    - Új vagy inkognitó ablakok (`revision: 0`) nem hozhatnak létre üres alapállapotot a felhőben; az inicializálás kizárólag érvényes felülvizsgálati számmal és időbélyegzővel engedélyezett (`s.revision > 0 && s.lastUpdated > 0`).
-11. **Valós Idejű Szinkronizációs Állapot és Hibaátláthatóság (`cloudSyncStatus` & `cloudSyncError`)** (Implementálva):
-    - A rendszer valós időben jelzi a mentés állapotát (`synced`, `syncing`, `error`). Hibás felhőírás esetén a felület nem jelenít meg hamis "Naprakész" státuszt, hanem figyelmeztető jelvénnyel (`CloudSyncBadge.jsx`) és egykattintásos kényszerített szinkronizálással (`forceSyncLocalToCloud`) támogatja az azonnali helyreállítást.
+1. **Zero Hardcoded PII, Passwords, or Secrets in Client Bundle**:
+   - Purged all real resident names, emails, phones, plaintext passwords, reset tokens, real bank account numbers, embedded Base64 PDFs, and banking API secrets from `src/constants/defaultData.js`, `src/components/`, `src/utils/`, `src/constants/translations.js`, and `docs/`.
+   - Added `stripSensitiveUserFields` and `stripSensitiveBuildingFields` in `src/context/syncEngine.js` to prevent `pass`, `password`, `resetToken`, `resetTokenExpiry`, and `bankApi.apiKey`/`clientSecret`/`secretKey` from ever entering `localStorage`, state, or cloud payloads.
+2. **Strict Firebase Authentication & Session Hygiene (`src/context/authActions.js`, `src/context/AppContext.jsx`)**:
+   - Removed local plaintext password fallbacks, hardcoded email aliases/prefixes, and client-side `createUserWithEmailAndPassword`.
+   - `ensureFirebaseAuth()` relies strictly on `auth.authStateReady()` — zero hardcoded admin passwords or client-side auto-relogin hacks.
+   - `onAuthStateChanged` clears stale cached state and unsubscribes cloud listeners whenever `!firebaseUser`.
+   - `logout()` completely wipes `tarsashaz_state`, `tarsashaz_permanent_vault`, session keys, `sessionStorage`, and React memory.
+   - `changePassword(currentPass, newPass)` requires `reauthenticateWithCredential` with the user's current password, enforces >= 10 characters, and updates Firebase Auth directly without persisting plaintext passwords.
+   - `ForgotPasswordModal` suppresses `auth/user-not-found` differences to prevent email enumeration.
+3. **Defense-in-Depth Role & UI Bypass Guards**:
+   - Added `admin`/`superadmin` role checks across all mutating domain actions (`buildingActions.js`, `accountingActions.js`, `loanActions.js`, `calendarActions.js`, `updateRepProfile`, `updateGlobalSettings`, `forceSyncLocalToCloud`, `switchToKkMode`).
+   - Restricted non-admin `saveFlatMaster` calls strictly to the caller's own `flatNum` and allowlisted fields `{ phone, emergencyContact, notes }`.
+   - Guarded `actAsUser` strictly to `superadmin`, prevented privilege escalation in `quickLogin`, and removed insecure substring name matching from `getUserFlats` and `switchActiveFlat`.
+   - Closed direct UI privilege bypasses: gated `LoansModal` (`#view=loans`) to `admin`/`superadmin`/`szvb`; gated `FullscreenTxModal` `Ctrl+C`/`Ctrl+V`/`Delete` shortcuts and `flatNum` scoping; gated `CalendarModal` day-cell creation click; added internal `isAdmin` guards to `AddBuildingModal`, `UniversalTransactionModal`, and `AddFlatModal` (including `superadmin`).
+4. **Banking API Secret Isolation & Backend Hardening (`server/server.js`, `server/otpApiClient.js`, `GlobalBalancesModal.jsx`)**:
+   - Removed client-side storage/display of banking API secret keys and replaced the fake 900 ms test stub with a server-side Secret Manager / KMS notice.
+   - Hardened `server/server.js`: loopback default bind (`HOST || '127.0.0.1'`), strict `ALLOWED_ORIGINS` CORS allowlist (no wildcard `*`), constant-time `Authorization: Bearer <INTERNAL_API_SECRET>` enforcement (`crypto.timingSafeEqual`) on `/api/bank/*`, fail-fast startup check in production, HTTP 413 handling on >1 MB payloads, `forceMock` disabled in production, stripped host filesystem paths (`certPath`/`keyPath`) from `/api/bank/certs/status`, and sanitized 500 error messages.
+   - Hardened `server/otpApiClient.js`: cached mTLS `https.Agent` with explicit `rejectUnauthorized: true`, strict HTTPS + OTP Bank hostname allowlist (SSRF protection), passphrase support in keypair validation, strict IBAN matching (fail closed — never silently fall back to `accounts[0]`), and sanitized OAuth errors.
+   - Updated `package.json` `"server"` script to `node --env-file-if-exists=.env server/server.js`.
+5. **Hosting Security Headers (`firebase.json`)**:
+   - Added `Strict-Transport-Security`, `Content-Security-Policy`, `Cross-Origin-Opener-Policy`, and `Cross-Origin-Resource-Policy` alongside `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy`.
 
 ---
 
-## 3. Vulnerability Analysis & Identified Weak Points (Gyenge Pontok)
+## 3. Phase 1 Cloud Firestore Migration & GDPR/RBAC Architecture (Implemented Locally — Ready for Emulator & Cutover)
 
-Az alapos biztonsági audit során feltárt kockázatok és gyenge pontok:
+All Phase 1 Firestore rules, Storage rules, atomic Cloud Functions, migration/parity scripts, and GDPR UI controls have been built and verified locally (zero live Firebase deployment yet, Rule 3 respected):
 
-### ⚠️ Gyenge Pont 1: Plaintext Jelszótárolás a Szinkronizált Állapotban
-- **Leírás**: A `users` tömb a felhőben (`condo_state/users`) és a kliensoldali LocalStorage-ben (`tarsashaz_state`) nyers szövegként tartalmazza a felhasználók jelszavait (`pass` és `password` mezők).
-- **Kockázat**: Bár a Firebase Auth kezeli a jelszavakat titkosítva, a `condo_state` teljes állapotként lejut minden bejelentkezett kliensre. Egy hozzáértő felhasználó a böngésző Console-jából vagy DevTools Storage paneljéből kiolvashatja az összes többi lakó jelszavát.
-- **Súlyosság**: **KRITIKUS / MAGAS**.
+1. **Multi-Tenant Cloud Firestore Schema & Security Rules (`firestore.rules`, `firestore.indexes.json`, `storage.rules`)**:
+   - Multi-tenant hierarchy: `users/{uid}`, `buildings/{buildingId}`, `buildings/{buildingId}/members/{uid}`, `units/{unitId}` (5-tab model + `ownerUids[]`), `categories/{catId}`, `transactions/{txId}` (paginated 50/page), `monthlySummaries/{YYYY-MM}`, `loans/{loanId}`, `documents/{docId}`, `infoSections/{sectionId}`, `calendarEvents/{eventId}`, and immutable `auditLogs/{logId}` (`allow update, delete: if false;`).
+   - **RBAC via `buildings/{bId}/members/{uid}` + `superadmin` Custom Claim**: Supports 100+ buildings without hitting JWT Custom Claims' 1,000-byte limit and provides instant (0 ms) access revocation.
+   - **Strict Tht. / GDPR Enforcement in Rules & UI**:
+     - **Admin (Common Rep)**: Full building read + metadata write; financial writes routed exclusively through Option A Cloud Functions (`allow write: if false;` on `transactions`, `monthlySummaries`, `balances`, `aggregates`, `loans`, `members`).
+     - **SZVB (Accounting Committee)**: Read-only access to the entire building (`units`, `transactions`, `MonthlyDetailModal`, `LoansModal`, `auditLogs`), zero writes.
+     - **Regular Owners**: Read-only access to own unit (`request.auth.uid in resource.data.ownerUids`), own unit transactions (optionally bounded by `accessFromDate` upon apartment ownership transfer), building-level reserves/aggregates (`buildings/{bId}`), `monthlySummaries`, and building-level expenses (`visibility == 'building' && unitId == null`). Strictly blocked from other flats' units, owner names, payments, `loans/`, and `auditLogs/`. May update only `{ phone, emergencyContact, notes }` on their own unit.
+   - **Cloud Storage Security Rules (`storage.rules`)**: Building- and transaction-scoped downloads with strict 5–10 MB size caps and safe MIME allowlists (no HTML/SVG).
+2. **Option A Atomic Cloud Functions Engine (`functions/`)**:
+   - `mutateTransaction` (`create`/`update`/`delete`) & `calibrateBuildingBalances` execute inside single atomic Firestore `runTransaction` calls updating `transactions`, `units.balances`, `buildings.balances` + `aggregates.totalArrearsHuf`, `monthlySummaries`, and immutable `auditLogs`.
+   - `scheduledMonthlyAssessments` / `triggerMonthlyAssessments`: idempotent monthly assessment materialization (`assess_${YYYY-MM}_${unitId}_${fund}`) eliminating balance drift.
+   - `provisionBuilding`, `manageBuildingMember`, `manageUnitLifecycle`, and `mutateLoan` (syncing only each owner's own `activeLoanShares[]` slice).
+3. **GDPR UI Controls & Firestore Client Service (`src/services/firestoreService.js`)**:
+   - `FinancialSituationModal.jsx`: Regular Owners see only the **Aggregated Building Arrears Summary Card** (single building total + GDPR notice); unit-by-unit breakdown restricted strictly to Admin & SZVB.
+   - `MonthlyDetailModal.jsx`: Regular Owners see only building-level expenses + their own unit's payments (zero other owner names); attachment `href` sanitized against XSS.
+   - `TenantView.jsx`: Displays resident's own `activeLoanShares[]` slice directly without exposing `LoansModal`.
+4. **Migration, Parity Verification & Test Suites**:
+   - `scripts/rtdbToFirestoreTransform.js`, `scripts/migrateRtdbToFirestore.mjs` (Emulator default + strict Rule 3 prod guard), `scripts/verifyMigrationParity.mjs` (0-Ft HUF parity check).
+   - `tests/atomicTransactions.test.mjs` (`npm run test:atomic` — 6/6 passing) & `tests/firestore.rules.test.mjs` (`npm run test:rules` for Firestore Emulator).
 
-### ⚠️ Gyenge Pont 2: Nem Szerepkör-alapú Írási Jogosultság a Felhőben (Lack of RBAC in RTDB)
-- **Leírás**: A `database.rules.json`-ben jelenleg minden bejelentkezett felhasználó (`auth != null`) írhatja a `condo_state` csomópontot:
-  ```json
-  ".write": "auth != null && newData.exists() && newData.hasChildren(['buildings', 'users', 'lastUpdated'])"
-  ```
-- **Kockázat**: Ha egy egyszerű lakó bejelentkezik a saját fiókjával, a birtokában lévő Firebase Auth JWT tokennel egy tetszőlegesen összeállított WebSocket csomaggal felülírhatja a teljes könyvelést vagy más lakások adatait. A szerepkör-ellenőrzés (`role === 'admin'`) jelenleg kizárólag a React UI rétegben fut le.
-- **Súlyosság**: **MAGAS**.
+## 4. Phase 2 Client, Dependency & Banking Gateway Hardening (Implemented & Verified Locally)
 
-### ⚠️ Gyenge Pont 3: Monolitikus Adatszerkezet (Nincs Fizikai Adatizoláció)
-- **Leírás**: A teljes rendszerállapot (minden épület, lakás, tranzakció, felhasználó) egyetlen `condo_state` csomópont alatt található.
-- **Kockázat**: Nem valósul meg a bérlők/lakások közötti szeparáció (Multi-tenancy isolation). Ha a jövőben több társasház lesz a rendszerben, az „A” ház lakója technikailag megkapja a „B” ház adatait is a kliens oldalon.
-- **Súlyosság**: **KÖZEPES / HOSSZÚ TÁVON MAGAS**.
+All code-level security controls from the full 21-finding cybersecurity audit (`H-1`, `H-4`, `H-5`, `H-6`, `M-3`, `M-5`, `M-6`, `L-3`) have been implemented and verified with automated tests (`npm run test:security`, `npm run test:atomic`, `npm run test:rules`, `npm audit` = **0 vulnerabilities**):
 
-### ⚠️ Gyenge Pont 4: Base64 Fájlfeltöltések a Realtime Database-be
-- **Leírás**: A csatolt dokumentumok és számlamellékletek Base64 kódolású stringként tárolódnak a `documents` és `attachments` mezőkben közvetlenül a JSON fában.
-- **Kockázat**:
-  1. A LocalStorage maximális kapacitása (~5 MB) gyorsan betelik, ami `QUOTA_EXCEEDED_ERR` hibát és adatvesztést/mentési hibát okoz a böngészőben.
-  2. A Firebase RTDB egyetlen csomópontra vonatkozó méretkorlátja és hálózati sávszélessége feleslegesen terhelődik.
-- **Súlyosság**: **KÖZEPES**.
-
-### ⚠️ Gyenge Pont 5: Hiányzó Brute-Force és Rate-Limiting Védelem
-- **Leírás**: Nincs korlátozva az egymást követő hibás jelszópróbálkozások száma.
-- **Kockázat**: Automatizált scripttel jelszótörési kísérlet (brute-force vagy credential stuffing) hajtható végre a lakói fiókok ellen.
-- **Súlyosság**: **KÖZEPES**.
-
-### ⚠️ Gyenge Pont 6: Kliensoldali Fájlméret-korlátozás Hiánya (LocalStorage DoS Kockázat)
-- **Leírás**: A `DocumentsModal.jsx` és `UniversalTransactionModal.jsx` nem ellenőrzi a kiválasztott fájlok maximális méretét (pl. 2 MB limit) a Base64 konverzió előtt.
-- **Kockázat**: Ha a felhasználó egy nagyobb PDF-et vagy fényképet (pl. 15–20 MB) tölt fel, a Base64 string azonnal túllépi a böngésző 5 MB-os `localStorage` kvótáját, ami `QUOTA_EXCEEDED_ERR` hibát és az állapotmentés megbénulását okozza.
-- **Súlyosság**: **MAGAS**.
-
-### ⚠️ Gyenge Pont 7: Fájlkiterjesztés és MIME Típus Szűrés Hiánya
-- **Leírás**: A dokumentum- és számlafeltöltés nem alkalmaz szigorú whitelistet az engedélyezett fájlformátumokra (csak PDF, JPG, PNG, XLSX).
-- **Kockázat**: Potenciálisan kártékony (pl. HTML vagy SVG beágyazott scriptek) feltöltése és megnyitása a felületen.
-- **Súlyosság**: **KÖZEPES**.
-
-### ⚠️ Gyenge Pont 8: Hiányzó HTTP Biztonsági Fejlécek (`firebase.json`)
-- **Leírás**: A `firebase.json` jelenleg csak `Cache-Control` fejlécet konfigurál az `index.html`-hez. Hiányoznak az alapvető védelmi fejlécek (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Content-Security-Policy`).
-- **Kockázat**: Az alkalmazás beágyazható lehet külső iframe-be (Clickjacking támadás), és nincs védve a MIME sniffing ellen.
-- **Súlyosság**: **KÖZEPES**.
-
----
-
-## 4. Actionable Security Hardening Proposals (Javaslatok a Feltörhetetlenséghez)
-
-A feltörhetetlen és biztonságos architektúra elérésére javasolt konkrét fejlesztési lépések:
-
-### 🛡️ Javaslat 1: Jelszavak Teljes Kigyomlálása az Állapotból (Zero Plaintext Passwords)
-- **Megoldás**:
-  1. A jelszavakat kizárólag a **Firebase Authentication Identity Platform** tárolhatja és ellenőrizheti (ahol a jelszavak a Google scrypt algoritmusával vannak hashelve és sózva).
-  2. A `state.users` objektumokból, a `defaultData.js`-ből és az RTDB `condo_state/users` fájlból véglegesen törölni kell a `pass` és `password` mezőket!
-  3. A kliens oldalon a felhasználó létezését és jogosultságát a Firebase Auth `uid` vagy verified e-mail címe azonosítja.
-
-### 🛡️ Javaslat 2: Szerepkör-alapú Hozzáférés-szabályozás (RBAC) a Firebase RTDB Szabályokban
-- **Megoldás**:
-  A Firebase szabályokban ellenőrizni kell a felhasználó adminisztrátori jogosultságát:
-  ```json
-  {
-    "rules": {
-      "condo_state": {
-        ".read": "auth != null",
-        ".write": "auth != null && root.child('condo_state/users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'benedek.baltay@gmail.com' || auth.token.email === 'superadmin@tarsashaz.hu'"
-      }
-    }
-  }
-  ```
-  *(Megjegyzés: vagy Firebase Custom Claims bevezetése Cloud Functions segítségével: `auth.token.role === 'admin'`)*.
-  Így egy illetéktelen lakó még szándékos API hívással sem tudja felülírni a könyvelést!
-
-### 🛡️ Javaslat 3: Firebase Cloud Storage Bevezetése a Dokumentumokhoz
-- **Megoldás**:
-  1. A fájlokat és számlamellékleteket ne a JSON fában (Base64), hanem a Firebase Cloud Storage-ban (`tarsashaz-cfe5d.firebasestorage.app`) tároljuk.
-  2. Az RTDB-ben csak a fájl neve, mérete, feltöltés dátuma és a biztonságos letöltési URL vagy storage path szerepeljen.
-  3. Firebase Storage Security Rules bevezetése: csak hitelesített felhasználók tölthessék le az épület dokumentumait.
-
-### 🛡️ Javaslat 4: Granuláris Adatbázis Particionálás (Multi-Building Isolation)
-- **Megoldás**:
-  Az adatbázis fa átszervezése az alábbi hierarchiára:
-  - `/buildings/{buildingId}/public_info` (minden lakó olvashatja)
-  - `/buildings/{buildingId}/flats/{flatNum}` (csak az adott lakás tulajdonosa és az admin olvashatja)
-  - `/buildings/{buildingId}/accounting` (csak a közös képviselő és számvizsgáló olvashatja/írhatja)
-  - `/users/{userId}` (személyes profiladatok, szigorúan `auth.uid === userId`)
-
-### 🛡️ Javaslat 5: Firebase App Check Aktiválása
-- **Megoldás**:
-  Google reCAPTCHA Enterprise / App Check integráció a webes kliensben. Ez garantálja, hogy kizárólag a hivatalos weboldalról (`https://tarsashaz-cfe5d.web.app`) érkező böngészőből lehessen kérést intézni az adatbázishoz; minden külső bot, curl kérés vagy script azonnal elutasításra kerül.
-
-### 🛡️ Javaslat 6: Rate Limiting & Account Lockout
-- **Megoldás**:
-  Kliensoldali késleltetés (exponential backoff) és Firebase Auth beépített védelmének kihasználása: 5 hibás próbálkozás után 60 másodperces zárolás, megelőzve a brute-force támadásokat.
-
-### 🛡️ Javaslat 7: Fájlfeltöltési Korlátok és MIME Whitelist
-- **Megoldás**:
-  1. Maximális fájlméret korlátozás bevezetése a feltöltési dialógusokban: max. 2 MB (toast figyelmeztetéssel, ha ennél nagyobb fájlt próbálnak feltölteni).
-  2. Szigorú típus-whitelist: kizárólag PDF (`.pdf`), képek (`.jpg`, `.jpeg`, `.png`, `.webp`) és táblázatok (`.xlsx`) engedélyezése.
-
-### 🛡️ Javaslat 8: HTTP Biztonsági Fejlécek Beállítása (`firebase.json`)
-- **Megoldás**:
-  A Firebase Hosting konfiguráció kibővítése a legfontosabb védelmi fejlécekkel:
-  - `X-Frame-Options: SAMEORIGIN` (Clickjacking elleni védelem)
-  - `X-Content-Type-Options: nosniff` (MIME sniffing elleni védelem)
-  - `Referrer-Policy: strict-origin-when-cross-origin`
-
-### 🔒 Javított Kritikus Sebezhetőség: Hardcoded Jelszó-Fallback Eltávolítása (2026.10.12)
-- **Hiba leírása**: A bejelentkezési logikában (`AppContext.jsx` -> `login()`) korábban létezett egy hibakezelő blokk, amely adminisztrátori e-mail cím esetén egy beégetett jelszólistával próbálkozott (`altPasses = [cleanPass, "Csalad20011", "Csalad2001"]`). Ha a felhasználó bármilyen véletlenszerű vagy hibás jelszót adott meg, a háttérben a beégetett jelszó sikeres hitelesítést váltott ki a Firebase Auth-nál, a rendszer pedig tévesen sikeresnek nyilvánította a bejelentkezést!
-- **Elhárítás**:
-  1. A beégetett jelszólista és a hibás jelszavas bypass teljesen el lett távolítva.
-  2. Bármilyen fiók esetén, ha a megadott jelszó téves (`auth/wrong-password` vagy `auth/invalid-credential`), a rendszer azonnal elutasítja a bejelentkezést (`{ success: false, error: "Hibás e-mail cím vagy jelszó!" }`).
-  3. Semmilyen körülmények között nem történhet sikeres bejelentkezés a felhasználó által ténylegesen megadott pontos és érvényes jelszó nélkül.
+1. **Centralized File Upload & Download Security (`src/utils/fileSecurity.js` — H-4)**:
+   - Magic-byte signature validation (`%PDF-`, PNG, JPEG, WEBP, ZIP/OOXML, OLE2) + strict extension & MIME allowlist + 2 MB size cap across **all** upload surfaces (`DocumentsModal.jsx`, `UniversalTransactionModal.jsx`, `EditTransactionModal.jsx`, `RepresentativeSections.jsx`).
+   - Strictly blocks `.svg`, `.html`, `.htm`, `.js`, `.xml`, and polyglot/renamed HTML/SVG files from upload, inline `<img>` preview, and download.
+   - Protocol-allowlisted `isSafeDownloadUrl()` and `triggerSafeDownload()` across all attachment downloads (`MonthlyDetailModal`, `EditTransactionModal`, `DocumentsModal`, `RepresentativeSections`).
+   - `stripLargeBinaries(..., { stripInlineAttachments: true })` strips inline Base64 attachments before persisting to `localStorage` without affecting cloud backups.
+2. **CSV & Excel Formula Injection Neutralization (`src/utils/exportExcel.js` — H-5 / CWE-1236 & L-3)**:
+   - Neutralizes leading `=`, `+`, `-`, `@`, `\t`, `\r` formula triggers on all user/bank-controlled text cells in every `.xlsx` and `.csv` export while preserving numeric types and trusted internal balance formulas.
+   - Automatically revokes generated Blob ObjectURLs (`URL.revokeObjectURL`) after download.
+3. **Vulnerable Dependency Elimination (`package.json` — H-6)**:
+   - Removed abandoned `xlsx@0.18.5` and `xlsx-js-style@1.2.0` (eliminating SheetJS CVE-2023-30533 Prototype Pollution & CVE-2024-22363 ReDoS); replaced cleanly with pure browser/Node `write-excel-file` + `read-excel-file` + RFC-4180 CSV parser.
+   - Upgraded `firebase` (`^13.4.0`), `@firebase/rules-unit-testing` (`^6.0.0`), `vite` (`^8.3.8`), `@vitejs/plugin-react` (`^6.3.0`), and pinned `@grpc/grpc-js` (`^1.14.7`) via `overrides` -> **`npm audit` reports 0 vulnerabilities**.
+4. **Zero Third-Party Auth CDN Requests (`src/components/FlagIcon.jsx` — M-3)**:
+   - Replaced external `https://flagcdn.com` images in `LoginView.jsx` and `Header.jsx` with inline SVG flags (100% compliant with strict CSP `img-src 'self'`).
+5. **Bank Statement Parser & Payment Deep-Link Hardening (`src/utils/bankParsers.js`, `src/App.jsx`, `SmartMobilePayModal.jsx`, `src/utils/qvik.js` — M-5)**:
+   - Enforced strict 10 MB size cap before parsing uploaded statements; rejected legacy binary BIFF8 `.xls` while keeping OTP HTML `.xls`, `.xlsx`, and `.csv` working seamlessly.
+   - Replaced `Math.random()` fallback `bankTxId` with deterministic FNV-1a hex hashing + per-file occurrence index (100% idempotent re-imports).
+   - Added **Conflict-Safe Auto-Verification Guard**: transfers where counterparty IBAN/name conflicts with another flat's notice/payment code (or close score tie) are forced to `Pending` for manual admin review.
+   - Clamped and sanitized `?pay=1` query params (`amount <= 50,000,000`, sanitized `flat`/`buildingId`), blocked URL overrides of beneficiary IBAN/name, and added a bilingual verification notice.
+6. **Banking Gateway Rate Limiting, Audit Logging & Firebase ID Token Support (`server/server.js`, `BankImportModal.jsx` — C-5 / M-6)**:
+   - Added per-IP sliding-window rate limiter (30 req / 60s, HTTP `429` + `Retry-After`), 15s request timeout, structured JSON `[BANK_AUDIT]` logs (redacting secrets/IBANs), and optional `FIREBASE_AUTH_ENABLED=true` (`verifyIdToken(token, true)` + Firestore `buildings/{bId}/members/{uid}` admin check) alongside `INTERNAL_API_SECRET`.
+   - Removed hardcoded `http://localhost:5001` from `BankImportModal.jsx`; reads `VITE_BANK_API_URL` (refusing plaintext `http://` in production) and attaches the signed-in user's Firebase ID token.
+7. **Remaining Role & Client Hygiene Fixes (`ConfirmModals.jsx`, `src/main.jsx` — H-1 / L-3)**:
+   - Added `'superadmin'` support to all confirmation modals in `ConfirmModals.jsx`.
+   - Hardened root `ErrorBoundary` in `src/main.jsx` to display a clean bilingual generic message in production (hiding raw internal `error.message`).
 
 ---
 
-## 5. Security Checklist for Development Sessions
+## 5. Remaining Live Cloud / Operational Steps (Require Explicit User Approval — Rule 3)
+
+1. **Frontend Firestore Runtime Cutover (`VITE_DATA_BACKEND=firestore`)**: Wire `src/services/firestoreService.js` adapter into `AppContext.jsx` / action hooks behind `IS_FIRESTORE_MODE` and execute the scheduled 10-minute maintenance window migration (freeze RTDB -> backup -> deploy rules/indexes/functions -> migrate -> 0-Ft parity verification -> flip hosting -> smoke test).
+2. **Firebase Console & Identity Platform Hardening**:
+   - Disable open public user registration / Email Enumeration Protection ON in Firebase Auth.
+   - Enforce TOTP MFA for `admin` and `superadmin` accounts.
+   - Enable Firebase App Check (reCAPTCHA Enterprise) and flip `enforceAppCheck: true` on Cloud Functions.
+   - Rotate live pilot admin/resident passwords after migration and remove legacy RTDB `condo_state` once cutover is verified.
+3. **Production OTP Bank mTLS Hosting**:
+   - Replace local self-signed test keypair with CA-signed mTLS certificate stored in Google Cloud Secret Manager.
+   - Deploy `server/` to Google Cloud Run behind a Cloud NAT static egress IP (whitelisted with OTP Bank) with `FIREBASE_AUTH_ENABLED=true` and `NODE_ENV=production`.
+
+---
+
+## 6. Security Checklist for Development Sessions
 
 Minden új feladat vagy módosítás során ellenőrizendő:
-- [ ] Tilos új plaintext jelszót vagy érzékeny titkot a kódba vagy a szinkronizált JSON állapotba menteni!
-- [ ] Bármilyen új végpont, állapotfrissítő vagy űrlap ellenőrzi-e a felhasználó szerepkörét és jogosultságát?
+- [ ] Tilos új plaintext jelszót, lakói PII-t vagy API titkot a kódba, a `defaultData.js`-be, a kliensoldali DB-be vagy a dokumentációba menteni!
+- [ ] Minden mutáló művelet ellenőrzi-e a jogosultságot szerveroldali szabályokban és védelmi rétegekben?
 - [ ] Nem sérül-e a szigorú adatbázis-módosítási tiltás (Rule 3) éles környezetben?
-- [ ] A bemeneti mezők (nevek, összegek, megjegyzések) megfelelően validáltak és fertőtlenítettek-e (XSS és injection elleni védelem)?
+- [ ] A kétnyelvűség (`hu` és `en`) és a GDPR lakás-izolációs szabályok maradéktalanul teljesülnek-e?

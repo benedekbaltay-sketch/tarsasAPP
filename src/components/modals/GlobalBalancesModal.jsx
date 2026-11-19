@@ -61,15 +61,12 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null }) {
   const [customAccounts, setCustomAccounts] = useState([]);
   const [customBalances, setCustomBalances] = useState({});
 
-  // 4. Building-specific Bank API Integration
+  // 4. Building-specific Bank API Integration (secrets & mTLS keys are managed strictly server-side)
   const [apiProvider, setApiProvider] = useState('OTP CorpAPI');
   const [apiEnv, setApiEnv] = useState('sandbox');
   const [apiClientId, setApiClientId] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
   const [apiAutoSync, setApiAutoSync] = useState(true);
-  const [copiedKey, setCopiedKey] = useState(null);
-  const [apiTestStatus, setApiTestStatus] = useState(null); // null | 'testing' | 'success'
+  const [apiTestStatus, setApiTestStatus] = useState(null); // null | 'server_managed'
 
   // Form handling & loading states
   const [isSaving, setIsSaving] = useState(false);
@@ -117,16 +114,13 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null }) {
       });
       setCustomBalances(initialCustomBalances);
 
-      // Building-specific Banking API
+      // Building-specific Banking API (non-secret metadata only; secrets & mTLS keys are managed server-side)
       const bApi = targetBuilding.bankApi || {};
       setApiProvider(bApi.provider || 'OTP CorpAPI');
       setApiEnv(bApi.environment || 'sandbox');
-      setApiClientId(bApi.clientId || (targetBuilding.id === 'batyu21' ? 'corp-batyu21-992' : ''));
-      setApiKey(bApi.apiKey || (targetBuilding.id === 'batyu21' ? 'otp_sec_batyu21_live_94827' : ''));
+      setApiClientId(bApi.clientId || '');
       setApiAutoSync(bApi.autoSync !== undefined ? bApi.autoSync : true);
-      setShowApiKey(false);
       setApiTestStatus(null);
-      setCopiedKey(null);
 
       setIsSaving(false);
       setSaveError(null);
@@ -221,27 +215,21 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null }) {
     });
   };
 
-  const copyToClipboard = (text, key) => {
-    if (!text) return;
-    try {
-      navigator.clipboard.writeText(text);
-      setCopiedKey(key);
-      setTimeout(() => setCopiedKey(null), 2000);
-      showToast(isEn ? "Copied to clipboard!" : "Másolva a vágólapra!");
-    } catch (e) {}
-  };
-
   const handleTestConnection = () => {
-    setApiTestStatus('testing');
-    setTimeout(() => {
-      setApiTestStatus('success');
-      showToast(t.bld_settings_api_test_success || (isEn ? "Bank connection verified successfully!" : "Banki kapcsolat sikeresen ellenőrizve!"), 'success');
-    }, 900);
+    setApiTestStatus('server_managed');
+    showToast(
+      t.bld_settings_api_server_managed_toast || (
+        isEn
+          ? "Open Banking credentials and mTLS certificates are verified strictly on the secure backend server."
+          : "A banki API titkos kulcsok és mTLS tanúsítványok ellenőrzése kizárólag a biztonságos szerveroldali háttérszolgáltatáson keresztül történik."
+      ),
+      'info'
+    );
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isSaving) return;
+    if (!isAdmin || isSaving) return;
     setIsSaving(true);
     setSaveError(null);
 
@@ -283,10 +271,9 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null }) {
                 provider: apiProvider,
                 environment: apiEnv,
                 clientId: apiClientId.trim(),
-                apiKey: apiKey.trim(),
                 autoSync: Boolean(apiAutoSync),
                 syncInterval: 'daily',
-                lastChecked: Date.now()
+                secretManagedServerSide: true
               }
             };
           }
@@ -425,7 +412,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null }) {
                         type="text"
                         value={buildingAddress}
                         onChange={(e) => setBuildingAddress(e.target.value)}
-                        placeholder="1027 Budapest, Batyu utca 21."
+                        placeholder={isEn ? "1051 Budapest, Example St. 1." : "1051 Budapest, Példa utca 1."}
                         className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A]"
                         required
                       />
@@ -473,7 +460,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null }) {
                           type="text"
                           value={bankKKAccount}
                           onChange={(e) => setBankKKAccount(e.target.value)}
-                          placeholder="11702005 21461266"
+                          placeholder="11700000 00000000"
                           className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A]"
                         />
                       </div>
@@ -527,7 +514,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null }) {
                           type="text"
                           value={bankFAAccount}
                           onChange={(e) => setBankFAAccount(e.target.value)}
-                          placeholder="11702005 21461273"
+                          placeholder="11700000 00000000"
                           className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-emerald-600"
                         />
                       </div>
@@ -790,40 +777,24 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null }) {
                         type="text"
                         value={apiClientId}
                         onChange={(e) => setApiClientId(e.target.value)}
-                        placeholder="pl. corp-batyu21-881"
+                        placeholder={isEn ? "e.g. corp-building-001" : "pl. corp-tarsashaz-001"}
                         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                       />
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="font-bold text-gray-700">
-                          {t.settings_api_key || "API Titkos Kulcs (Secret Key)"}
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setShowApiKey(!showApiKey)}
-                          className="text-[11px] text-[#1E3A8A] hover:underline font-semibold"
-                        >
-                          {showApiKey ? (isEn ? "Hide" : "Elrejtés") : (isEn ? "Show" : "Megjelenítés")}
-                        </button>
-                      </div>
-                      <div className="relative">
-                        <input
-                          type={showApiKey ? "text" : "password"}
-                          value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
-                          placeholder="otp_sec_..."
-                          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A] pr-10"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(apiKey, 'apiKey')}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 p-1"
-                          title="Másolás"
-                        >
-                          {copiedKey === 'apiKey' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
+                      <label className="block font-bold text-gray-700 mb-1">
+                        {t.settings_api_key || (isEn ? "API Secret & mTLS Certificate" : "API Titkos Kulcs és mTLS Tanúsítvány")}
+                      </label>
+                      <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-start gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                        <span className="leading-snug">
+                          {t.bld_settings_api_secret_notice || (
+                            isEn
+                              ? "Managed strictly server-side (Secret Manager / KMS). Banking secrets are never stored in the browser or client database."
+                              : "Kizárólag szerveroldalon tárolva (Secret Manager / KMS). A banki titkos kulcsok soha nem kerülnek a böngészőbe vagy az ügyféloldali adatbázisba."
+                          )}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -843,19 +814,13 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null }) {
 
                     <button
                       type="button"
-                      disabled={apiTestStatus === 'testing'}
                       onClick={handleTestConnection}
-                      className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#1E3A8A] font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                      className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#1E3A8A] font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
-                      {apiTestStatus === 'testing' ? (
+                      {apiTestStatus === 'server_managed' ? (
                         <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1E3A8A]" />
-                          <span>{isEn ? "Testing..." : "Tesztelés folyamatban..."}</span>
-                        </>
-                      ) : apiTestStatus === 'success' ? (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>{isEn ? "Connection OK" : "Kapcsolat rendben"}</span>
+                          <Lock className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                          <span>{isEn ? "Server-Side Verification Only" : "Szerveroldali ellenőrzés szükséges"}</span>
                         </>
                       ) : (
                         <>

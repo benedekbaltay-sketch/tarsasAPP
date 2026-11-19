@@ -2,8 +2,22 @@ import { getPermanentVault, savePermanentVault } from './syncEngine';
 import { getFlatLedgerTimeline } from '../utils/finances';
 
 export function createAccountingActions({ state, persistState, showToast, t, copiedTx, setCopiedTx, ensureFirebaseAuth }) {
+  const isAdmin = () => Boolean(
+    state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'superadmin')
+  );
+
+  const requireAdmin = () => {
+    if (isAdmin()) return true;
+    showToast(
+      t.error_unauthorized || (state.currentLang === 'en' ? "Unauthorized action." : "Nincs jogosultságod ehhez a művelethez."),
+      "error"
+    );
+    return false;
+  };
+
   // Add Transaction
   const addTransaction = (newTx) => {
+    if (!requireAdmin()) return;
     const txId = newTx.id;
     newTx.lastUpdated = newTx.lastUpdated || Date.now();
     persistState(s => ({
@@ -22,6 +36,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
 
   // Add Expense
   const addExpense = (newExpense) => {
+    if (!requireAdmin()) return;
     const expId = newExpense.id;
     newExpense.lastUpdated = newExpense.lastUpdated || Date.now();
     persistState(s => ({
@@ -40,6 +55,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
 
   // Add Manual Debit
   const addManualDebit = (newDebit) => {
+    if (!requireAdmin()) return;
     const debId = newDebit.id;
     newDebit.lastUpdated = newDebit.lastUpdated || Date.now();
     persistState(s => ({
@@ -58,6 +74,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
 
   // Add Multiple Items (Batch / Universal)
   const addMultipleItems = ({ transactions = [], expenses = [], debits = [] }) => {
+    if (!requireAdmin()) return;
     const now = Date.now();
     transactions.forEach(t => { if (t) t.lastUpdated = t.lastUpdated || now; });
     expenses.forEach(e => { if (e) e.lastUpdated = e.lastUpdated || now; });
@@ -125,6 +142,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
 
   // Paste transaction from clipboard (duplicate item with undo)
   const pasteTransaction = (targetFlatNum = null) => {
+    if (!requireAdmin()) return null;
     const isEn = state.currentLang === 'en';
     if (!copiedTx) {
       showToast(isEn ? "No copied item on clipboard! Select an item and press Ctrl+C." : "Nincs kimásolt tétel a vágólapon! Válassz ki egy tételt és nyomj Ctrl+C-t.", "info");
@@ -234,6 +252,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
 
   // Edit Transaction / Expense / ManualDebit / Recurring Prescription
   const editItem = (id, type, updatedFields, flatNumHint = null) => {
+    if (!requireAdmin()) return;
     persistState(s => {
       let updatedTransactions = s.transactions || [];
       let updatedExpenses = s.expenses || [];
@@ -410,6 +429,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
 
   // Delete Item (Payment, Expense, or ManualDebit / Recurring Prescription)
   const deleteItem = (id, type, flatNum = null, date = null, account = null) => {
+    if (!requireAdmin()) return;
     const deletedTx = (state.transactions || []).find(t => t.id === id);
     const deletedExp = (state.expenses || []).find(e => e.id === id);
     const deletedDebit = (state.manualDebits || []).find(d => d.id === id);
@@ -540,6 +560,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
 
   // Set Global Balances (supports KK, FA, and dynamic custom accounts)
   const setGlobalBalances = async (currentCommon, currentRenovation, customBalances = {}, customBankAccountsList = null) => {
+    if (!requireAdmin()) return null;
     if (ensureFirebaseAuth) await ensureFirebaseAuth();
     const updatedState = await persistState(s => {
       const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
@@ -610,6 +631,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
 
   // Update Flat Fee, Balances and FeeChanges
   const updateFlatFees = (flatNum, newMonthlyFee, newRenovationFee, newBalance = null, newRenovationBalance = null, customFees = {}, customBalances = {}) => {
+    if (!requireAdmin()) return;
     const now = new Date();
     const curYear = now.getFullYear();
     const curMonth = (now.getMonth() + 1).toString().padStart(2, '0');

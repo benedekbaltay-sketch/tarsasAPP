@@ -1,6 +1,6 @@
 /**
  * OTP Bank Corporate & Open Banking API Client
- * 
+ *
  * Biztonságos Node.js kliens modul az OTP Bank Corporate / Open Banking (PSD2) API-hoz.
  * Kölcsönös TLS (mTLS) hitelesítés RSA 4096 bites tanúsítvánnyal és privát kulccsal.
  */
@@ -15,30 +15,60 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 
-// Alapértelmezett cert könyvtár: server/certs/
 const certsDir = path.join(__dirname, 'certs');
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+const DEFAULT_ALLOWED_OTP_HOSTS = [
+  'sandbox.api.otpbank.hu',
+  'api.otpbank.hu',
+  'openbanking.otpbank.hu',
+];
+
+const ALLOWED_OTP_HOSTS = new Set(
+  process.env.ALLOWED_OTP_HOSTS
+    ? process.env.ALLOWED_OTP_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+    : DEFAULT_ALLOWED_OTP_HOSTS
+);
 
 export const OTP_CONFIG = {
-  // Tanúsítványok elérési útjai (előnyben részesítve a server/certs/ könyvtárat)
-  certPath: process.env.OTP_CERT_PATH 
+  certPath: process.env.OTP_CERT_PATH
     ? path.resolve(projectRoot, process.env.OTP_CERT_PATH)
     : (fs.existsSync(path.join(certsDir, 'otp_cert.pem')) ? path.join(certsDir, 'otp_cert.pem') : path.join(projectRoot, 'otp_cert.pem')),
-  keyPath: process.env.OTP_KEY_PATH 
+  keyPath: process.env.OTP_KEY_PATH
     ? path.resolve(projectRoot, process.env.OTP_KEY_PATH)
     : (fs.existsSync(path.join(certsDir, 'otp_private.key')) ? path.join(certsDir, 'otp_private.key') : path.join(projectRoot, 'otp_private.key')),
   passphrase: process.env.OTP_KEY_PASSPHRASE || undefined,
 
-  // OTP Open Banking végpontok
   baseUrl: process.env.OTP_API_BASE_URL || 'https://sandbox.api.otpbank.hu',
   authUrl: process.env.OTP_AUTH_URL || 'https://sandbox.api.otpbank.hu/auth/oauth2/token',
-  
-  // Hitelesítő adatok
-  clientId: process.env.OTP_CLIENT_ID || 'SANDBOX_CLIENT_ID',
-  clientSecret: process.env.OTP_CLIENT_SECRET || 'SANDBOX_CLIENT_SECRET',
-  
-  // Timeout
+
+  clientId: process.env.OTP_CLIENT_ID || '',
+  clientSecret: process.env.OTP_CLIENT_SECRET || '',
+
   timeoutMs: 15000,
 };
+
+// Cached mTLS agent pool keyed by certificate + key path and mtime
+let cachedAgentState = {
+  cacheKey: null,
+  agent: null,
+};
+
+function assertAllowedOtpUrl(targetUrlStr) {
+  let url;
+  try {
+    url = new URL(targetUrlStr);
+  } catch {
+    throw new Error('Invalid outbound OTP API URL.');
+  }
+  if (url.protocol !== 'https:') {
+    throw new Error('Outbound OTP API requests must use HTTPS.');
+  }
+  if (!ALLOWED_OTP_HOSTS.has(url.hostname.toLowerCase())) {
+    throw new Error(`Outbound host "${url.hostname}" is not in the OTP Bank allowlist.`);
+  }
+  return url;
+}
 
 /**
  * 1. Segédfüggvény: PEM szövegből az összes X.509 tanúsítvány kinyerése és elemzése
@@ -116,7 +146,6 @@ export function validateOtpCertificateChain(pemString) {
     };
   }
 
-  // 1 tanúsítvány esetén (pl. önaláírt teszt tanúsítvány)
   if (certs.length === 1) {
     const cert = certs[0];
     return {
@@ -126,28 +155,22 @@ export function validateOtpCertificateChain(pemString) {
       chain: certs,
       isSingleCert: true,
       isSelfSigned: cert.isSelfSigned,
-      message: cert.isSelfSigned 
+      message: cert.isSelfSigned
         ? 'Egyrészes önaláírt teszt tanúsítvány (Sandbox/Fejlesztéshez megfelelő, egyszerre tölti be a Root és Kliens szerepet).'
         : 'Egyrészes kliens tanúsítvány (Közbenső/Gyökér CA nélkül).',
     };
   }
 
-  // Többrészes tanúsítványlánc (pl. éles banki vagy QTSP kibocsátás)
-  // OTP 3.1.1 szigorú előírás:
-  // - 0. elem: Root CA (isCa, általában isSelfSigned)
-  // - Közbenső elemek: Intermediate CA (isCa, nem selfSigned)
-  // - Utolsó elem: Kliens tanúsítvány (!isCa vagy a privát kulccsal párosítható leaf)
   const first = certs[0];
   const last = certs[certs.length - 1];
 
   const firstIsRoot = first.role === 'root_ca' || (first.isCa && first.isSelfSigned);
   const lastIsClient = last.role === 'client_cert' || !last.isCa || !last.isSelfSigned;
 
-  // Ellenőrizzük, hogy nem épp fordított sorrendben van-e (Standard TLS RFC gyakran Kliens -> Intermediate -> Root)
   const isReversed = (first.role === 'client_cert' || !first.isCa) && (last.role === 'root_ca' || (last.isCa && last.isSelfSigned));
 
   const isOrderCompliant = firstIsRoot && lastIsClient;
-  const anyExpired = certs.some(c => c.isExpired);
+  const anyExpired = certs.some((c) => c.isExpired);
 
   return {
     isValid: isOrderCompliant && !anyExpired,
@@ -155,40 +178,31 @@ export function validateOtpCertificateChain(pemString) {
     isReversed,
     certCount: certs.length,
     chain: certs,
-    orderSummary: certs.map(c => `[${c.index + 1}] ${c.role.toUpperCase()}: ${c.subject?.split('\n')[0] || c.subject}`).join(' -> '),
+    orderSummary: certs.map((c) => `[${c.index + 1}] ${c.role.toUpperCase()}: ${c.subject?.split('\n')[0] || c.subject}`).join(' -> '),
     error: !isOrderCompliant
-      ? (isReversed 
+      ? (isReversed
           ? 'A tanúsítványlánc fordított sorrendben van (RFC formátum: Kliens -> Root). Az OTP 3.1.1 szerint Root CA -> Intermediate CA -> Kliens sorrend kötelező!'
           : 'A tanúsítványlánc nem felel meg az OTP 3.1.1 sorrendjének (1. Root CA, 2. Intermediate CA, 3. Kliens tanúsítvány).')
       : (anyExpired ? 'A láncban legalább egy tanúsítvány lejárt!' : null),
   };
 }
 
-/**
- * Bármilyen sorrendű tanúsítványlánc automatikus átrendezése az OTP 3.1.1 szerinti formátumra:
- * [Root CA, ...Intermediate CAs, Client Certificate]
- */
 export function reorderOtpCertChain(pemString) {
   const certs = parseCertificatesFromPem(pemString);
   if (certs.length <= 1) return pemString;
 
-  // Szétválogatás szerepkör szerint
-  const rootCas = certs.filter(c => c.role === 'root_ca' || (c.isCa && c.isSelfSigned));
-  const intermediateCas = certs.filter(c => c.role === 'intermediate_ca' || (c.isCa && !c.isSelfSigned));
-  const clientCerts = certs.filter(c => c.role === 'client_cert' || (!c.isCa && !c.isSelfSigned));
+  const rootCas = certs.filter((c) => c.role === 'root_ca' || (c.isCa && c.isSelfSigned));
+  const intermediateCas = certs.filter((c) => c.role === 'intermediate_ca' || (c.isCa && !c.isSelfSigned));
+  const clientCerts = certs.filter((c) => c.role === 'client_cert' || (!c.isCa && !c.isSelfSigned));
 
   const ordered = [...rootCas, ...intermediateCas, ...clientCerts];
   if (ordered.length === certs.length) {
-    return ordered.map(c => c.rawPem).join('\n\n');
+    return ordered.map((c) => c.rawPem).join('\n\n');
   }
 
-  // Ha nem lehetett automatikusan kategorizálni, megfordítjuk
-  return [...certs].reverse().map(c => c.rawPem).join('\n\n');
+  return [...certs].reverse().map((c) => c.rawPem).join('\n\n');
 }
 
-/**
- * Új OTP 3.1.1 kompatibilis lánc összeállítása különálló PEM blokkokból
- */
 export function formatOtpCertChain({ rootCaPem, intermediateCaPem, clientCertPem }) {
   const parts = [];
   if (rootCaPem && rootCaPem.trim()) parts.push(rootCaPem.trim());
@@ -214,19 +228,18 @@ export function validateLocalCertificates(config = OTP_CONFIG) {
 
   try {
     if (!fs.existsSync(config.certPath)) {
-      throw new Error(`A tanúsítvány fájl nem található itt: ${config.certPath}`);
+      throw new Error('Certificate file not found.');
     }
     result.certExists = true;
 
     if (!fs.existsSync(config.keyPath)) {
-      throw new Error(`A privát kulcs fájl nem található itt: ${config.keyPath}`);
+      throw new Error('Private key file not found.');
     }
     result.keyExists = true;
 
     const certPem = fs.readFileSync(config.certPath, 'utf8');
     const keyPem = fs.readFileSync(config.keyPath, 'utf8');
 
-    // 1. Tanúsítványlánc vizsgálata az OTP 3.1.1 szerint
     const chainValidation = validateOtpCertificateChain(certPem);
     result.chainValidation = {
       certCount: chainValidation.certCount,
@@ -234,7 +247,7 @@ export function validateLocalCertificates(config = OTP_CONFIG) {
       isSingleCert: chainValidation.isSingleCert,
       isReversed: chainValidation.isReversed,
       orderSummary: chainValidation.orderSummary,
-      chain: chainValidation.chain.map(c => ({
+      chain: chainValidation.chain.map((c) => ({
         index: c.index,
         role: c.role,
         subject: c.subject,
@@ -250,13 +263,15 @@ export function validateLocalCertificates(config = OTP_CONFIG) {
       throw new Error(chainValidation.error || 'A tanúsítványlánc nem érvényes.');
     }
 
-    // 2. Megkeressük a láncban azt a tanúsítványt, amelyhez a privát kulcs tartozik
     let matchingCert = null;
     const testData = Buffer.from('OTP_INTEGRATION_TEST_PAYLOAD_' + Date.now());
     const signer = crypto.createSign('SHA256');
     signer.update(testData);
     signer.end();
-    const signature = signer.sign(keyPem);
+    const signature = signer.sign({
+      key: keyPem,
+      passphrase: config.passphrase,
+    });
 
     for (const c of chainValidation.chain) {
       try {
@@ -274,7 +289,6 @@ export function validateLocalCertificates(config = OTP_CONFIG) {
       throw new Error('A privát kulcs nem illeszkedik a tanúsítványlánc egyetlen tanúsítványának nyilvános kulcsához sem!');
     }
 
-    // OTP 3.1.1 szigorítás: többrészes lánc esetén a privát kulcshoz tartozó tanúsítványnak az utolsónak (Leaf) kell lennie
     if (chainValidation.certCount > 1 && matchingCert.index !== chainValidation.certCount - 1) {
       throw new Error(`OTP 3.1.1 Szabálysértés: A kliens tanúsítvány (amelyhez a privát kulcs tartozik) a lánc ${matchingCert.index + 1}. helyén található, de az utolsó (${chainValidation.certCount}.) helyen kell szerepelnie (Root -> Intermediate -> Kliens)!`);
     }
@@ -304,29 +318,47 @@ export function validateLocalCertificates(config = OTP_CONFIG) {
 }
 
 /**
- * 2. Kölcsönös TLS (mTLS) HTTPS Agent létrehozása
+ * 2. Kölcsönös TLS (mTLS) HTTPS Agent létrehozása és cache-elése
  */
 export function createOtpMtlsAgent(config = OTP_CONFIG) {
   if (!fs.existsSync(config.certPath) || !fs.existsSync(config.keyPath)) {
     throw new Error('Nem hozható létre mTLS agent: a tanúsítvány vagy kulcsfájl hiányzik.');
   }
 
+  const certStat = fs.statSync(config.certPath);
+  const keyStat = fs.statSync(config.keyPath);
+  const cacheKey = `${config.certPath}:${certStat.mtimeMs}|${config.keyPath}:${keyStat.mtimeMs}`;
+
+  if (cachedAgentState.agent && cachedAgentState.cacheKey === cacheKey) {
+    return cachedAgentState.agent;
+  }
+
+  if (cachedAgentState.agent) {
+    try {
+      cachedAgentState.agent.destroy();
+    } catch {}
+  }
+
   const cert = fs.readFileSync(config.certPath);
   const key = fs.readFileSync(config.keyPath);
 
-  return new https.Agent({
+  const agent = new https.Agent({
     cert,
     key,
     passphrase: config.passphrase,
-    // Banki szabvány: TLS 1.2 vagy 1.3
+    rejectUnauthorized: true,
     minVersion: 'TLSv1.2',
     keepAlive: true,
+    maxSockets: 10,
     timeout: config.timeoutMs,
   });
+
+  cachedAgentState = { cacheKey, agent };
+  return agent;
 }
 
 /**
- * 3. Általános mTLS kérés küldése az OTP API felé
+ * 3. Általános mTLS kérés küldése az OTP API felé (szigorú HTTPS + hostname allowlist SSRF védelemmel)
  */
 export async function sendOtpRequest({
   endpoint,
@@ -336,7 +368,10 @@ export async function sendOtpRequest({
   config = OTP_CONFIG,
 }) {
   const agent = createOtpMtlsAgent(config);
-  const url = new URL(endpoint.startsWith('http') ? endpoint : `${config.baseUrl}${endpoint}`);
+  const rawUrl = endpoint.startsWith('http://') || endpoint.startsWith('https://')
+    ? endpoint
+    : `${config.baseUrl}${endpoint}`;
+  const url = assertAllowedOtpUrl(rawUrl);
 
   const requestId = crypto.randomUUID();
   const defaultHeaders = {
@@ -483,25 +518,23 @@ export async function getOtpTransactions({
  * 7. OTP Bank API tranzakciók normalizálása a TarsasApp könyvelési sémájára
  */
 export function normalizeOtpTransaction(otpTx, buildingId) {
-  // Ha explicit CRDT vagy DBIT van megadva, az élvez elsőbbséget
-  const isCredit = otpTx.creditDebitIndicator === 'CRDT' 
-    ? true 
+  const isCredit = otpTx.creditDebitIndicator === 'CRDT'
+    ? true
     : (otpTx.creditDebitIndicator === 'DBIT' ? false : Number(otpTx.amount?.amount || otpTx.amount || 0) > 0);
 
   const rawAmount = Math.abs(Number(otpTx.amount?.amount || otpTx.amount || 0));
-  
-  // Dátum formázás YYYY-MM-DD
+
   let txDate = otpTx.bookingDate?.date || otpTx.valueDate?.date || otpTx.bookingDateTime || otpTx.date || new Date().toISOString().split('T')[0];
   if (typeof txDate === 'string' && txDate.includes('T')) {
     txDate = txDate.split('T')[0];
   }
 
-  const comment = otpTx.remittanceInformationUnstructured || 
-                  otpTx.remittanceInformation?.unstructured || 
-                  otpTx.description || 
+  const comment = otpTx.remittanceInformationUnstructured ||
+                  otpTx.remittanceInformation?.unstructured ||
+                  otpTx.description ||
                   otpTx.comment || '';
 
-  const partnerName = isCredit 
+  const partnerName = isCredit
     ? (otpTx.debtorName || otpTx.debtor?.name || otpTx.partnerName || '')
     : (otpTx.creditorName || otpTx.creditor?.name || otpTx.partnerName || '');
 
@@ -509,7 +542,7 @@ export function normalizeOtpTransaction(otpTx, buildingId) {
     ? (otpTx.debtorAccount?.iban || otpTx.debtorAccount?.identification || otpTx.partnerAccount || '')
     : (otpTx.creditorAccount?.iban || otpTx.creditorAccount?.identification || otpTx.partnerAccount || '');
 
-  const bankTxId = otpTx.entryReference || otpTx.transactionId || otpTx.bankTxId || `otp_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const bankTxId = otpTx.entryReference || otpTx.transactionId || otpTx.bankTxId || `otp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
   return {
     id: `otp_${bankTxId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
@@ -523,7 +556,7 @@ export function normalizeOtpTransaction(otpTx, buildingId) {
     bankTxId,
     source: 'OTP_CORP_API',
     importedAt: new Date().toISOString(),
-    status: 'Pending', // Subject to matching / review in wizard
+    status: 'Pending',
   };
 }
 
@@ -538,9 +571,20 @@ export async function syncBuildingTransactions({
   forceMock = false,
   config = OTP_CONFIG,
 }) {
-  // Ha teszt/fejlesztői módban vagyunk, vagy a távoli OTP szerver még nincs konfigurálva
-  if (forceMock || config.clientId === 'SANDBOX_CLIENT_ID' || !config.clientId) {
-    // Élethű OTP tranzakciós válasz generálása a teszteléshez
+  const isUnconfigured = !config.clientId || config.clientId === 'SANDBOX_CLIENT_ID';
+
+  if (IS_PRODUCTION && (forceMock || isUnconfigured)) {
+    return {
+      success: false,
+      mode: 'live_mtls',
+      buildingId,
+      error: 'OTP Bank API credentials are not configured for production.',
+      transactions: [],
+    };
+  }
+
+  // Dev/sandbox mock mode strictly outside production
+  if (!IS_PRODUCTION && (forceMock || isUnconfigured)) {
     const mockToday = new Date().toISOString().split('T')[0];
     const mockTxs = [
       {
@@ -548,16 +592,16 @@ export async function syncBuildingTransactions({
         amount: { amount: '48500.00', currency: 'HUF' },
         creditDebitIndicator: 'CRDT',
         bookingDate: { date: mockToday },
-        debtorName: 'Nagy Anna (Fsz. 1)',
+        debtorName: 'Minta Anna (Fsz. 1)',
         debtorAccount: { iban: 'HU42 1177 3016 0000 1234 0001 0000' },
-        remittanceInformationUnstructured: 'Közös költség Batyu u 21 1. lakás nov',
+        remittanceInformationUnstructured: 'Közös költség Példa u 1. 1. lakás',
       },
       {
         transactionId: `TX-OTP-${Date.now()}-02`,
         amount: { amount: '35200.00', currency: 'HUF' },
         creditDebitIndicator: 'CRDT',
         bookingDate: { date: mockToday },
-        debtorName: 'Kovács Péter',
+        debtorName: 'Minta Péter',
         debtorAccount: { iban: 'HU42 1177 3016 0000 1234 0002 0000' },
         remittanceInformationUnstructured: 'Fsz 2 lakás KK és FA befizetés',
       },
@@ -566,9 +610,9 @@ export async function syncBuildingTransactions({
         amount: { amount: '12450.00', currency: 'HUF' },
         creditDebitIndicator: 'DBIT',
         bookingDate: { date: mockToday },
-        creditorName: 'Fővárosi Vízművek Zrt.',
+        creditorName: 'Közműszolgáltató Zrt.',
         creditorAccount: { iban: 'HU42 1177 3000 2222 3333 4444 0000' },
-        remittanceInformationUnstructured: 'Számlaszám: VIZ-2026-11-998 Batyu u. vízdíj',
+        remittanceInformationUnstructured: 'Számlaszám: VIZ-2026-11-998 vízdíj',
       },
       {
         transactionId: `TX-OTP-${Date.now()}-04`,
@@ -581,7 +625,7 @@ export async function syncBuildingTransactions({
       }
     ];
 
-    const normalized = mockTxs.map(tx => normalizeOtpTransaction(tx, buildingId));
+    const normalized = mockTxs.map((tx) => normalizeOtpTransaction(tx, buildingId));
     return {
       success: true,
       mode: 'mock_sandbox',
@@ -592,22 +636,30 @@ export async function syncBuildingTransactions({
     };
   }
 
-  // Éles OTP Bank API hívás mTLS-en keresztül
+  // Live OTP Bank API call over mTLS
   try {
     const tokenRes = await getOtpOAuthToken({ config });
     const accessToken = tokenRes.data?.access_token;
     if (!accessToken) {
-      throw new Error(`Nem sikerült OAuth2 tokent szerezni az OTP-től: ${JSON.stringify(tokenRes.data)}`);
+      console.error('[OTP OAuth error] HTTP status:', tokenRes.statusCode);
+      throw new Error(`OTP OAuth2 authentication failed (HTTP ${tokenRes.statusCode || 'unknown'}).`);
     }
 
-    // Számlák lekérése
     const accountsRes = await getOtpAccounts({ accessToken, config });
     const accounts = accountsRes.data?.accounts || [];
-    
-    // Ha megadtak IBAN-t, azt választjuk ki, különben az első aktív számlát
-    let targetAccount = accounts[0];
-    if (buildingIban && accounts.length > 0) {
-      targetAccount = accounts.find(a => (a.iban || '').replace(/\s/g, '') === buildingIban.replace(/\s/g, '')) || accounts[0];
+
+    // Strict IBAN matching — NEVER silently fall back to accounts[0] to prevent cross-building contamination
+    let targetAccount = null;
+    if (buildingIban) {
+      const cleanTargetIban = buildingIban.replace(/\s+/g, '').toUpperCase();
+      targetAccount = accounts.find((a) => (a.iban || '').replace(/\s+/g, '').toUpperCase() === cleanTargetIban) || null;
+      if (!targetAccount) {
+        throw new Error('Requested building IBAN was not found among authorized OTP bank accounts.');
+      }
+    } else if (accounts.length === 1) {
+      targetAccount = accounts[0];
+    } else {
+      throw new Error('buildingIban is required when zero or multiple OTP bank accounts are accessible.');
     }
 
     if (!targetAccount?.resourceId && !targetAccount?.accountId) {
@@ -624,7 +676,7 @@ export async function syncBuildingTransactions({
     });
 
     const rawTxs = txRes.data?.transactions?.booked || txRes.data?.transactions || [];
-    const normalized = rawTxs.map(tx => normalizeOtpTransaction(tx, buildingId));
+    const normalized = rawTxs.map((tx) => normalizeOtpTransaction(tx, buildingId));
 
     return {
       success: true,
@@ -635,6 +687,7 @@ export async function syncBuildingTransactions({
       transactions: normalized,
     };
   } catch (err) {
+    console.error('[OTP live sync error]:', err.message);
     return {
       success: false,
       mode: 'live_mtls',

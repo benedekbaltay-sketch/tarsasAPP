@@ -30,8 +30,9 @@ A rendszer fejlesztése és karbantartása során az alábbi 4 alapszabály és 
 
 > [!WARNING]
 > ### 🛡️ TOVÁBBI OPERATÍV SZABÁLYOK:
-> 1. **Never Touch `new-project/`**: A `new-project/` mappa a korábbi verzió archívuma, szigorúan **csak olvasható**. Soha ne szerkessz, ne mozgass és ne törölj semmit benne.
-> 2. **Protect State Revision & Concurrency**: Soha ne kerüld meg a 3-szintű perzisztencia modellt (`Firebase RTDB` + `LocalStorage` + `Permanent Vault`). Bármilyen adatmódosításnál növelni kell a `state.revision` számlálót.
+> 1. **Never Touch `new-project/` (5. szabály)**: A `new-project/` mappa a korábbi verzió archívuma, szigorúan **csak olvasható**. Soha ne szerkessz, ne mozgass és ne törölj semmit benne.
+> 2. **Rendszeres Git Mentés és Push (6. szabály)**: Minden nagyobb, tesztelt mérföldkő vagy funkcióblokk lezárásakor kötelező ellenőrizni a `git status`-t (biztosítva, hogy semmilyen titok, `.env`, privát kulcs vagy PII dump nem kerül be), majd tiszta commit-tal fel kell pusholni a változtatásokat a GitHub `origin/main` ágra, hogy munka soha ne veszhessen el.
+> 3. **Protect State Revision & Concurrency**: Soha ne kerüld meg a 3-szintű perzisztencia modellt (RTDB módban) vagy az atomi Firestore/Cloud Functions modellt (Firestore módban).
 
 ---
 
@@ -40,12 +41,12 @@ A rendszer fejlesztése és karbantartása során az alábbi 4 alapszabály és 
 | Layer | Technology | Key Details |
 | :--- | :--- | :--- |
 | **Framework** | **React 18** (SPA) | Pure client-side React with functional components, hooks, and Context API. |
-| **Build Tool** | **Vite 5** | Fast HMR and Rollup-based production build (`npm run dev`, `npm run build`). |
+| **Build Tool** | **Vite 8** | Fast HMR and Rolldown-based production build (`npm run dev`, `npm run build`). |
 | **Styling** | **Tailwind CSS 3** | Utility classes + custom design tokens (`#1E3A8A` deep blue, `#F3F4F6` background). |
-| **Cloud Database**| **Firebase 10 RTDB**| Realtime Database (`https://tarsashaz-cfe5d-default-rtdb.europe-west1.firebasedatabase.app`). Node: `condo_state`. |
-| **Local Storage** | **Browser LocalStorage**| Cached under key `tarsashaz_state`. Session under `tarsashaz_logged_in_user`. |
+| **Cloud Database**| **Firebase 13** | Legacy RTDB (`condo_state`) + ready-to-cutover Cloud Firestore & Storage (`firestore.rules`, `storage.rules`, `functions/`). |
+| **Local Storage** | **Browser LocalStorage**| Cached under key `tarsashaz_state` (binaries & secrets stripped). Session under `tarsashaz_logged_in_user`. |
 | **Deletion Tombstones**| **Permanent Vault** | Stored in `localStorage["tarsashaz_permanent_vault"]` to prevent deleted items from resurrecting. |
-| **Spreadsheet** | **SheetJS (`xlsx`)** | Client-side Excel export for global and flat-specific ledgers. |
+| **Spreadsheet** | **`write-excel-file` & `read-excel-file`** | Zero-CVE browser/Node Excel export & import with CWE-1236 formula injection neutralization (SheetJS `xlsx` removed). |
 | **Icons** | **Lucide React** | Feather-based lightweight vector icons. |
 | **QR Code / Payments** | **qrcode.react** | MNB / qvik instant payment QR code generation (SVG format). |
 | **Typography** | **Google Fonts** | `Inter` for general UI text; `Outfit` for numerical financial indicators. |
@@ -141,11 +142,16 @@ Run all commands from the project root (`c:\Users\bened\Documents\tarsasAPP\`):
 # Start local development server (http://localhost:3000)
 npm run dev
 
-# Build for production (verifies syntax, JSX, TypeScript/Rollup bundling)
+# Build for production (verifies syntax, JSX, Rolldown bundling)
 npm run build
 
 # Preview production build locally
 npm run preview
+
+# Run automated security controls, atomic math & Firestore rules tests
+npm run test:security
+npm run test:atomic
+npm run test:rules
 ```
 
 ---
@@ -247,18 +253,17 @@ Kizárólag a közös képviselő (KK) személyes és vállalkozói profiljának
 2. 🔒 **Fiók & Biztonság**: Bejelentkezett e-mail, Jelszó módosítás (`onOpenChangePassword()`), „Emlékezz rám” státusz és biztonsági kijelentkezés.
 3. ⚙️ **Alkalmazás-beállítások**: Alapértelmezett nyelv váltó (Magyar / English), Értesítési preferenciák (banki szinkronizációs hibák, lejáró hitelek, közelgő közgyűlések), Alkalmazás hanghatásai Web Audio API tesztgombbal, Fejlesztői diagnosztika és gyorsítótár ürítés.
 - *Lakói nézet*: Nem admin lakó esetén a saját lakás adatai és elérhetőségei jelennek meg, valamint a dedikált **Biztonság & Hitelesítés** kártya, ahol közvetlenül módosíthatja lakásjelszavát.
-- 🔑 **Jelszómódosítás bejelentkezett állapotban (`ChangePasswordModal`)**: Nincs szükség a régi jelszó megadására. Bármely aktív munkamenetben lévő felhasználó (KK vagy lakás) kizárólag az új jelszót adja meg kétszer (Új jelszó + Új jelszó megerősítése, min. 4 karakter).
-- 🛡️ **KK jelszó-visszaállítás megszüntetése (Rule 4 Security)**: A közös képviselő felületéről (`EditFlatMasterModal`) teljes egészében eltávolításra került a lakásjelszó alapértelmezett visszaállítása (`lakas123`). Elfelejtett jelszó esetén a lakó a bejelentkező oldalon lévő önkiszolgáló „Elfelejtettem a jelszavam” (`ForgotPasswordModal`) funkciót használja, így a lakók jelszavának magánszférája garantált.
+- 🔑 **Jelszómódosítás bejelentkezett állapotban (`ChangePasswordModal`)**: A biztonságos újrahitelesítéshez kötelező megadni a **jelenlegi jelszót** (`reauthenticateWithCredential`), majd kétszer az új, **legalább 10 karakteres** jelszót. A jelszó kizárólag a Firebase Authentication rendszerben frissül (zero plaintext tárolás).
+- 🛡️ **KK jelszó-visszaállítás megszüntetése (Rule 4 Security)**: A közös képviselő felületéről (`EditFlatMasterModal`) teljes egészében eltávolításra került a lakásjelszó alapértelmezett visszaállítása. Elfelejtett jelszó esetén a lakó a bejelentkező oldalon lévő önkiszolgáló „Elfelejtettem a jelszavam” (`ForgotPasswordModal`, e-mail enumeráció elleni védelemmel) funkciót használja.
 
 ### B) Ház-specifikus Beállítások & Banki Integráció (`GlobalBalancesModal.jsx` / `BuildingSettingsModal`)
 Minden egyes társasháznak külön banki számlája és egyedi banki API hozzáférése van. Ezek a beállítások az adott házhoz kötődnek:
 1. 🏛️ **Épület adatai & Számlák**: Társasház neve, címe, adószáma, bankszámlaszámok (`bankKK`, `bankFA`), egyedi alszámlák hozzáadása/kezelése, valamint az induló tartalékok összegei.
 2. 🔌 **Banki API Integráció (Ház-specifikus)**:
    - Szolgáltató kiválasztása (pl. OTP CorpAPI / Open Banking, Erste Bank API, MBH Bank, egyéb PSD2 / Open Banking provider).
-   - Környezet (Teszt / Sandbox vs. Éles / Production).
-   - Ügyfélazonosító (Client ID) és Titkos API kulcs (Client Secret) maszkolással és egykattintásos másolással.
-   - Napi automatikus számlatörténet- és egyenleg-szinkronizáció toggle.
-   - „Kapcsolat ellenőrzése” (Test connection) diagnosztikai funkció.
+   - Környezet (Teszt / Sandbox vs. Éles / Production) és nem titkos Ügyfélazonosító (`clientId`).
+   - **Szerveroldali kulcskezelés**: A titkos API kulcs (`Client Secret`) és az mTLS privát kulcs kizárólag a biztonságos backend szerveren (Cloud Secret Manager / KMS) tárolható — soha nem kerül a böngészőbe vagy az ügyféloldali adatbázisba.
+   - Napi automatikus számlatörténet- és egyenleg-szinkronizáció kapcsoló.
 - **Kényelmes elérési pontok**:
   - `PortfolioView`: Minden társasház kártyáján közvetlenül elérhető a `[ ⚙️ Ház beállításai & Bank ]` gombbal.
   - `AdminView`: A felső kontextus sávban a `[ ⚙️ Ház adatai & Bank ]` gyorsgombbal, valamint a Folyószámlák és Tartalékok kártya `[ Szerkesztés ]` gombjával.
@@ -303,7 +308,7 @@ Minden egyes társasháznak külön banki számlája és egyedi banki API hozzá
 - **OTP Bank HTML / XLS és Excel Parser (`bankParsers.js`)**:
   - Az OTP internetbankból letöltött `.xls` valójában HTML táblázat, amelyet a modul kliensoldali `DOMParser` segítségével parse-ol.
   - Támogatja a valódi `.xlsx` és `.csv` fájlokat is a SheetJS könyvtáron keresztül.
-  - Kinyeri a fejléc adatokat: Számlaszám, Számla elnevezése (pl. "Batyu közös költség (KK)"), Lekérdezési időszak.
+  - Kinyeri a fejléc adatokat: Számlaszám, Számla elnevezése (pl. "Közös költség (KK)"), Lekérdezési időszak.
   - Normalizálja a magyar összegformátumokat és dátumokat ISO formátumra (`YYYY-MM-DD`).
 - **Smart Matching Motor**:
   - Többszintű duplikáció-szűrés: banki tranzakció azonosító (`bankTxId`) és összetett kulcs (`date + amount + flatNum + targetAccount`) alapján.
@@ -513,7 +518,59 @@ Az alkalmazás mostantól képes megőrizni az éppen megnyitott nézeteket, mod
 
 ---
 
-## 20. Maintenance Checklist for Future Sessions
+## 20. Kiberbiztonsági Audit & Phase 0 Vészhelyzeti Konténment (2026.11.19)
+
+A teljes körű kiberbiztonsági auditot követően az alábbi Phase 0 biztonsági intézkedések kerültek implementálásra a kódbázisban (éles Firebase/adatbázis módosítás nélkül, Rule 3 betartásával):
+
+1. **PII, Jelszavak és Banki Titkok Teljes Eltávolítása a Kliens Csomagból**:
+   - A `src/constants/defaultData.js`, a UI modálok, utility fájlok, szótárak és dokumentációk megtisztítva minden valós lakói névtől, e-mailtől, telefonszámtól, bankszámlaszámtól, plaintext jelszótól, reset tokentől, Base64 PDF-től és hardcoded API kulcstól.
+   - `syncEngine.js`: `stripSensitiveUserFields` és `stripSensitiveBuildingFields` szűrők gondoskodnak róla, hogy `pass`, `password`, `resetToken*` és `bankApi.apiKey/clientSecret/secretKey` soha ne kerülhessen a böngésző tárolójába vagy a felhő payloadba.
+2. **Szigorú Firebase Auth Hitelesítés és Munkamenet-higiénia**:
+   - `authActions.js` & `AppContext.jsx`: Plaintext jelszó-fallback, hardcoded e-mail alias/prefix egyezés és kliensoldali `createUserWithEmailAndPassword` megszüntetve; `ensureFirebaseAuth` kizárólag `auth.authStateReady()`-t használ; `onAuthStateChanged` törli a lejárt lokális cache-t; `logout()` teljes `localStorage`/`sessionStorage`/memória törlést végez.
+   - `ChangePasswordModal` + `changePassword(currentPass, newPass)`: Kötelező jelenlegi jelszó újrahitelesítés (`reauthenticateWithCredential`) és legalább 10 karakteres jelszó.
+   - `ForgotPasswordModal`: E-mail enumeráció elleni védelem (`auth/user-not-found` egységes nyugtázása, kétnyelvű HU/EN).
+3. **Mélységi Jogosultságvédelem (Defense-in-Depth RBAC) és UI Bypass Zárások**:
+   - Minden mutáló akció (`buildingActions.js`, `accountingActions.js`, `loanActions.js`, `calendarActions.js`, `updateRepProfile`, `updateGlobalSettings`, `forceSyncLocalToCloud`, `switchToKkMode`) ellenőrzi az `admin`/`superadmin` szerepkört; lakói `saveFlatMaster` kizárólag saját lakásra és `{ phone, emergencyContact, notes }` mezőkre korlátozva.
+   - `LoansModal` (`#view=loans`) lezárva `admin`/`superadmin`/`szvb` körre; `FullscreenTxModal` `Ctrl+C`/`Ctrl+V`/`Delete` és `flatNum` szűrése javítva; `CalendarModal` havi cella kattintás nem enged eseményrögzítést nem-adminnak; `AddFlatModal`, `AddBuildingModal`, `UniversalTransactionModal` belső admin őrrel védve; `getUserFlats` alstring-alapú névegyezése eltávolítva.
+4. **Banki Backend (`server/server.js`, `server/otpApiClient.js`) és Hosting Fejlécek (`firebase.json`)**:
+   - `server/server.js`: `127.0.0.1` alapértelmezett bind, szigorú `ALLOWED_ORIGINS` CORS, `crypto.timingSafeEqual` Bearer token hitelesítés minden `/api/bank/*` végponton, HTTP 413 DoS védelem, `forceMock` tiltva élesben, fájlrendszer-útvonalak (`certPath`/`keyPath`) elrejtve, szanitizált 500 válaszok.
+   - `server/otpApiClient.js`: Cache-elt mTLS `https.Agent` (`rejectUnauthorized: true`), szigorú HTTPS + OTP hostname allowlist (SSRF védelem), fail-closed IBAN egyezés (`accounts[0]` fallback törölve), `passphrase` támogatás a kulcspár-ellenőrzésben.
+   - `package.json`: `"server": "node --env-file-if-exists=.env server/server.js"`.
+   - `firebase.json`: `Strict-Transport-Security`, `Content-Security-Policy`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy` hozzáadva.
+5. **Jóváhagyott Következő Architektúra (`/plan` fázisban tervezendő élesítés előtt)**:
+   - Migráció **Cloud Firestore**-ra (`buildings/{buildingId}/units`, `transactions`, `categories`, `auditLogs`), atomi `runTransaction`, módosíthatatlan `auditLogs` (`allow update, delete: if false;`), szerveroldali lapozás, valamint szigorú Tht./GDPR Firestore Security Rules (**Admin**: teljes R/W; **SZVB**: teljes R/O; **Lakó**: csak saját albetét + házszintű aggregált egyenleg/hátralék, más lakások részletei nélkül).
+
+---
+
+## 21. Phase 1 Cloud Firestore Multi-Tenant Architektúra, Atomic Cloud Functions & Tht./GDPR Izoláció (2026.11.19)
+
+A jóváhagyott migrációs terv alapján elkészült a teljes lokális Cloud Firestore + Cloud Functions v2 + Cloud Storage infrastruktúra és a Tht./GDPR UI elkülönítés (**éles Firebase módosítás nélkül**, Rule 3 szigorú betartásával):
+
+1. **Multi-Tenant Firestore Séma, Szabályok és Indexek**:
+   - `firestore.rules`: Tht./GDPR-kompatibilis RBAC szabályok `buildings/{bId}/members/{uid}` + `superadmin` Custom Claim alapon.
+     - **Admin**: Épületszintű olvasás és nem-pénzügyi törzsadat írás; minden pénzügyi írás Option A szerint szerveroldali Cloud Functionön (`allow write: if false;` a kliensnek).
+     - **SZVB**: Teljes épületszintű csak olvasási (`read-only`) jogosultság (`units`, `transactions`, `MonthlyDetailModal`, `LoansModal`, `auditLogs`).
+     - **Lakó (`Owner`)**: Saját albetét (`uid in ownerUids`) + saját kontaktmezők (`phone`, `emergencyContact`, `notes`) szerkesztése + házszintű tartalékok és **aggregált hátralékösszeg** (`buildings/{bId}`, `monthlySummaries`) + házszintű kiadások (`visibility == 'building'`) + saját albetét tranzakciói (`accessFromDate` tulajdonosváltási adatvédelmi szűrővel). Más lakások, tulajdonosnevek, hitelek és audit naplók szigorúan tiltva.
+     - **`auditLogs`**: Szigorúan módosíthatatlan (`allow update, delete: if false;`).
+   - `firestore.indexes.json`: Kompozit indexek 50 tétel/oldal szerveroldali lapozáshoz (év, hónap, `unitId`, `visibility`, `ownerUids`).
+   - `storage.rules`: Épület- és tranzakció-izolált Cloud Storage szabályok (max 5–10 MB, biztonságos MIME whitelist).
+   - `firebase.json`: Firestore, Storage, Functions és helyi Emulator Suite (`auth: 9099`, `firestore: 8080`, `functions: 5001`, `storage: 9199`, `ui: 4000`) regisztrálva.
+2. **Option A Atomi Cloud Functions v2 Motor (`functions/`)**:
+   - `functions/src/financeMath.js`: Determinisztikus egyenleg-, banki tartalék-, O(1) hátralék-delta és havi díjszámító motor (100% paritásban a `src/utils/finances.js`-sel).
+   - `functions/src/transactions.js`: `mutateTransaction` (`create`/`update`/`delete`) és `calibrateBuildingBalances` egyetlen atomi `runTransaction`-ben (tranzakció + albetét egyenleg + ház KK/FA & hátralék aggregátum + `monthlySummaries` + módosíthatatlan `auditLog`).
+   - `functions/src/assessments.js`: `scheduledMonthlyAssessments` (minden hónap 1-jén 00:05 CET) és `triggerMonthlyAssessments` idempotens havi előírás-materializálással (`assess_YYYY-MM_unitId_fund`).
+   - `functions/src/members.js` & `functions/src/loans.js`: `provisionBuilding`, `manageBuildingMember`, `manageUnitLifecycle`, `mutateLoan` (utóbbi szinkronizálja kizárólag az adott albetét `activeLoanShares[]` szeletét).
+3. **Frontend Firestore Service & Azonnali GDPR UI Védelem**:
+   - `src/constants/firebaseConfig.js`: `db` (Firestore), `functions`, `storage` inicializálás + helyi emulátor csatlakozás (`VITE_USE_EMULATORS=true`).
+   - `src/services/firestoreService.js`: Szerepkör-szűrt GDPR lekérdezések, 50/oldal lapozás, Cloud Functions `httpsCallable` hívások, Storage letöltés.
+   - `FinancialSituationModal.jsx` & `MonthlyDetailModal.jsx` & `TenantView.jsx`: Lakók kizárólag a társasház összesített hátralékát (aggregált kártya), a közös kiadásokat, saját befizetéseiket és saját hitelrészvételüket (`activeLoanShares`) látják; más lakások egyenlegei/nevei elrejtve; melléklet `href` XSS-szanitizálva; új kétnyelvű kulcsok (`hu`/`en`) a `translations.js`-ben.
+4. **Migrációs Eszközök & Automatizált Tesztek**:
+   - `scripts/rtdbToFirestoreTransform.js`, `scripts/migrateRtdbToFirestore.mjs` (Emulator alapértelmezett + szigorú Rule 3 prod zár), `scripts/verifyMigrationParity.mjs` (0 Ft eltérés-ellenőrző).
+   - `tests/atomicTransactions.test.mjs` (`npm run test:atomic`) és `tests/firestore.rules.test.mjs` (`npm run test:rules`).
+
+---
+
+## 22. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
 1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?

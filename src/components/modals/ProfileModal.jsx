@@ -108,11 +108,11 @@ export function ProfileModal({
 
       // Load Representative Profile
       const prof = repProfile || {};
-      setRepCompanyName(prof.companyName || 'Baltay Ingatlankezelő Kft.');
-      setRepName(prof.name || currentUser?.name || 'Baltay Benedek');
-      setRepEmail(prof.email || currentUser?.email || 'benedek.baltay@gmail.com');
-      setRepPhone(prof.phone ? formatPhoneNumber(prof.phone) : '+36 20 397 1253');
-      setRepAddress(prof.address || '1011 Budapest, Fő utca 1.');
+      setRepCompanyName(prof.companyName || '');
+      setRepName(prof.name || currentUser?.name || '');
+      setRepEmail(prof.email || currentUser?.email || '');
+      setRepPhone(prof.phone ? formatPhoneNumber(prof.phone) : '');
+      setRepAddress(prof.address || '');
       setRepOfficeHours(prof.officeHours || 'H-P: 08:00 - 16:00');
       setIsEditingRep(false);
 
@@ -541,7 +541,7 @@ export function ProfileModal({
                             type="text"
                             value={repCompanyName}
                             onChange={(e) => setRepCompanyName(e.target.value)}
-                            placeholder="pl. Baltay Ingatlankezelő Kft."
+                            placeholder={isEn ? "e.g. Example Property Management Ltd." : "pl. Példa Ingatlankezelő Kft."}
                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                             required
                           />
@@ -555,7 +555,7 @@ export function ProfileModal({
                             type="text"
                             value={repName}
                             onChange={(e) => setRepName(e.target.value)}
-                            placeholder="pl. Baltay Benedek"
+                            placeholder={isEn ? "e.g. Jane Doe" : "pl. Kovács János"}
                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                             required
                           />
@@ -1148,9 +1148,9 @@ export function ProfileModal({
                       {t.change_password || (isEn ? "Change Password" : "Jelszó megváltoztatása")}
                     </span>
                     <span className="text-xs text-gray-500 block">
-                      {isEn 
-                        ? "Since you are logged in, simply enter your new password twice to update it. No old password required."
-                        : "Mivel be van jelentkezve, a jelszó módosításához csak adja meg kétszer az új jelszót. A régi jelszó megadása nem szükséges."}
+                      {isEn
+                        ? "To update your password, verify your current password and choose a new password of at least 10 characters."
+                        : "A jelszó módosításához erősítse meg a jelenlegi jelszavát, majd adjon meg egy új, legalább 10 karakteres jelszót."}
                     </span>
                   </div>
                   <button

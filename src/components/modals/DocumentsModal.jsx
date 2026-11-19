@@ -30,6 +30,12 @@ import { ProfileSwitcherButton } from '../ProfileSwitcherButton';
 import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
 import { DeleteFolderConfirmModal } from './ConfirmModals';
+import {
+  validateUploadFile,
+  readFileAsDataUrl,
+  triggerSafeDownload,
+  getFileValidationErrorMessage,
+} from '../../utils/fileSecurity';
 
 const FOLDER_COLORS = {
   blue: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200', iconBg: 'bg-blue-100', dot: 'bg-blue-600' },
@@ -197,41 +203,32 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     setIsUploadOpen(false);
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > MAX_FILE_SIZE) {
-      showToast(t.file_too_large || "A feltöltött fájl mérete túl nagy! A megengedett maximális méret 2 MB.", "error");
+    const check = await validateUploadFile(file);
+    if (!check.ok) {
+      showToast(getFileValidationErrorMessage(check.reason, t, isEn), "error");
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      showToast(t.file_type_unsupported || "Nem támogatott fájlformátum! Kizárólag PDF, JPG, PNG vagy XLSX tölthető fel.", "error");
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-
-    setFileName(file.name);
-    setFileSize(
-      file.size < 1024 * 1024
-        ? `${(file.size / 1024).toFixed(1)} KB`
-        : `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-    );
-    setFileType(ext || 'pdf');
+    setFileName(check.sanitizedName);
+    setFileSize(check.sizeFormatted);
+    setFileType(check.ext || 'pdf');
 
     if (!docTitle.trim()) {
-      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+      const nameWithoutExt = check.sanitizedName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
       setDocTitle(nameWithoutExt);
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFileData(reader.result);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setFileData(dataUrl);
+    } catch {
+      showToast(isEn ? "Error reading file." : "Hiba történt a fájl beolvasásakor.", "error");
+    }
   };
 
   const handleUploadSubmit = (e) => {
@@ -268,13 +265,8 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
       }
     }
 
-    if (data) {
-      const a = document.createElement('a');
-      a.href = data;
-      a.download = doc.fileName || `${doc.title}.${doc.fileType || 'pdf'}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+    if (data && triggerSafeDownload(data, doc.fileName || `${doc.title}.${doc.fileType || 'pdf'}`)) {
+      return;
     } else {
       showToast(t.file_download_error || (isEn ? "The document file could not be downloaded." : "A dokumentum fájlja jelenleg nem tölthető le."), "error");
     }
@@ -351,37 +343,28 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     setIsEditDocModalOpen(true);
   };
 
-  const handleEditReplacementFileChange = (e) => {
+  const handleEditReplacementFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > MAX_FILE_SIZE) {
-      showToast(t.file_too_large || "A fájl mérete túl nagy! Maximum 2 MB engedélyezett.", "error");
+    const check = await validateUploadFile(file);
+    if (!check.ok) {
+      showToast(getFileValidationErrorMessage(check.reason, t, isEn), "error");
       if (editFileInputRef.current) editFileInputRef.current.value = '';
       return;
     }
 
-    const ext = (file.name.split('.').pop() || '').toLowerCase();
-    if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      showToast(t.file_type_unsupported || "Nem támogatott fájlformátum!", "error");
-      if (editFileInputRef.current) editFileInputRef.current.value = '';
-      return;
-    }
-
-    const sizeStr = file.size < 1024 * 1024
-      ? `${(file.size / 1024).toFixed(1)} KB`
-      : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
-
-    const reader = new FileReader();
-    reader.onload = () => {
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
       setEditReplacementFile({
-        name: file.name,
-        size: sizeStr,
-        type: ext || 'pdf',
-        data: reader.result
+        name: check.sanitizedName,
+        size: check.sizeFormatted,
+        type: check.ext || 'pdf',
+        data: dataUrl
       });
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      showToast(isEn ? "Error reading file." : "Hiba történt a fájl beolvasásakor.", "error");
+    }
   };
 
   const handleEditDocSubmit = (e) => {

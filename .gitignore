@@ -25,7 +25,8 @@ dist-ssr
 
 # Environment variables
 .env
-.env.production
+.env.*
+!.env.example
 
 # Firebase cache
 .firebase/
@@ -33,6 +34,7 @@ dist-ssr
 # Backups & Data Dumps
 backup_*.json
 *backup*.json
+*snapshot*.json
 condo_state*.json
 test_users.json
 scratch/

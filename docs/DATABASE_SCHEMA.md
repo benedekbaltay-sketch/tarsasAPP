@@ -38,10 +38,10 @@ Represents a managed condominium property.
 
 ```typescript
 interface Building {
-  id: string;                                // e.g. "batyu21"
-  name: string;                              // e.g. "Batyu utca 21. Társasház"
-  taxNumber?: string;                        // Condominium tax number (e.g. "28471923-1-41")
-  address: string;                           // e.g. "Batyu utca 21."
+  id: string;                                // e.g. "building-001"
+  name: string;                              // e.g. "Példa utca 1. Társasház"
+  taxNumber?: string;                        // Condominium tax number (e.g. "12345678-1-41")
+  address: string;                           // e.g. "1051 Budapest, Példa utca 1."
   phone?: string;                            // Representative contact phone
   email?: string;                            // Representative contact email
   repName?: string;                          // Name of common representative
@@ -116,7 +116,7 @@ interface InfoComment {
 interface BankAccount {
   name: string;          // Beneficiary account holder name
   shortName?: string;    // 2-5 letter abbreviation (e.g. "KK", "FA")
-  account: string;       // Account number (e.g. "11702005 21461266")
+  account: string;       // Account number (e.g. "11700000 00000000")
   bank: string;          // Bank name (e.g. "OTP")
 }
 ```
@@ -133,9 +133,7 @@ interface Flat {
   unitType?: "flat" | "garage" | "storage" | "commercial" | "other"; // Independent unit classification (default "flat")
   owners?: FlatOwner[];              // Multi-owner structure (unified management of owners, co-owners, beneficiaries)
   ownerName: string;                 // Composite or single owner display name (e.g. "Kiss János (1/2), Kiss Éva (1/2)")
-  email?: string;                    // Owner login email / primary contact
-  pass?: string;                     // Owner login password (default "lakas123")
-  password?: string;                 // Redundant password alias
+  email?: string;                    // Owner login email / primary contact (passwords live exclusively in Firebase Auth)
   phone?: string;                    // Primary contact phone (formatted standard, e.g. "+36 20 123 4567")
   emergencyContact?: string;         // Secondary/emergency contact details
   startDate?: string;                // Date flat joined accounting (e.g. "2026-07-01")
@@ -157,7 +155,7 @@ interface Flat {
   floor?: string;                    // Floor identifier (e.g. "Fsz.", "1.")
   door?: string;                     // Door identifier (e.g. "12/A")
   hrsz?: string;                     // Land registry number (e.g. "12345/1/A/12")
-  paymentCode?: string;              // Unique payment code for automatic bank notice matching (e.g. "BATYU-01")
+  paymentCode?: string;              // Unique payment code for automatic bank notice matching (e.g. "TH01-01")
   utalaskod?: string;                // Alias for paymentCode
   purchaseDate?: string;             // Acquisition date (YYYY-MM-DD)
   saleDate?: string;                 // Sale date (YYYY-MM-DD)
@@ -336,7 +334,7 @@ interface DocFolder {
 interface Document {
   id: string;         // Prefix "doc-" + timestamp
   title: string;      // Display title (e.g. "Szervezeti és Működési Szabályzat")
-  fileName: string;   // Original filename (e.g. "SZMSZ_Batyu21_Hatalyos.pdf")
+  fileName: string;   // Original filename (e.g. "SZMSZ_Tarsashaz_Hatalyos.pdf")
   fileSize: string;   // e.g. "1.8 MB"
   fileType: string;   // e.g. "pdf", "docx", "xlsx"
   uploadDate: string; // YYYY-MM-DD
@@ -355,13 +353,12 @@ Represents authenticated application users.
 ```typescript
 interface User {
   id: string;              // "admin", "superadmin", or flat number (e.g. "Fsz 2")
-  name: string;            // User full name (e.g. "Baltay Benedek")
-  email: string;           // Login email address
-  pass: string;            // Plaintext password (default "lakas123" or "Csalad2001")
-  password?: string;       // Alias for pass
-  role: "superadmin" | "admin" | "Owner"; // System authorization role
+  uid?: string;            // Firebase Authentication UID
+  name: string;            // User full name (e.g. "Kovács János")
+  email: string;           // Verified login email address (passwords live exclusively in Firebase Auth)
+  role: "superadmin" | "admin" | "szvb" | "Owner"; // System authorization role
   flatNum?: string;        // Assigned apartment (or "0" for system / admin)
-  buildingId?: string;     // Assigned building ID (e.g. "batyu21")
+  buildingId?: string;     // Assigned building ID (e.g. "building-001")
   phone?: string;          // User phone number
   isAdminUser?: boolean;   // Flags if user has admin privileges when switching roles
 }
@@ -442,7 +439,7 @@ Represents planned events, deadlines, maintenance schedules, assemblies, or task
 ```typescript
 interface CalendarEvent {
   id: string;                                          // e.g. "ev-1731872000000"
-  buildingId: string;                                  // "all" for global portfolio events, or specific buildingId (e.g. "batyu21")
+  buildingId: string;                                  // "all" for global portfolio events, or specific buildingId (e.g. "building-001")
   title: string;                                       // Event or task title
   date: string;                                        // Event date (YYYY-MM-DD)
   time?: string;                                       // Optional start time (e.g. "18:00")
@@ -527,3 +524,23 @@ A nagyméretű PDF és képfájlok bináris adatai (`fileData`) nem terhelik a k
 > 3. **Adatbázis-védelem (Strict DB Mandate)**: Tilos önkényes módosítás a felhőbeli adatokban.
 > 4. **Adatbiztonság és Feltörhetetlenség (Security Mandate)**: Folyamatos törekvés a maximális biztonságra és proaktív javaslattétel gyenge pontok esetén.
 
+
+---
+
+## 14. Multi-Tenant Cloud Firestore Schema (Phase 1 Target Architecture)
+
+Migrated multi-tenant collections defined in `firestore.rules`, `firestore.indexes.json`, `functions/src/`, and `scripts/rtdbToFirestoreTransform.js`:
+
+| Collection Path | Purpose | GDPR / RBAC Access |
+| :--- | :--- | :--- |
+| `users/{uid}` | User directory, UI preferences, `memberships` portfolio index, `isSuperAdmin` | Self R + Prefs W; SuperAdmin R; Roles managed by Cloud Functions only |
+| `buildings/{buildingId}` | Building metadata, bank accounts, non-secret `bankApi`, live `balances` (`KK`, `FA`, `custom`), GDPR-safe `aggregates` (`totalArrearsHuf`, debtor/settled counts) | All active members R; Admin metadata W; Financial totals written strictly via Cloud Functions |
+| `buildings/{buildingId}/members/{uid}` | Authoritative RBAC role (`admin` \| `szvb` \| `owner`), `unitIds[]`, `active`, optional `accessFromDate` (ownership transfer privacy) | Admin R (building), Self R; Server-managed only (`allow write: if false;`) |
+| `buildings/{buildingId}/units/{unitId}` | 5-tab unit model (`unitType`, `owners[]`, `tenants[]`, `meters[]`, `accessories[]`), `ownerUids[]`, `fees`, atomic `balances`, own `activeLoanShares[]` | Admin R/W (non-financial); SZVB R/O all; Owner R own unit (`uid in ownerUids`) + `{phone, emergencyContact, notes}` W |
+| `buildings/{buildingId}/categories/{catId}` | Dynamic bilingual income/expense categories, `defaultFund`, `allocationBasis`, auto-matching `keywords[]` | Members R; Admin R/W |
+| `buildings/{buildingId}/transactions/{txId}` | Unified server-paginated ledger (50/page) — payments, expenses, manual debits, materialized monthly assessments (`assess_YYYY-MM_unitId_fund`), transfers, corrections | Admin & SZVB R all; Owner R own unit (`unitId in member.unitIds` & `>= accessFromDate`) + building expenses (`visibility == 'building' && unitId == null`); Writes strictly via `mutateTransaction` Cloud Function (`allow write: if false;`) |
+| `buildings/{buildingId}/monthlySummaries/{YYYY-MM}` | GDPR-safe monthly rollup (`totalInflowHuf`, `totalOutflowHuf`, `netMarginHuf`, per-fund totals) | Members R; Cloud Functions W only |
+| `buildings/{buildingId}/loans/{loanId}` | Full loan contracts, participants & repayment schedules | **Admin & SZVB ONLY**; Regular Owners DENIED |
+| `buildings/{buildingId}/auditLogs/{logId}` | Forensic audit trail of all financial & master-data mutations | Admin & SZVB R; Append-only (`allow update, delete: if false;`) |
+| `buildings/{buildingId}/documents/{docId}` | Document metadata with Cloud Storage `storagePath` (zero inline Base64) | Admin R/W; SZVB R/O; Owner R (`visibility == 'building'`) |
+| `buildings/{buildingId}/infoSections/{id}` & `calendarEvents/{id}` | Building info tiles & calendar events with `visibility: 'building' \| 'admin'` | Admin R/W; SZVB R/O; Owner R (`visibility == 'building'`) |

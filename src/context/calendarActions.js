@@ -8,8 +8,20 @@ function ensureArray(val) {
 }
 
 export function createCalendarActions({ state, persistState, showToast, t }) {
+  const requireAdmin = () => {
+    if (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'superadmin')) {
+      return true;
+    }
+    showToast(
+      t.error_unauthorized || (state.currentLang === 'en' ? "Unauthorized action." : "Nincs jogosultságod ehhez a művelethez."),
+      "error"
+    );
+    return false;
+  };
+
   // Add new calendar event or task
   const addCalendarEvent = (eventData) => {
+    if (!requireAdmin()) return null;
     const isEn = state.currentLang === 'en';
     const newEvent = {
       id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -38,6 +50,7 @@ export function createCalendarActions({ state, persistState, showToast, t }) {
 
   // Update existing calendar event
   const updateCalendarEvent = (eventData) => {
+    if (!requireAdmin()) return;
     const isEn = state.currentLang === 'en';
     if (!eventData || !eventData.id) return;
 
@@ -65,6 +78,7 @@ export function createCalendarActions({ state, persistState, showToast, t }) {
 
   // Delete calendar event
   const deleteCalendarEvent = (eventId) => {
+    if (!requireAdmin()) return;
     const isEn = state.currentLang === 'en';
     if (!eventId) return;
 
@@ -88,6 +102,7 @@ export function createCalendarActions({ state, persistState, showToast, t }) {
 
   // Toggle isDone status
   const toggleCalendarEventDone = (eventId) => {
+    if (!requireAdmin()) return;
     if (!eventId) return;
 
     persistState(s => {

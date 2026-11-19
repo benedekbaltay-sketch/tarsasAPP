@@ -1191,7 +1191,7 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
                         type="text"
                         value={paymentCode}
                         onChange={(e) => setPaymentCode(e.target.value)}
-                        placeholder="pl. BATYU-01"
+                        placeholder="pl. TH01-01"
                         className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs font-mono font-bold text-[#1E3A8A] focus:outline-none focus:border-[#1E3A8A]"
                       />
                     ) : (

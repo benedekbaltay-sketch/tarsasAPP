@@ -90,7 +90,7 @@ export function calculateOwnerBalancesReport(startMonthStr, endMonthStr, state, 
   const currentBuildingId = buildingId || state?.currentBuildingId;
   const building = (state?.buildings || []).find(b => b.id === currentBuildingId) || state?.buildings?.[0] || {
     name: "Társasház",
-    address: "Batyu utca 21."
+    address: ""
   };
 
   const flats = building.flats || state?.flats || [];

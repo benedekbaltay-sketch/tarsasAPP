@@ -9,7 +9,7 @@
  * Uses ISO 7064 MOD 97-10 check digit calculation.
  * 
  * @param {string} accountNumber - 16 or 24 digit domestic account number or existing IBAN
- * @returns {string} 28-character IBAN (e.g. HU09117020052146126600000000)
+ * @returns {string} 28-character IBAN (e.g. HU42117000000000000000000000)
  */
 export function formatHungarianIban(accountNumber) {
   if (!accountNumber) return '';
@@ -79,7 +79,7 @@ export function getBankBic(bankObj, defaultBic = 'OTPVHUHBXXX') {
 }
 
 /**
- * Extracts a concise building code for payment comments (e.g. "Batyu21")
+ * Extracts a concise building code for payment comments (e.g. "Tarsashaz1")
  * 
  * @param {object} building
  * @returns {string}
@@ -96,14 +96,14 @@ export function getBuildingPaymentCode(building) {
     const match = building.name.match(/^([A-Za-zÁ-ž]+)(?:\s+\w+)?\s+(\d+)/);
     if (match) return `${match[1]}${match[2]}`;
   }
-  return 'Batyu21';
+  return 'TH';
 }
 
 /**
  * Builds the strict, standardized comment string for MNB/qvik payment.
  * Rule: Must NEVER contain fixed dates/months.
  * Format: [TÁRSASHÁZ_AZONOSÍTÓ] [LAKÁS_SZÁMA]. lakas [ALAP_TÍPUS]
- * Example: "Batyu21 4. lakas KK" or "Batyu21 4. lakas FA"
+ * Example: "Pelda1 4. lakas KK" or "Pelda1 4. lakas FA"
  * 
  * @param {object} params
  * @param {string} params.buildingCode
@@ -112,9 +112,9 @@ export function getBuildingPaymentCode(building) {
  * @returns {string}
  */
 export function buildPaymentComment({ buildingCode, flatNum, fundType }) {
-  const cleanCode = String(buildingCode || 'Batyu21').trim();
-  const cleanFlat = String(flatNum || '').trim().replace(/\.+$/, '');
-  const type = fundType ? String(fundType).trim() : 'KK';
+  const cleanCode = String(buildingCode || 'TH').replace(/[\r\n/\\<>]/g, '').trim().slice(0, 32);
+  const cleanFlat = String(flatNum || '').replace(/[\r\n/\\<>]/g, '').trim().replace(/\.+$/, '').slice(0, 24);
+  const type = fundType === 'FA' ? 'FA' : 'KK';
   return `${cleanCode} ${cleanFlat}. lakas ${type}`;
 }
 
@@ -132,7 +132,7 @@ export function buildPaymentRefId({ flatNum, fundType }) {
   const digitsMatch = String(flatNum || '').match(/\d+/);
   const numPart = digitsMatch 
     ? digitsMatch[0].padStart(2, '0') 
-    : String(flatNum || '01').replace(/\s+/g, '');
+    : String(flatNum || '01').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
   return `L${numPart}-${type}`;
 }
 
@@ -159,13 +159,14 @@ export function generateMnbPaymentUrl({
   comment,
   refId
 }) {
-  const cleanBic = (bic || 'OTPVHUHBXXX').trim();
-  const cleanBeneficiary = encodeURIComponent((beneficiaryName || '').trim());
-  const cleanHolder = encodeURIComponent((accountHolder || beneficiaryName || '').trim());
-  const cleanIban = (iban || '').replace(/\s+/g, '').toUpperCase();
-  const cleanAmount = Math.max(0, Math.round(Number(amount) || 0));
-  const cleanComment = encodeURIComponent((comment || '').trim());
-  const cleanRefId = encodeURIComponent((refId || '').trim());
+  const cleanBic = (bic || 'OTPVHUHBXXX').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 11) || 'OTPVHUHBXXX';
+  const cleanBeneficiary = encodeURIComponent(String(beneficiaryName || '').replace(/[\r\n]/g, ' ').trim().slice(0, 70));
+  const cleanHolder = encodeURIComponent(String(accountHolder || beneficiaryName || '').replace(/[\r\n]/g, ' ').trim().slice(0, 70));
+  const cleanIban = (iban || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 34);
+  const rawAmt = Number(amount);
+  const cleanAmount = Number.isFinite(rawAmt) ? Math.min(50_000_000, Math.max(0, Math.round(rawAmt))) : 0;
+  const cleanComment = encodeURIComponent(String(comment || '').replace(/[\r\n]/g, ' ').trim().slice(0, 140));
+  const cleanRefId = encodeURIComponent(String(refId || '').replace(/[^A-Za-z0-9_-]/g, '').trim().slice(0, 35));
 
   return `https://azonnalifizetes.hu/HCT/3/1/${cleanBic}/${cleanBeneficiary}/${cleanHolder}/${cleanIban}/HUF${cleanAmount}///${cleanComment}/${cleanRefId}`;
 }

@@ -40,7 +40,9 @@ export function FullscreenTxModal({
   const { state, t, copiedTx, copyTransaction, pasteTransaction } = useApp();
   const { transactions, expenses, currentLang } = state;
   const isEn = currentLang === 'en';
-  const isAdmin = state.currentUser?.role === 'admin';
+  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
+  const canViewAllFlats = isAdmin || state.currentUser?.role === 'szvb';
+  const effectiveFlatNum = canViewAllFlats ? flatNum : state.currentUser?.flatNum;
 
   const [query, setQuery] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
@@ -88,8 +90,8 @@ export function FullscreenTxModal({
 
   const items = useMemo(() => {
     if (!isOpen) return [];
-    if (type === 'flat' && flatNum) {
-      return getCombinedFlatLedgerTimeline(flatNum, state);
+    if (type === 'flat' && effectiveFlatNum) {
+      return getCombinedFlatLedgerTimeline(effectiveFlatNum, state);
     }
     // Robust date parser
     const parseItemDate = (d) => {
@@ -155,8 +157,8 @@ export function FullscreenTxModal({
   }, [isOpen, postFilterItems, query]);
 
   const handleExport = () => {
-    if (type === 'flat' && flatNum) {
-      exportTimelineToExcel(items, flatNum, isEn);
+    if (type === 'flat' && effectiveFlatNum) {
+      exportTimelineToExcel(items, effectiveFlatNum, isEn);
     } else {
       exportTransactionsToExcel(transactions, expenses, isEn);
     }
@@ -175,6 +177,7 @@ export function FullscreenTxModal({
       const isCtrlOrCmd = e.ctrlKey || e.metaKey;
 
       if (isCtrlOrCmd && e.key.toLowerCase() === 'c') {
+        if (!isAdmin) return;
         // If user highlighted text on page, let browser copy text
         if (window.getSelection && window.getSelection().toString().trim().length > 0) {
           return;
@@ -187,8 +190,9 @@ export function FullscreenTxModal({
           }
         }
       } else if (isCtrlOrCmd && e.key.toLowerCase() === 'v') {
+        if (!isAdmin) return;
         e.preventDefault();
-        const targetFlat = type === 'flat' ? flatNum : null;
+        const targetFlat = type === 'flat' ? effectiveFlatNum : null;
         pasteTransaction(targetFlat);
       } else if (e.key === 'ArrowDown') {
         if (filteredItems.length === 0) return;
@@ -209,6 +213,7 @@ export function FullscreenTxModal({
           setSelectedId(filteredItems[idx - 1].id);
         }
       } else if (e.key === 'Delete') {
+        if (!isAdmin) return;
         if (window.getSelection && window.getSelection().toString().trim().length > 0) {
           return;
         }
@@ -225,7 +230,7 @@ export function FullscreenTxModal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, selectedId, filteredItems, type, flatNum, copyTransaction, pasteTransaction, onOpenDeleteTx]);
+  }, [isOpen, isAdmin, selectedId, filteredItems, type, effectiveFlatNum, copyTransaction, pasteTransaction, onOpenDeleteTx]);
 
   // Deselect item when clicking outside
   useEffect(() => {

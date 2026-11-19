@@ -80,19 +80,20 @@ export function SmartMobilePayModal({
     : (fundType === 'FA' ? Math.max(0, Math.abs(Math.round(targetFlat?.renovationBalance || 0))) : Math.max(0, Math.abs(Math.round(targetFlat?.balance || 0))));
 
   const bankKK = currentBuilding?.bankKK || {
-    name: "Batyu utca 21 Társasház",
-    account: "11702005 21461266",
+    name: currentBuilding?.name || (isEn ? "Condominium" : "Társasház"),
+    account: "",
     bank: "OTP"
   };
   const bankFA = currentBuilding?.bankFA || {
-    name: "Batyu utca 21 Társasház",
-    account: "11702005 21461273",
+    name: currentBuilding?.name || (isEn ? "Condominium" : "Társasház"),
+    account: "",
     bank: "OTP"
   };
 
   const activeBank = fundType === 'FA' ? bankFA : bankKK;
-  const beneficiaryName = data?.beneficiaryName || activeBank?.name || currentBuilding?.name || "Batyu utca 21 Társasház";
-  const iban = data?.iban || formatHungarianIban(activeBank?.account);
+  // Never allow standalone URL params to override verified condominium beneficiary or IBAN
+  const beneficiaryName = (!isStandalone && data?.beneficiaryName) || activeBank?.name || currentBuilding?.name || (isEn ? "Condominium" : "Társasház");
+  const iban = (!isStandalone && data?.iban) || formatHungarianIban(activeBank?.account);
 
   const buildingCode = getBuildingPaymentCode(currentBuilding);
   const comment = data?.comment || buildPaymentComment({ buildingCode, flatNum, fundType });
@@ -228,6 +229,12 @@ export function SmartMobilePayModal({
             {copiedAll ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             <span>{copiedAll ? (t.smart_pay_badge_copied || "Másolva!") : (t.smart_pay_copy_all_btn || "Összes adat másolása")}</span>
           </button>
+
+          <p className="text-[10px] text-gray-500 text-center pt-1 leading-snug">
+            {t.smart_pay_verify_notice || (isEn
+              ? "Always verify the beneficiary name and IBAN in your banking app before confirming the transfer."
+              : "Jóváhagyás előtt mindig ellenőrizze a kedvezményezett nevét és az IBAN számlaszámot a banki alkalmazásban.")}
+          </p>
         </div>
 
       </div>

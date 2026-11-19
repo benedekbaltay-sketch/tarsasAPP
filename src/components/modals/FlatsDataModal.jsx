@@ -196,10 +196,10 @@ export function FlatsDataModal({
             </div>
             <div>
               <h4 className="text-sm sm:text-base font-bold text-gray-900 leading-tight">
-                {currentBuilding?.name || "Batyu utca 21. Társasház"}
+                {currentBuilding?.name || (isEn ? "Condominium" : "Társasház")}
               </h4>
               <span className="text-xs text-gray-500 font-medium">
-                {currentBuilding?.address || "Batyu utca 21."}
+                {currentBuilding?.address || ""}
               </span>
             </div>
           </div>

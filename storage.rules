@@ -1,0 +1,89 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn()
+        && 'superadmin' in request.auth.token
+        && request.auth.token.superadmin == true;
+    }
+
+    function memberDoc(buildingId) {
+      return firestore.get(/databases/(default)/documents/buildings/$(buildingId)/members/$(request.auth.uid));
+    }
+
+    function hasActiveMembership(buildingId) {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/buildings/$(buildingId)/members/$(request.auth.uid))
+        && memberDoc(buildingId).data.active == true;
+    }
+
+    function isBuildingAdmin(buildingId) {
+      return isSuperAdmin()
+        || (hasActiveMembership(buildingId) && memberDoc(buildingId).data.role == 'admin');
+    }
+
+    function isBuildingAdminOrSzvb(buildingId) {
+      return isBuildingAdmin(buildingId)
+        || (hasActiveMembership(buildingId) && memberDoc(buildingId).data.role == 'szvb');
+    }
+
+    // Strict MIME type allowlist (NEVER allow text/html, image/svg+xml, or executable scripts!)
+    function isAllowedDocumentType() {
+      return request.resource.contentType.matches('application/pdf')
+        || request.resource.contentType.matches('image/jpeg')
+        || request.resource.contentType.matches('image/png')
+        || request.resource.contentType.matches('image/webp')
+        || request.resource.contentType.matches('application/vnd\\.openxmlformats-officedocument\\.spreadsheetml\\.sheet')
+        || request.resource.contentType.matches('application/vnd\\.openxmlformats-officedocument\\.wordprocessingml\\.document');
+    }
+
+    // Official Building Documents (max 10 MB)
+    match /buildings/{buildingId}/documents/{docId}/{fileName} {
+      allow read: if isBuildingAdminOrSzvb(buildingId)
+        || (hasActiveMembership(buildingId)
+            && firestore.exists(/databases/(default)/documents/buildings/$(buildingId)/documents/$(docId))
+            && firestore.get(/databases/(default)/documents/buildings/$(buildingId)/documents/$(docId)).data.visibility == 'building');
+      allow write: if isBuildingAdmin(buildingId)
+        && request.resource.size <= 10 * 1024 * 1024
+        && isAllowedDocumentType();
+      allow delete: if isBuildingAdmin(buildingId);
+    }
+
+    // Transaction / Expense Invoice Attachments (max 5 MB, GDPR-isolated per transaction)
+    match /buildings/{buildingId}/attachments/{txId}/{fileName} {
+      allow read: if isBuildingAdminOrSzvb(buildingId)
+        || (hasActiveMembership(buildingId)
+            && firestore.exists(/databases/(default)/documents/buildings/$(buildingId)/transactions/$(txId))
+            && (
+              firestore.get(/databases/(default)/documents/buildings/$(buildingId)/transactions/$(txId)).data.visibility == 'building'
+              || firestore.get(/databases/(default)/documents/buildings/$(buildingId)/transactions/$(txId)).data.unitId in memberDoc(buildingId).data.unitIds
+            ));
+      allow write: if isBuildingAdmin(buildingId)
+        && request.resource.size <= 5 * 1024 * 1024
+        && isAllowedDocumentType();
+      allow delete: if isBuildingAdmin(buildingId);
+    }
+
+    // Info Section Attachments (max 5 MB)
+    match /buildings/{buildingId}/infoAttachments/{sectionId}/{fileName} {
+      allow read: if isBuildingAdminOrSzvb(buildingId)
+        || (hasActiveMembership(buildingId)
+            && firestore.exists(/databases/(default)/documents/buildings/$(buildingId)/infoSections/$(sectionId))
+            && firestore.get(/databases/(default)/documents/buildings/$(buildingId)/infoSections/$(sectionId)).data.visibility == 'building');
+      allow write: if isBuildingAdmin(buildingId)
+        && request.resource.size <= 5 * 1024 * 1024
+        && isAllowedDocumentType();
+      allow delete: if isBuildingAdmin(buildingId);
+    }
+
+    // Default deny everything else
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

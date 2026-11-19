@@ -16,9 +16,8 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onPr
   const isAdminAuthorized = (
     currentUser?.isAdminUser === true ||
     currentUser?.role === 'admin' ||
-    userEmail === 'benedek.baltay@gmail.com' ||
-    userEmail === 'benedek.baltay01@gmail.com' ||
-    (users || []).some(u => u.email && u.email.toLowerCase().trim() === userEmail && u.role === 'admin')
+    currentUser?.role === 'superadmin' ||
+    Boolean(userEmail && (users || []).some(u => u.email && u.email.toLowerCase().trim() === userEmail && (u.role === 'admin' || u.role === 'superadmin')))
   );
 
   const handleSelectBuilding = (buildingId) => {
@@ -29,22 +28,23 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onPr
 
   const handleSelectProfile = (profile) => {
     if (profile.isAdmin) {
-      const adminUser = (users || []).find(u => u.role === 'admin' && (u.email?.toLowerCase().trim() === userEmail || !u.email)) ||
-                        (users || []).find(u => u.role === 'admin') || {
+      if (!isAdminAuthorized) return;
+      const adminUser = (users || []).find(u => (u.role === 'admin' || u.role === 'superadmin') && u.email?.toLowerCase().trim() === userEmail) ||
+                        (users || []).find(u => u.role === 'admin' || u.role === 'superadmin') || {
                           id: "admin",
-                          name: "Baltay Benedek",
-                          email: userEmail || "benedek.baltay@gmail.com",
+                          name: currentUser.name || (isEn ? "Common Representative" : "Közös Képviselő"),
+                          email: userEmail,
                           role: "admin",
                           flatNum: "0"
                         };
       quickLogin({
         ...adminUser,
-        id: "admin",
-        name: adminUser.name || "Baltay Benedek",
-        email: userEmail || adminUser.email || "benedek.baltay@gmail.com",
-        role: "admin",
+        id: adminUser.id || "admin",
+        name: adminUser.name || currentUser.name || (isEn ? "Common Representative" : "Közös Képviselő"),
+        email: userEmail || adminUser.email || "",
+        role: adminUser.role === 'superadmin' ? 'superadmin' : 'admin',
         flatNum: "0",
-        buildingId: profile.buildingId || currentBuildingId || "batyu21",
+        buildingId: profile.buildingId || currentBuildingId || (buildings?.[0]?.id || null),
         isAdminUser: true
       });
       showToast(isEn ? "Switched to Common Representative" : "Átváltva: Közös Képviselő");
@@ -60,18 +60,18 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onPr
 
   // 1. If Common Representative, strictly only Representative context - NEVER resident apartments!
   if (currentUser?.role === 'admin' || currentUser?.role === 'superadmin') {
-    const curBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings[0];
-    const adminUser = (users || []).find(u => u.role === 'admin' && (u.email?.toLowerCase().trim() === userEmail || !u.email)) ||
-                      (users || []).find(u => u.role === 'admin');
-    const adminName = adminUser?.name || "Baltay Benedek";
+    const curBuilding = (buildings || []).find(b => b.id === currentBuildingId) || (buildings || [])[0];
+    const adminUser = (users || []).find(u => (u.role === 'admin' || u.role === 'superadmin') && u.email?.toLowerCase().trim() === userEmail) ||
+                      (users || []).find(u => u.role === 'admin' || u.role === 'superadmin');
+    const adminName = adminUser?.name || currentUser?.name || (isEn ? "Common Representative" : "Közös Képviselő");
     myProfiles.push({
       ...(adminUser || {}),
-      id: "admin",
+      id: adminUser?.id || "admin",
       name: adminName,
-      email: userEmail || adminUser?.email || "benedek.baltay@gmail.com",
-      role: "admin",
+      email: userEmail || adminUser?.email || "",
+      role: adminUser?.role === 'superadmin' ? 'superadmin' : 'admin',
       flatNum: "0",
-      buildingId: curBuilding?.id || "batyu21",
+      buildingId: curBuilding?.id || null,
       label: isEn ? "Common Representative" : "Közös Képviselő",
       sublabel: curBuilding?.name || t.building_address,
       isAdmin: true,

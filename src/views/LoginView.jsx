@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Mail, Lock, Eye, AlertCircle, KeyRound, HelpCircle, LogIn, Building2, RefreshCw } from 'lucide-react';
+import { FlagIcon } from '../components/FlagIcon';
 
 export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
   const { state, t, login, toggleLanguage } = useApp();
@@ -89,11 +90,9 @@ export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
           onClick={toggleLanguage}
           className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-semibold text-gray-700 shadow-xs transition-all hover:border-gray-300 cursor-pointer"
         >
-          <img
-            src={isHu ? "https://flagcdn.com/gb.svg" : "https://flagcdn.com/hu.svg"}
-            alt={isHu ? "EN" : "HU"}
-            className="w-5 h-3.5 rounded-[2px] shadow-2xs border border-black/15 object-cover"
-            loading="eager"
+          <FlagIcon
+            country={isHu ? "gb" : "hu"}
+            className="w-5 h-3.5 rounded-[2px] shadow-2xs border border-black/15"
           />
           <span>{isHu ? "English" : "Magyar"}</span>
         </button>

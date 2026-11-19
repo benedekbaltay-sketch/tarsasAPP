@@ -1,5 +1,14 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import {
+  ALLOWED_ACCEPT_ATTR,
+  validateUploadFile,
+  readFileAsDataUrl,
+  isSafeImagePreview,
+  isSafeDownloadUrl,
+  triggerSafeDownload,
+  getFileValidationErrorMessage,
+} from '../../utils/fileSecurity';
 import { 
   Plus, 
   Trash2, 
@@ -376,12 +385,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
     }));
   };
 
-  const isImageFile = (att) => {
-    if (!att) return false;
-    if (att.fileType && att.fileType.startsWith('image/')) return true;
-    const name = att.fileName || att.name || '';
-    return /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(name);
-  };
+  const isImageFile = (att) => isSafeImagePreview(att);
   const [linkingCaseItem, setLinkingCaseItem] = useState(null); // { tileId, item } | null
   const [linkTxSearch, setLinkTxSearch] = useState('');
   const [linkTxFilter, setLinkTxFilter] = useState('all'); // 'all' | 'expenses' | 'payments'
@@ -785,7 +789,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
   };
 
   // --- Tile Level Documents Upload & Delete (Multiple Files & Drag and Drop) ---
-  const handleTileDocumentUpload = (tileId, eventOrFiles) => {
+  const handleTileDocumentUpload = async (tileId, eventOrFiles) => {
     let files = [];
     if (eventOrFiles?.target?.files) {
       files = Array.from(eventOrFiles.target.files);
@@ -797,46 +801,51 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
       files = Array.from(eventOrFiles);
     }
 
-    if (files.length === 0) return;
-
-    Promise.all(files.map(file => new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve({
-        id: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-        fileName: file.name,
-        fileSize: file.size < 1024 * 1024 
-          ? `${(file.size / 1024).toFixed(1)} KB` 
-          : `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        fileType: file.type || 'application/octet-stream',
-        fileData: e.target.result,
-        date: new Date().toISOString().slice(0, 10)
-      });
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    }))).then(newDocs => {
-      const updated = tilesList.map(t => {
-        if (t.id === tileId) {
-          return {
-            ...t,
-            documents: [...(t.documents || []), ...newDocs]
-          };
-        }
-        return t;
-      });
-
-      saveInfoSections(updated);
-      const msg = newDocs.length === 1 
-        ? (isEn ? "Document attached!" : "Dokumentum sikeresen csatolva!") 
-        : (isEn ? `${newDocs.length} documents attached!` : `${newDocs.length} dokumentum sikeresen csatolva!`);
-      showToast(msg);
-    }).catch(err => {
-      console.error("Tile document upload error:", err);
-      showToast(isEn ? "Error uploading documents!" : "Hiba történt a fájlok beolvasásakor!");
-    });
-
     if (eventOrFiles?.target) {
       eventOrFiles.target.value = '';
     }
+    if (files.length === 0) return;
+
+    const newDocs = [];
+    for (const file of files) {
+      const check = await validateUploadFile(file);
+      if (!check.ok) {
+        showToast(getFileValidationErrorMessage(check.reason, {}, isEn), 'error');
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        newDocs.push({
+          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          fileName: check.sanitizedName,
+          fileSize: check.sizeFormatted,
+          fileType: file.type || 'application/octet-stream',
+          fileData: dataUrl,
+          date: new Date().toISOString().slice(0, 10)
+        });
+      } catch (err) {
+        console.error("Tile document upload error:", err);
+        showToast(isEn ? "Error uploading documents!" : "Hiba történt a fájlok beolvasásakor!", 'error');
+      }
+    }
+
+    if (newDocs.length === 0) return;
+
+    const updated = tilesList.map(t => {
+      if (t.id === tileId) {
+        return {
+          ...t,
+          documents: [...(t.documents || []), ...newDocs]
+        };
+      }
+      return t;
+    });
+
+    saveInfoSections(updated);
+    const msg = newDocs.length === 1 
+      ? (isEn ? "Document attached!" : "Dokumentum sikeresen csatolva!") 
+      : (isEn ? `${newDocs.length} documents attached!` : `${newDocs.length} dokumentum sikeresen csatolva!`);
+    showToast(msg);
   };
 
   const handleDeleteTileDocument = (tileId, docId) => {
@@ -1220,7 +1229,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
   };
 
   // --- Attachments / Files (Multiple Files & Drag and Drop) ---
-  const handleFileUpload = (itemId, eventOrFiles) => {
+  const handleFileUpload = async (itemId, eventOrFiles) => {
     let files = [];
     if (eventOrFiles?.target?.files) {
       files = Array.from(eventOrFiles.target.files);
@@ -1232,61 +1241,63 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
       files = Array.from(eventOrFiles);
     }
 
-    if (files.length === 0 || !selectedTile) return;
-
-    Promise.all(files.map(file => new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve({
-        id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-        fileName: file.name,
-        fileSize: file.size < 1024 * 1024 
-          ? `${(file.size / 1024).toFixed(1)} KB` 
-          : `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        fileType: file.type || 'application/octet-stream',
-        fileData: e.target.result
-      });
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    }))).then(newAttachments => {
-      const updated = tilesList.map(t => {
-        if (t.id === selectedTile.id) {
-          const updatedItems = (t.items || []).map(it => {
-            if (it.id === itemId) {
-              return {
-                ...it,
-                attachments: [...(it.attachments || []), ...newAttachments]
-              };
-            }
-            return it;
-          });
-          return { ...t, items: updatedItems };
-        }
-        return t;
-      });
-
-      saveInfoSections(updated);
-      const msg = newAttachments.length === 1 
-        ? (isEn ? "File attached!" : "Fájl sikeresen csatolva!") 
-        : (isEn ? `${newAttachments.length} files attached!` : `${newAttachments.length} fájl sikeresen csatolva!`);
-      showToast(msg);
-    }).catch(err => {
-      console.error("Item file upload error:", err);
-      showToast(isEn ? "Error uploading files!" : "Hiba történt a fájlok feltöltésekor!");
-    });
-
     if (eventOrFiles?.target) {
       eventOrFiles.target.value = '';
     }
+    if (files.length === 0 || !selectedTile) return;
+
+    const newAttachments = [];
+    for (const file of files) {
+      const check = await validateUploadFile(file);
+      if (!check.ok) {
+        showToast(getFileValidationErrorMessage(check.reason, {}, isEn), 'error');
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        newAttachments.push({
+          id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          fileName: check.sanitizedName,
+          fileSize: check.sizeFormatted,
+          fileType: file.type || 'application/octet-stream',
+          fileData: dataUrl
+        });
+      } catch (err) {
+        console.error("Item file upload error:", err);
+        showToast(isEn ? "Error uploading files!" : "Hiba történt a fájlok feltöltésekor!", 'error');
+      }
+    }
+
+    if (newAttachments.length === 0) return;
+
+    const updated = tilesList.map(t => {
+      if (t.id === selectedTile.id) {
+        const updatedItems = (t.items || []).map(it => {
+          if (it.id === itemId) {
+            return {
+              ...it,
+              attachments: [...(it.attachments || []), ...newAttachments]
+            };
+          }
+          return it;
+        });
+        return { ...t, items: updatedItems };
+      }
+      return t;
+    });
+
+    saveInfoSections(updated);
+    const msg = newAttachments.length === 1 
+      ? (isEn ? "File attached!" : "Fájl sikeresen csatolva!") 
+      : (isEn ? `${newAttachments.length} files attached!` : `${newAttachments.length} fájl sikeresen csatolva!`);
+    showToast(msg);
   };
 
   const handleDownloadAttachment = (att) => {
     if (!att || !att.fileData) return;
-    const link = document.createElement('a');
-    link.href = att.fileData;
-    link.download = att.fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (!triggerSafeDownload(att.fileData, att.fileName)) {
+      showToast(isEn ? "Blocked unsafe file download." : "A fájl letöltése biztonsági okból blokkolva.", 'error');
+    }
   };
 
   const handleDeleteAttachment = (itemId, attId) => {
@@ -1913,7 +1924,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
                                   type="text"
                                   value={quickAccount}
                                   onChange={(e) => setQuickAccount(e.target.value)}
-                                  placeholder="pl. 11702005 21461266"
+                                  placeholder="pl. 11700000 00000000"
                                   className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs"
                                 />
                               </div>
@@ -2574,7 +2585,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
                                             <label className="text-xs font-bold text-[#1E3A8A] hover:underline cursor-pointer flex items-center gap-1">
                                               <Upload className="w-3.5 h-3.5" />
                                               <span>+ Fájl csatolása</span>
-                                              <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(item.id, e)} />
+                                              <input type="file" multiple accept={ALLOWED_ACCEPT_ATTR} className="hidden" onChange={(e) => handleFileUpload(item.id, e)} />
                                             </label>
                                           </div>
 
@@ -3059,7 +3070,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
                                       <label className="text-xs font-bold text-[#1E3A8A] hover:underline cursor-pointer flex items-center gap-1">
                                         <Upload className="w-3.5 h-3.5" />
                                         <span>+ Órafotó feltöltése</span>
-                                        <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleFileUpload(item.id, e)} />
+                                        <input type="file" multiple accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => handleFileUpload(item.id, e)} />
                                       </label>
                                     </div>
 
@@ -3156,6 +3167,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
                               <input 
                                 type="file" 
                                 multiple
+                                accept={ALLOWED_ACCEPT_ATTR}
                                 className="hidden" 
                                 onChange={(e) => handleTileDocumentUpload(selectedTile.id, e)} 
                               />
@@ -3228,6 +3240,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
                                 ref={tileDocFileInputRef}
                                 type="file" 
                                 multiple 
+                                accept={ALLOWED_ACCEPT_ATTR}
                                 className="hidden" 
                                 onChange={(e) => handleTileDocumentUpload(selectedTile.id, e)} 
                               />
@@ -3253,6 +3266,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
                               ref={tileDocFileInputRef}
                               type="file" 
                               multiple 
+                              accept={ALLOWED_ACCEPT_ATTR}
                               className="hidden" 
                               onChange={(e) => handleTileDocumentUpload(selectedTile.id, e)} 
                             />
@@ -4263,7 +4277,7 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
       })()}
 
       {/* High-Resolution Image Lightbox Modal */}
-      {previewImage && (
+      {previewImage && isSafeImagePreview(previewImage.url) && (
         <div 
           className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fadeIn cursor-default"
           {...getBackdropProps(() => setPreviewImage(null))}
@@ -4279,15 +4293,18 @@ export function RepresentativeSections({ profileNavigation, onOpenEditTx }) {
                 <span className="text-xs font-semibold truncate">{previewImage.name}</span>
               </div>
               <div className="flex items-center gap-2">
-                <a
-                  href={previewImage.url}
-                  download={previewImage.name}
-                  className="p-1.5 px-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
-                  title="Letöltés"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Letöltés</span>
-                </a>
+                {isSafeDownloadUrl(previewImage.url) && (
+                  <a
+                    href={previewImage.url}
+                    download={previewImage.name}
+                    rel="noopener noreferrer"
+                    className="p-1.5 px-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
+                    title={isEn ? "Download" : "Letöltés"}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{isEn ? "Download" : "Letöltés"}</span>
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => setPreviewImage(null)}

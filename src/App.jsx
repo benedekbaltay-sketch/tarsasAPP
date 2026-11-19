@@ -211,15 +211,17 @@ function MainLayout() {
     }
 
     if (params.get('pay') === '1') {
-      const flat = params.get('flat') || '';
-      const fund = params.get('fund') || 'KK';
-      const amt = Number(params.get('amt')) || 0;
-      const bId = params.get('b') || '';
+      const rawFlat = (params.get('flat') || '').replace(/[\r\n/\\<>]/g, '').trim().slice(0, 24);
+      const rawFund = params.get('fund') === 'FA' ? 'FA' : 'KK';
+      const parsedAmt = Number(params.get('amt'));
+      const safeAmt = Number.isFinite(parsedAmt) ? Math.min(50_000_000, Math.max(0, Math.round(parsedAmt))) : 0;
+      const rawBId = (params.get('b') || '').trim();
+      const safeBId = /^[a-zA-Z0-9_-]{1,64}$/.test(rawBId) ? rawBId : '';
       setStandalonePayData({
-        flatNum: flat,
-        fundType: fund,
-        amount: amt,
-        buildingId: bId
+        flatNum: rawFlat,
+        fundType: rawFund,
+        amount: safeAmt,
+        buildingId: safeBId
       });
     }
   }, []);
@@ -757,7 +759,7 @@ function MainLayout() {
       />
 
       <LoansModal
-        isOpen={Boolean(currentUser && isLoansOpen)}
+        isOpen={Boolean(currentUser && (isAdmin || currentUser?.role === 'szvb') && isLoansOpen)}
         onClose={() => setIsLoansOpen(false)}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}
@@ -788,7 +790,7 @@ function MainLayout() {
       <FullscreenTxModal
         isOpen={Boolean(currentUser && fullscreenTxData)}
         type={fullscreenTxData?.type || 'global'}
-        flatNum={fullscreenTxData?.flatNum || currentUser?.flatNum}
+        flatNum={(isAdmin || currentUser?.role === 'szvb') ? (fullscreenTxData?.flatNum || currentUser?.flatNum) : currentUser?.flatNum}
         onClose={() => {
           const shouldReturnToFlatDetail = Boolean(
             isAdmin &&

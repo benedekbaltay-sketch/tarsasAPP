@@ -5,7 +5,8 @@ import {
   Scale, 
   Menu,
   ChevronRight,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ShieldCheck
 } from 'lucide-react';
 import { 
   formatCurrency, 
@@ -23,9 +24,11 @@ import { BankImportModal } from './BankImportModal';
 
 export function FinancialSituationModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelector, onOpenEditTx }) {
   const { state, t } = useApp();
-  const { flats, currentLang, currentUser } = state;
+  const { flats, buildings, currentBuildingId, currentLang, currentUser } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const canViewUnitBreakdown = isAdmin || currentUser?.role === 'szvb';
+  const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const [selectedMonthData, setSelectedMonthData] = useState(null);
   const [isBankImportOpen, setIsBankImportOpen] = useState(false);
 
@@ -197,8 +200,57 @@ export function FinancialSituationModal({ isOpen, onClose, onOpenDrawer, onOpenP
           </div>
         </div>
 
-        {/* 2. Public Arrears Map */}
+        {/* 2. Arrears Overview — Strict Tht./GDPR Separation:
+             - Admin & SZVB: Full unit-by-unit arrears breakdown
+             - Regular Owners: Aggregated building-level arrears total ONLY (NEVER unit-by-unit!) */}
         {(() => {
+          const precomputedArrears = currentBuilding?.aggregates?.totalArrearsHuf;
+
+          if (!canViewUnitBreakdown) {
+            const aggregatedTotalArrears = precomputedArrears !== undefined
+              ? Math.abs(Math.round(Number(precomputedArrears) || 0))
+              : (flats || []).reduce((sum, flat) => {
+                  const closed = getFlatClosingState(flat.flatNum, prevMonthInfo.dateStr, state);
+                  return sum + (closed.isDebtor ? Math.abs(closed.total) : 0);
+                }, 0);
+
+            return (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-bold text-gray-900 font-display">
+                        {t.gdpr_arrears_summary_title || (isEn ? "Aggregated Building Arrears Summary" : "Társasház összesített hátralék-egyenlege")}
+                      </h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-[#1E3A8A]">
+                        {isEn ? `Closed: ${closingDateLabel}` : `Záró állapot: ${closingDateLabel}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-gray-500 block">
+                      {isEn ? "Total Building-Level Arrears" : "A társasház összesített fennálló hátraléka"}
+                    </span>
+                    <span className={`text-2xl font-black font-display mt-1 block ${aggregatedTotalArrears > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {aggregatedTotalArrears > 0 ? formatCurrency(-aggregatedTotalArrears) : formatCurrency(0)}
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2 max-w-md text-[11px] text-gray-500 bg-white p-3 rounded-xl border border-gray-200">
+                    <ShieldCheck className="w-4 h-4 text-[#1E3A8A] shrink-0 mt-0.5" />
+                    <span className="leading-relaxed">
+                      {t.gdpr_arrears_owner_notice || (isEn
+                        ? "Under Hungarian Condominium Act (Tht.) and GDPR/NAIH privacy rules, unit-by-unit debt maps are restricted to Common Representatives and the Accounting Committee (SZVB). Only the aggregated building total is displayed."
+                        : "A társasházi törvény (Tht.) és a GDPR/NAIH adatvédelmi gyakorlata alapján az egyedi lakások tartozásai nem jeleníthetők meg; kizárólag a társasház összesített hátralékösszege látható.")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
           const flatDebtItems = (flats || []).map((flat) => {
             const closedState = getFlatClosingState(flat.flatNum, prevMonthInfo.dateStr, state);
             return {
@@ -225,7 +277,7 @@ export function FinancialSituationModal({ isOpen, onClose, onOpenDrawer, onOpenP
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-base font-bold text-gray-900 font-display">
-                      {isEn ? "Public Debt / Arrears Map" : "Nyilvános tartozástérkép"}
+                      {t.gdpr_arrears_admin_title || (isEn ? "Unit-by-Unit Arrears Breakdown (Admin / SZVB)" : "Albetétenkénti tartozástérkép (Közös Képviselő / SZVB)")}
                     </h3>
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-[#1E3A8A]">
                       {isEn ? `Closed: ${closingDateLabel}` : `Záró állapot: ${closingDateLabel}`}
@@ -233,8 +285,8 @@ export function FinancialSituationModal({ isOpen, onClose, onOpenDrawer, onOpenP
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
                     {isEn 
-                      ? `Official closing status of all flats as of previous month (${closingDateLabel}).` 
-                      : `A lakások egyenlegének hivatalos státusza az előző hónap záró állapota szerint (${closingDateLabel}).`}
+                      ? `Official closing status of all flats as of previous month (${closingDateLabel}). Restricted to Admin & SZVB.` 
+                      : `A lakások egyenlegének hivatalos státusza az előző hónap záró állapota szerint (${closingDateLabel}). Kizárólag KK és SZVB számára látható.`}
                   </p>
                 </div>
               </div>

@@ -9,6 +9,32 @@ import {
 } from '../constants/defaultData';
 import { recalculateFlatBalances } from '../utils/finances';
 
+export function stripSensitiveUserFields(user) {
+  if (!user || typeof user !== 'object') return user;
+  const { pass, password, resetToken, resetTokenExpiry, ...safeUser } = user;
+  return safeUser;
+}
+
+export function stripSensitiveBuildingFields(buildings) {
+  if (!Array.isArray(buildings)) return [];
+  return buildings.map(b => {
+    if (!b || typeof b !== 'object') return b;
+    const cleanB = { ...b };
+    if (cleanB.bankApi && typeof cleanB.bankApi === 'object') {
+      const { apiKey, clientSecret, secretKey, ...safeBankApi } = cleanB.bankApi;
+      cleanB.bankApi = safeBankApi;
+    }
+    if (Array.isArray(cleanB.flats)) {
+      cleanB.flats = cleanB.flats.map(f => {
+        if (!f || typeof f !== 'object') return f;
+        const { pass, password, resetToken, resetTokenExpiry, ...safeFlat } = f;
+        return safeFlat;
+      });
+    }
+    return cleanB;
+  });
+}
+
 export function ensureArray(val) {
   if (!val) return [];
   if (Array.isArray(val)) return val;
@@ -40,6 +66,8 @@ export function mergeStateWithCloud(local, cloud) {
 
   if (isLocalCleanSlate) {
     const res = JSON.parse(JSON.stringify(cloud));
+    res.users = (res.users || []).map(stripSensitiveUserFields);
+    res.buildings = stripSensitiveBuildingFields(res.buildings || []);
     const curB = (res.buildings || []).find(b => b.id === (res.currentBuildingId || local?.currentBuildingId)) || res.buildings?.[0];
     if (curB) {
       res.currentBuildingId = curB.id;
@@ -70,7 +98,7 @@ export function mergeStateWithCloud(local, cloud) {
       ? ensureArray(cloud.calendarEvents)
       : JSON.parse(JSON.stringify(DEFAULT_CALENDAR_EVENTS || []));
     res.currentLang = local?.currentLang || 'hu';
-    res.currentUser = local?.currentUser || null;
+    res.currentUser = local?.currentUser ? stripSensitiveUserFields(local.currentUser) : null;
     res.isGridEditMode = local?.isGridEditMode || false;
     return res;
   }
@@ -175,36 +203,29 @@ export function mergeStateWithCloud(local, cloud) {
     return Array.from(flatMap.values());
   };
 
-  // 2. Merge users
+  // 2. Merge users (strictly stripping any legacy plaintext passwords or reset tokens)
   if (cloud.users && Array.isArray(cloud.users)) {
     const userMap = new Map();
     (merged.users || []).forEach(lu => {
       if (!lu) return;
       const key = lu.id || (lu.email ? `${lu.email.toLowerCase().trim()}_${lu.role}` : null);
-      if (key) userMap.set(key, { ...lu });
+      if (key) userMap.set(key, stripSensitiveUserFields({ ...lu }));
     });
 
     cloud.users.forEach(cu => {
       if (!cu) return;
       const key = cu.id || (cu.email ? `${cu.email.toLowerCase().trim()}_${cu.role}` : null);
       if (!key) return;
+      const safeCu = stripSensitiveUserFields({ ...cu });
       if (!userMap.has(key)) {
-        userMap.set(key, { ...cu });
+        userMap.set(key, safeCu);
       } else {
         const lu = userMap.get(key);
-        const passToKeep = isCloudAuthoritative
-          ? (cu.pass || cu.password || lu.pass || lu.password)
-          : (lu.pass || lu.password || cu.pass || cu.password);
-        userMap.set(key, { ...lu, ...cu, pass: passToKeep, password: passToKeep });
+        userMap.set(key, isCloudAuthoritative ? { ...lu, ...safeCu } : { ...safeCu, ...lu });
       }
     });
 
-    const mergedUsersList = Array.from(userMap.values());
-    if (!mergedUsersList.some(u => u && (u.role === 'superadmin' || u.id === 'superadmin'))) {
-      const defaultSuper = DEFAULT_USERS.find(u => u && u.role === 'superadmin');
-      if (defaultSuper) mergedUsersList.unshift(defaultSuper);
-    }
-    merged.users = mergedUsersList;
+    merged.users = Array.from(userMap.values());
   }
 
   // 3. Merge buildings
@@ -257,7 +278,7 @@ export function mergeStateWithCloud(local, cloud) {
       }
     });
 
-    merged.buildings = mergedBuildings;
+    merged.buildings = stripSensitiveBuildingFields(mergedBuildings);
   }
 
   // 4. Update active building shortcut pointers
@@ -271,7 +292,7 @@ export function mergeStateWithCloud(local, cloud) {
     merged.documents = curB.documents || [];
     merged.docFolders = curB.docFolders || [];
     merged.loans = curB.loans || [];
-    merged.infoSections = curB.infoSections || (curB.id === 'batyu21' ? JSON.parse(JSON.stringify(DEFAULT_INFO_SECTIONS)) : []);
+    merged.infoSections = curB.infoSections || [];
     merged.buildingInitialReserveCommon = curB.buildingInitialReserveCommon !== undefined ? curB.buildingInitialReserveCommon : (cloud.buildingInitialReserveCommon || 0);
     merged.buildingInitialReserveRenovation = curB.buildingInitialReserveRenovation !== undefined ? curB.buildingInitialReserveRenovation : (cloud.buildingInitialReserveRenovation || 0);
     recalculateFlatBalances(merged);
@@ -285,8 +306,11 @@ export function mergeStateWithCloud(local, cloud) {
     cloudCalEvents
   );
 
+  merged.buildings = stripSensitiveBuildingFields(merged.buildings || []);
+  merged.users = (merged.users || []).map(stripSensitiveUserFields);
+
   merged.currentLang = local.currentLang || 'hu';
-  merged.currentUser = local.currentUser || null;
+  merged.currentUser = local.currentUser ? stripSensitiveUserFields(local.currentUser) : null;
   merged.isGridEditMode = local.isGridEditMode || false;
   merged.lastUpdated = isCloudAuthoritative ? (cloudTime || localTime) : Math.max(localTime, cloudTime);
   merged.revision = Math.max(localRev, cloudRev);
@@ -301,29 +325,6 @@ export function mergeStateWithCloud(local, cloud) {
     ...(local.globalSettings || {})
   };
 
-  // Clean up flat Fsz 2 email unbind per explicit user request
-  (merged.buildings || []).forEach(b => {
-    (b.flats || []).forEach(f => {
-      if (f.flatNum === 'Fsz 2' && (f.email === 'benedek.baltay@gmail.com' || f.email === 'benedek.baltay01@gmail.com')) {
-        f.email = '';
-        if (Array.isArray(f.owners)) {
-          f.owners.forEach(o => {
-            if (o.email === 'benedek.baltay@gmail.com' || o.email === 'benedek.baltay01@gmail.com') {
-              o.email = '';
-              o.emails = [];
-            }
-          });
-        }
-      }
-    });
-  });
-  merged.users = (merged.users || []).map(u => {
-    if (u.id === 'Fsz 2' && (u.email === 'benedek.baltay@gmail.com' || u.email === 'benedek.baltay01@gmail.com')) {
-      return { ...u, email: '' };
-    }
-    return u;
-  });
-
   return merged;
 }
 
@@ -331,7 +332,7 @@ export function loadInitialState() {
   const defaultState = {
     currentLang: 'hu',
     currentUser: null,
-    currentBuildingId: "batyu21",
+    currentBuildingId: null,
     buildings: JSON.parse(JSON.stringify(DEFAULT_BUILDINGS)),
     users: JSON.parse(JSON.stringify(DEFAULT_USERS)),
     flats: [],
@@ -361,9 +362,11 @@ export function loadInitialState() {
       const parsed = JSON.parse(raw);
       if (parsed.buildings && parsed.buildings.length > 0) {
         defaultState.currentLang = parsed.currentLang || 'hu';
-        defaultState.currentBuildingId = parsed.currentBuildingId || "batyu21";
-        defaultState.buildings = parsed.buildings;
-        defaultState.users = parsed.users && parsed.users.length > 0 ? parsed.users : defaultState.users;
+        defaultState.currentBuildingId = parsed.currentBuildingId || null;
+        defaultState.buildings = stripSensitiveBuildingFields(parsed.buildings);
+        defaultState.users = parsed.users && parsed.users.length > 0
+          ? parsed.users.map(stripSensitiveUserFields)
+          : defaultState.users;
         if (parsed.calendarEvents) {
           const parsedCal = ensureArray(parsed.calendarEvents);
           if (parsedCal.length > 0) {
@@ -386,51 +389,22 @@ export function loadInitialState() {
             ...parsed.globalSettings
           };
         }
-
-        // Clean up flat Fsz 2 email unbind per explicit user request
-        (defaultState.buildings || []).forEach(b => {
-          (b.flats || []).forEach(f => {
-            if (f.flatNum === 'Fsz 2' && (f.email === 'benedek.baltay@gmail.com' || f.email === 'benedek.baltay01@gmail.com')) {
-              f.email = '';
-              if (Array.isArray(f.owners)) {
-                f.owners.forEach(o => {
-                  if (o.email === 'benedek.baltay@gmail.com' || o.email === 'benedek.baltay01@gmail.com') {
-                    o.email = '';
-                    o.emails = [];
-                  }
-                });
-              }
-            }
-          });
-        });
-        defaultState.users = (defaultState.users || []).map(u => {
-          if (u.id === 'Fsz 2' && (u.email === 'benedek.baltay@gmail.com' || u.email === 'benedek.baltay01@gmail.com')) {
-            return { ...u, email: '' };
-          }
-          return u;
-        });
       }
     }
   } catch (e) {
     console.warn("Could not load from LocalStorage:", e);
   }
 
-  // Ensure default superadmin user is always present in users array
-  if (!defaultState.users.some(u => u && (u.role === 'superadmin' || u.id === 'superadmin' || u.email === 'superadmin@tarsashaz.hu'))) {
-    const defaultSuper = DEFAULT_USERS.find(u => u.role === 'superadmin');
-    if (defaultSuper) defaultState.users.unshift(defaultSuper);
-  }
-
-  // Restore remember-me user if present or session user from current tab
+  // Restore remember-me user if present or session user from current tab (without any password fields)
   try {
     const rememberMe = localStorage.getItem("tarsashaz_remember_me") === "true";
     const loggedInUserRaw = localStorage.getItem("tarsashaz_logged_in_user");
     if (rememberMe && loggedInUserRaw) {
-      defaultState.currentUser = JSON.parse(loggedInUserRaw);
+      defaultState.currentUser = stripSensitiveUserFields(JSON.parse(loggedInUserRaw));
     } else {
       const sessionUserRaw = sessionStorage.getItem("tarsashaz_session_user");
       if (sessionUserRaw) {
-        defaultState.currentUser = JSON.parse(sessionUserRaw);
+        defaultState.currentUser = stripSensitiveUserFields(JSON.parse(sessionUserRaw));
       }
     }
   } catch (e) {}
@@ -446,7 +420,7 @@ export function loadInitialState() {
     defaultState.documents = curB.documents || [];
     defaultState.docFolders = curB.docFolders || [];
     defaultState.loans = curB.loans || [];
-    defaultState.infoSections = curB.infoSections || (curB.id === 'batyu21' ? JSON.parse(JSON.stringify(DEFAULT_INFO_SECTIONS)) : []);
+    defaultState.infoSections = curB.infoSections || [];
     defaultState.buildingInitialReserveCommon = curB.buildingInitialReserveCommon || 0;
     defaultState.buildingInitialReserveRenovation = curB.buildingInitialReserveRenovation || 0;
     recalculateFlatBalances(defaultState);
@@ -470,8 +444,27 @@ export function sanitizeForFirebase(data) {
   return result;
 }
 
-export function stripLargeBinaries(buildings) {
+export function stripLargeBinaries(buildings, options = {}) {
+  const { stripInlineAttachments = false } = options;
   if (!Array.isArray(buildings)) return [];
+  const stripAttList = (list) =>
+    Array.isArray(list)
+      ? list.map(item => {
+          if (!item || !Array.isArray(item.attachments)) return item;
+          return {
+            ...item,
+            attachments: item.attachments.map(att => {
+              if (!att || typeof att !== 'object') return att;
+              if (att.data || att.fileData) {
+                const { data, fileData, ...rest } = att;
+                return { ...rest, hasFile: true };
+              }
+              return att;
+            }),
+          };
+        })
+      : list;
+
   return buildings.map(b => {
     if (!b) return b;
     const cleanB = { ...b };
@@ -489,6 +482,16 @@ export function stripLargeBinaries(buildings) {
       cleanB.infoSections = cleanB.infoSections.map(sec => {
         if (!sec) return sec;
         const cleanSec = { ...sec };
+        if (stripInlineAttachments && Array.isArray(cleanSec.documents)) {
+          cleanSec.documents = cleanSec.documents.map(d => {
+            if (!d) return d;
+            if (d.fileData) {
+              const { fileData, ...rest } = d;
+              return { ...rest, hasFile: true };
+            }
+            return d;
+          });
+        }
         if (Array.isArray(cleanSec.items)) {
           cleanSec.items = cleanSec.items.map(item => {
             if (!item) return item;
@@ -509,6 +512,11 @@ export function stripLargeBinaries(buildings) {
         return cleanSec;
       });
     }
+    if (stripInlineAttachments) {
+      cleanB.transactions = stripAttList(cleanB.transactions);
+      cleanB.expenses = stripAttList(cleanB.expenses);
+      cleanB.manualDebits = stripAttList(cleanB.manualDebits);
+    }
     return cleanB;
   });
 }
@@ -516,7 +524,8 @@ export function stripLargeBinaries(buildings) {
 export function createCloudPayload(targetState) {
   if (!targetState) return null;
   const activeB = (targetState.buildings || []).find(b => b.id === targetState.currentBuildingId) || (targetState.buildings && targetState.buildings[0]);
-  const cleanBuildings = stripLargeBinaries(targetState.buildings || []);
+  const cleanBuildings = stripSensitiveBuildingFields(stripLargeBinaries(targetState.buildings || []));
+  const safeUsers = (targetState.users || []).map(stripSensitiveUserFields);
 
   const reserveCommon = targetState.buildingInitialReserveCommon !== undefined 
     ? targetState.buildingInitialReserveCommon 
@@ -536,12 +545,12 @@ export function createCloudPayload(targetState) {
 
   return sanitizeForFirebase({
     buildings: cleanBuildings,
-    users: targetState.users || [],
+    users: safeUsers,
     calendarEvents: targetState.calendarEvents || [],
     repProfile: targetState.repProfile || DEFAULT_REP_PROFILE,
     globalSettings: targetState.globalSettings || DEFAULT_GLOBAL_SETTINGS,
     vault: getPermanentVault(),
-    currentBuildingId: targetState.currentBuildingId || (activeB ? activeB.id : "batyu21"),
+    currentBuildingId: targetState.currentBuildingId || (activeB ? activeB.id : null),
     buildingInitialReserveCommon: reserveCommon,
     buildingInitialReserveRenovation: reserveRenov,
     revision: Number(targetState.revision) || 0,

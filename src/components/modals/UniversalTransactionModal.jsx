@@ -18,6 +18,11 @@ import {
 import { formatCurrency, getCurrentFee, getBuildingAccounts } from '../../utils/finances';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 import { DEFAULT_CATEGORIES } from '../../constants/defaultData';
+import {
+  validateUploadFile,
+  readFileAsDataUrl,
+  getFileValidationErrorMessage,
+} from '../../utils/fileSecurity';
 
 export function UniversalTransactionModal({ isOpen, onClose, initialData = null }) {
   const { state, t, addMultipleItems, showToast } = useApp();
@@ -343,34 +348,27 @@ export function UniversalTransactionModal({ isOpen, onClose, initialData = null 
     return fallback > 0 ? fallback : 0;
   }, [selectedFlatObj, targetAccount, selectedAccountMeta]);
 
-  const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
-  const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'xlsx', 'xls', 'docx', 'doc'];
-
-  // File upload handling
-  const handleFileUpload = (e) => {
+  // File upload handling (size + extension + MIME + magic-byte validated)
+  const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files || []);
-    files.forEach(file => {
-      if (file.size > MAX_FILE_SIZE) {
-        if (showToast) showToast(t.file_too_large || "A feltöltött fájl mérete túl nagy! A megengedett maximális méret 2 MB.", "error");
-        return;
-      }
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        if (showToast) showToast(t.file_type_unsupported || "Nem támogatott fájlformátum! Kizárólag PDF, JPG, PNG vagy XLSX tölthető fel.", "error");
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        setAttachments(prev => [...prev, {
-          name: file.name,
-          size: (file.size / 1024).toFixed(0) + " KB",
-          data: reader.result
-        }]);
-      };
-      reader.readAsDataURL(file);
-    });
     e.target.value = '';
+    for (const file of files) {
+      const check = await validateUploadFile(file);
+      if (!check.ok) {
+        if (showToast) showToast(getFileValidationErrorMessage(check.reason, t, isEn), "error");
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        setAttachments(prev => [...prev, {
+          name: check.sanitizedName,
+          size: check.sizeFormatted,
+          data: dataUrl
+        }]);
+      } catch {
+        if (showToast) showToast(isEn ? "Error reading file." : "Hiba történt a fájl beolvasásakor.", "error");
+      }
+    }
   };
 
   const handleRemoveAttachment = (idxToRemove) => {
@@ -675,7 +673,7 @@ export function UniversalTransactionModal({ isOpen, onClose, initialData = null 
 
   const backdropProps = useBackdropClose(onClose);
 
-  if (!isOpen) return null;
+  if (!isOpen || !isAdmin) return null;
 
   return (
     <div 

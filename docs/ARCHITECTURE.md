@@ -277,17 +277,17 @@ A felhasználó által jelzett jelenség: a számlafőösszeg módosítását (`
 1. **Csendes Hitelesítési Kimaradás (`ensureFirebaseAuth`)**:
    - A `persistState` futásakor a `syncToCloud` megkísérelte a felhőbe írást.
    - Ha a Firebase Auth munkamenet épp nem volt aktív (pl. az `auth.currentUser` még nem inicializálódott), a rendszer a háttérbeli `ensureFirebaseAuth`-t hívta meg.
-   - Ez korábban szigorúan megkövetelte a `rememberMe === "true"` kulcsot a `localStorage`-ben, és a modern Firebase Auth v10+ által küldött `auth/invalid-credential` hibakódot (amely a korábbi `auth/user-not-found`-ot váltotta fel) nem kezelte rugalmasan az admin fiókok (`benedek.baltay@gmail.com` vs. `benedek.baltay01@gmail.com`) és a jelszóváltozatok (`Csalad2001` vs. `Csalad20011`) között.
+   - Ez korábban szigorúan megkövetelte a `rememberMe === "true"` kulcsot a `localStorage`-ben, és a modern Firebase Auth v10+ által küldött `auth/invalid-credential` hibakódot nem kezelte egységesen.
    - Ennek következtében a felhőmentés elmaradt (`Cloud sync skipped: User is not authenticated`), miközben a kliens a böngésző helyi `LocalStorage`-ébe azonnal elmentette a módosított állapotot.
 2. **Oldalfrissítés Kétlépcsős Felülírása**:
    - A lap újratöltésekor a `loadInitialState` szinkronban beolvasta a `LocalStorage`-t: ekkor a felületen megjelent a módosított egyenleg ("utána egy kicsit még jó").
    - Ezt követően (150–500 ms múlva) a Firebase RTDB `onValue` figyelője megérkezett a felhőbeli állapottal, ahol a tartalék még 0 Ft-on állt.
    - A korábbi `mergeStateWithCloud` a felhő időbélyegét (`cloudTime > localTime`) véve felülírta a helyi tartalékot a felhő 0 értékével ("aztán visszavált").
 
-### 9.2 Az Alkalmazott Rendszerszintű Védelem
-1. **Multi-Candidate Háttér-Hitelesítés (`ensureFirebaseAuth`)**:
-   - Nem függ a `rememberMe` flagtől: ha a böngészőben bejelentkezett felhasználói profil van, a felhőkapcsolat azonnal felépül.
-   - Automatikus jelöltpár-kezelés (`emailCandidates`, `passCandidates`), amely garantálja, hogy a rendszergazdai és képviselői műveletekhez mindig érvényes Firebase Auth JWT token álljon rendelkezésre.
+### 9.2 Az Alkalmazott Rendszerszintű Védelem (Phase 0 Frissítve)
+1. **Szigorú Firebase Auth SDK Perzisztencia (`ensureFirebaseAuth` -> `auth.authStateReady()`)**:
+   - A korábbi több-jelöltes kliensoldali újrahitelesítés biztonsági okokból megszüntetésre került (soha nem tárolunk és nem küldünk beégetett jelszavakat).
+   - Az `ensureFirebaseAuth` közvetlenül a Firebase Auth SDK hivatalos munkamenet-állapotára (`auth.authStateReady()`, `browserLocalPersistence` / `browserSessionPersistence`) támaszkodik; érvényes Firebase Auth JWT token hiányában a felhőírás elutasításra kerül és a felhasználó újra bejelentkezhet.
 2. **Előzetes Hitelesítés és Időbélyeg-Szinkronizáció (`setGlobalBalances`)**:
    - A `setGlobalBalances` aszinkron módon lefutva ellenőrzi az érvényes Firebase kapcsolatot a mentési ciklus megkezdése előtt.
    - Mind a gyökérállapot, mind az aktív épület egyidejűleg megkapja az új `lastUpdated` időbélyeget és a frissített induló tartalékokat (`buildingInitialReserveCommon`, `buildingInitialReserveRenovation`).

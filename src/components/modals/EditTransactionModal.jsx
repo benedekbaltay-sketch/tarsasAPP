@@ -14,9 +14,17 @@ import {
 import { getCombinedFlatLedgerTimeline, translateCategory, getBuildingAccounts } from '../../utils/finances';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 import { DEFAULT_CATEGORIES } from '../../constants/defaultData';
+import {
+  ALLOWED_ACCEPT_ATTR,
+  validateUploadFile,
+  readFileAsDataUrl,
+  isSafeDownloadUrl,
+  isSafeImagePreview,
+  getFileValidationErrorMessage,
+} from '../../utils/fileSecurity';
 
 export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClose, initialEditMode = false }) {
-  const { state, t, editItem } = useApp();
+  const { state, t, editItem, showToast } = useApp();
   const { transactions, expenses, manualDebits, currentLang, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
 
@@ -288,20 +296,26 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
     }
   };
 
-  const handleFileUpload = (e) => {
-    const files = Array.from(e.target.files);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setAttachments(prev => [...prev, {
-          name: file.name,
-          size: (file.size / 1024).toFixed(0) + " KB",
-          data: reader.result
-        }]);
-      };
-      reader.readAsDataURL(file);
-    });
+  const handleFileUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
+    for (const file of files) {
+      const check = await validateUploadFile(file);
+      if (!check.ok) {
+        if (showToast) showToast(getFileValidationErrorMessage(check.reason, t, isEn), "error");
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        setAttachments(prev => [...prev, {
+          name: check.sanitizedName,
+          size: check.sizeFormatted,
+          data: dataUrl
+        }]);
+      } catch {
+        if (showToast) showToast(isEn ? "Error reading file." : "Hiba történt a fájl beolvasásakor.", "error");
+      }
+    }
   };
 
   const handleRemoveAttachment = (idxToRemove) => {
@@ -527,7 +541,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
                     {attachments.map((att, idx) => (
                       <div key={idx} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs">
                         <div className="flex items-center gap-2 min-w-0">
-                          {att.data?.startsWith('data:image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(att.name) ? (
+                          {isSafeImagePreview(att) ? (
                             <img src={att.data} alt={att.name} className="w-7 h-7 rounded-lg object-cover border border-blue-200 shrink-0 shadow-2xs" />
                           ) : (
                             <FileText className="w-4 h-4 text-[#1E3A8A] shrink-0" />
@@ -536,10 +550,11 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
                             {att.name}
                           </span>
                         </div>
-                        {att.data && (
+                        {isSafeDownloadUrl(att.data) && (
                           <a
                             href={att.data}
                             download={att.name}
+                            rel="noopener noreferrer"
                             className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-gray-100 border border-gray-200 rounded-lg text-xs font-bold text-[#1E3A8A] transition-colors"
                           >
                             <Download className="w-3 h-3 text-[#1E3A8A]" />
@@ -806,6 +821,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
               <input
                 type="file"
                 multiple
+                accept={ALLOWED_ACCEPT_ATTR}
                 onChange={handleFileUpload}
                 className="w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
               />
@@ -817,7 +833,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
                       className="flex items-center justify-between gap-2 p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        {att.data?.startsWith('data:image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(att.name) ? (
+                        {isSafeImagePreview(att) ? (
                           <img src={att.data} alt={att.name} className="w-6 h-6 rounded-md object-cover border border-blue-200 shrink-0 shadow-2xs" />
                         ) : (
                           <FileText className="w-3.5 h-3.5 text-[#1E3A8A] shrink-0" />

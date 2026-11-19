@@ -47,36 +47,36 @@ Küldd el az alábbi e-mailt a társasház hivatalos kapcsolattartási e-mail c�
 
 **Címzett:** `corpapisupport@otpbank.hu`  
 **Másolatot kap (CC):** *(Közös képviseleti iroda e-mail címe)*  
-**Tárgy:** `OTP Corporate API regisztrációs kérelem és tanúsítvány benyújtása – Batyu utca 21. Társasház`  
+**Tárgy:** `OTP Corporate API regisztrációs kérelem és tanúsítvány benyújtása – [Társasház Hivatalos Neve]`  
 
-**Melléklet:** `server/certs/otp_cert.pem` *(Csatold a generált publikus tanúsítványfájlt!)*
+**Melléklet:** `server/certs/otp_cert.pem` *(Csatold a CA által kiállított publikus tanúsítványfájlt!)*
 
 ---
 
 **Tisztelt OTP Bank Corporate API Támogatás!**
 
-Alulírott, mint a(z) **Batyu utca 21. Társasház** törvényes közös képviselője, ezúton kérem az **OTP Corporate API (Electra Open Banking)** hozzáférés beállítását és a csatolt kliens tanúsítvány regisztrálását a társasházunk bankszámlájához.
+Alulírott, mint a(z) **[Társasház Hivatalos Neve]** törvényes közös képviselője, ezúton kérem az **OTP Corporate API (Electra Open Banking)** hozzáférés beállítását és a csatolt kliens tanúsítvány regisztrálását a társasházunk bankszámlájához.
 
 ### 1. A társasház és a bankszámla adatai:
-- **Társasház hivatalos neve:** Batyu utca 21. Társasház
-- **Székhely / Cím:** 1025 Budapest, Batyu utca 21.
-- **Társasház adószáma:** 28941235-1-41 *(kérjük ellenőrizni / pontosítani)*
+- **Társasház hivatalos neve:** [Társasház Hivatalos Neve]
+- **Székhely / Cím:** [Irányítószám, Város, Utca, Házszám]
+- **Társasház adószáma:** [12345678-1-41]
 - **Számlavezető bank:** OTP Bank Nyrt.
-- **Bankszámlaszám (KK főszámla):** HU42 1177 3016 0000 1234 0001 0000 *(kérjük pontosítani a valós IBAN-ra)*
+- **Bankszámlaszám (KK főszámla):** [HU42 1170 0000 0000 0000 0000 0000]
 - **Electra szerződésszám / ügyfélszám:** *(amennyiben ismert)*
 
 ### 2. Technikai Kapcsolattartó adatai:
-- **Kapcsolattartó neve:** *(Pl. Benedek / Közös Képviselő vagy Rendszergazda neve)*
-- **E-mail cím:** `benedek@example.com` *(a valós technikai e-mail cím)*
+- **Kapcsolattartó neve:** *(Közös Képviselő vagy Rendszergazda neve)*
+- **E-mail cím:** `tech@example.com` *(a valós technikai e-mail cím)*
 - **Telefonszám:** `+36 ...`
-- **Szerver fix külső IP-címe (ha whitelist szükséges):** *(Saját szerver fix IP címe, vagy jelezni, ha dinamikus/felhő alapú)*
+- **Szerver fix külső IP-címe (ha whitelist szükséges):** *(Cloud Run statikus egress IP / VPS fix IP címe)*
 
 ### 3. Csatolt tanúsítvány paraméterei (OTP 3.1.1 szabvány):
-- **Tanúsítvány fájl:** `otp_cert.pem` *(csatolva)*
+- **Tanúsítvány fájl:** `otp_cert.pem` *(csatolva — éles regisztráció előtt CA által aláírt tanúsítványláncra cserélendő)*
 - **Kulcshossz:** RSA 4096 bit
-- **Érvényesség:** 10 év (2026.11.18. – 2036.11.15.)
+- **Érvényesség:** *(CA által kiállított érvényességi időtartam)*
 - **Tárgy (Subject):** `C=HU, ST=Budapest, L=Budapest, O=TarsasApp, OU=OpenBanking, CN=TarsasApp OTP Client`
-- **Ujjlenyomat (SHA-256):** `8E:AD:04:E6:0B:B5:D3:91:AD:EF:B7:E8:4F:19:4B:42:7B:7B:3B:7F:8B:77:3A:04:DD:07:0A:53:2E:A5:5A:FC`
+- **Ujjlenyomat (SHA-256):** *(A kiállított CA-aláírt tanúsítvány SHA-256 ujjlenyomata)*
 
 ### 4. Igényelt API modulok / Szolgáltatások:
 - **Számlainformáció és egyenleglekérdezés (AISP - Account Information Services)**
@@ -89,7 +89,7 @@ Együttműködésüket előre is köszönjük!
 Üdvözlettel,  
 **[Közös Képviselő / Képviseleti Cég Neve]**  
 Közös Képviselő  
-Batyu utca 21. Társasház  
+[Társasház Hivatalos Neve]  
 Tel: +36 ...  
 E-mail: ...  
 
@@ -147,7 +147,7 @@ A script ellenőrzi a tanúsítványlánc 3.1.1 szerinti sorrendjét, a privát 
 
 ### 3. Használat a Webalkalmazásban:
 1. Nyisd meg a TarsasAppot: `https://tarsashaz-cfe5d.web.app` (vagy helyben `npm run dev`).
-2. Nyisd meg az adott társasházat (pl. *Batyu utca 21.*).
+2. Nyisd meg az adott társasházat (pl. *Példa utca 1.*).
 3. A felső sávban kattints a **`[ 📂 Banki importálás / Excel feltöltés ]`** gombra.
 4. Válaszd ki az **OTP Bankot** (alapértelmezettként mentődik a házhoz).
 5. Kattints a zöld **`[ 🔄 Banki szinkronizálás indítása ]`** gombra.

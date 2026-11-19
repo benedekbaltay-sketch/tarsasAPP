@@ -7,7 +7,7 @@ import { useBackdropClose } from '../../utils/useBackdropClose';
 // 1. Delete Flat Confirmation Modal
 export function DeleteFlatConfirmModal({ isOpen, flatNum, onClose, onConfirm }) {
   const { state, t } = useApp();
-  const isAdmin = state.currentUser?.role === 'admin';
+  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   if (!isOpen || !flatNum || !isAdmin) return null;
 
   return (
@@ -47,7 +47,7 @@ export function DeleteFlatConfirmModal({ isOpen, flatNum, onClose, onConfirm }) 
 // 2. Delete Transaction / Expense Confirmation Modal
 export function DeleteTxConfirmModal({ isOpen, itemId, itemType, onClose, onConfirm }) {
   const { state, t } = useApp();
-  const isAdmin = state.currentUser?.role === 'admin';
+  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   const backdropProps = useBackdropClose(onClose);
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export function DeleteTxConfirmModal({ isOpen, itemId, itemType, onClose, onConf
 // 3. Delete Document Confirmation Modal
 export function DeleteDocConfirmModal({ isOpen, docId, onClose, onConfirm }) {
   const { state, t } = useApp();
-  const isAdmin = state.currentUser?.role === 'admin';
+  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   if (!isOpen || !docId || !isAdmin) return null;
 
   return (
@@ -141,7 +141,7 @@ export function DeleteDocConfirmModal({ isOpen, docId, onClose, onConfirm }) {
 // 3b. Delete Folder Confirmation Modal
 export function DeleteFolderConfirmModal({ isOpen, folder, onClose, onConfirm }) {
   const { state, t } = useApp();
-  const isAdmin = state.currentUser?.role === 'admin';
+  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   const isEn = state.currentLang === 'en';
   if (!isOpen || !folder || !isAdmin) return null;
 

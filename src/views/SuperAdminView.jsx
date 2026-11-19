@@ -65,8 +65,8 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
   const treeData = useMemo(() => {
     return (buildings || []).map(b => {
       // Find the representative (KK)
-      const repUser = (users || []).find(u => 
-        u.role === 'admin' && (u.buildingId === b.id || (!u.buildingId && b.id === 'batyu21'))
+      const repUser = (users || []).find(u =>
+        u.role === 'admin' && (u.buildingId === b.id || (!u.buildingId && b.id === (buildings?.[0]?.id)))
       ) || {
         id: `rep-${b.id}`,
         name: b.repName || 'Közös Képviselő',

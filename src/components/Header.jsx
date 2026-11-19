@@ -4,6 +4,7 @@ import { Menu, Building2, Home, Shield, Calendar } from 'lucide-react';
 import { ProfileSwitcherButton } from './ProfileSwitcherButton';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { CloudSyncBadge } from './CloudSyncBadge';
+import { FlagIcon } from './FlagIcon';
 
 export function Header({ 
   onOpenDrawer, 
@@ -110,11 +111,9 @@ export function Header({
             className="w-9 h-8 sm:w-10 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center shadow-xs transition-all flex-shrink-0 cursor-pointer hover:border-gray-300"
             title={isHu ? "Switch to English" : "Váltás magyar nyelvre"}
           >
-            <img
-              src={isHu ? "https://flagcdn.com/gb.svg" : "https://flagcdn.com/hu.svg"}
-              alt={isHu ? "EN" : "HU"}
-              className="w-5 h-3.5 sm:w-6 sm:h-4 rounded-[2px] shadow-2xs border border-black/15 object-cover"
-              loading="eager"
+            <FlagIcon
+              country={isHu ? "gb" : "hu"}
+              className="w-5 h-3.5 sm:w-6 sm:h-4 rounded-[2px] shadow-2xs border border-black/15"
             />
           </button>
         </div>

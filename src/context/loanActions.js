@@ -1,8 +1,20 @@
 import { getPermanentVault, savePermanentVault } from './syncEngine';
 
 export function createLoanActions({ state, persistState, showToast, t }) {
+  const requireAdmin = () => {
+    if (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'superadmin')) {
+      return true;
+    }
+    showToast(
+      t.error_unauthorized || (state.currentLang === 'en' ? "Unauthorized action." : "Nincs jogosultságod ehhez a művelethez."),
+      "error"
+    );
+    return false;
+  };
+
   // Add new Loan
   const addLoan = (loanData) => {
+    if (!requireAdmin()) return Promise.resolve(null);
     const isEn = state.currentLang === 'en';
     const now = Date.now();
     const newLoan = {
@@ -55,6 +67,7 @@ export function createLoanActions({ state, persistState, showToast, t }) {
 
   // Update existing Loan
   const updateLoan = (loanId, updatedData) => {
+    if (!requireAdmin()) return Promise.resolve();
     const isEn = state.currentLang === 'en';
     const now = Date.now();
 
@@ -95,6 +108,7 @@ export function createLoanActions({ state, persistState, showToast, t }) {
 
   // Delete Loan
   const deleteLoan = (loanId) => {
+    if (!requireAdmin()) return Promise.resolve();
     const isEn = state.currentLang === 'en';
     const vault = getPermanentVault();
     vault.deletedIds = vault.deletedIds || [];
@@ -116,6 +130,7 @@ export function createLoanActions({ state, persistState, showToast, t }) {
 
   // Record a payment towards a Loan
   const recordLoanPayment = (loanId, paymentData) => {
+    if (!requireAdmin()) return Promise.resolve();
     const isEn = state.currentLang === 'en';
     const now = Date.now();
 
@@ -170,6 +185,7 @@ export function createLoanActions({ state, persistState, showToast, t }) {
 
   // Delete a recorded payment from Loan history
   const deleteLoanPayment = (loanId, paymentId) => {
+    if (!requireAdmin()) return Promise.resolve();
     const isEn = state.currentLang === 'en';
     const now = Date.now();
 

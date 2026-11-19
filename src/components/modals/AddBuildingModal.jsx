@@ -4,7 +4,8 @@ import { X, Building2, Plus } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 
 export function AddBuildingModal({ isOpen, onClose }) {
-  const { t, addBuilding } = useApp();
+  const { state, t, addBuilding } = useApp();
+  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
 
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
@@ -20,7 +21,7 @@ export function AddBuildingModal({ isOpen, onClose }) {
 
   const backdropProps = useBackdropClose(onClose);
 
-  if (!isOpen) return null;
+  if (!isOpen || !isAdmin) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();

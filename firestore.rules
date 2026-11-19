@@ -1,0 +1,271 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // GLOBAL HELPER FUNCTIONS
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn()
+        && 'superadmin' in request.auth.token
+        && request.auth.token.superadmin == true;
+    }
+
+    function memberPath(buildingId) {
+      return /databases/$(database)/documents/buildings/$(buildingId)/members/$(request.auth.uid);
+    }
+
+    function hasActiveMembership(buildingId) {
+      return isSignedIn()
+        && exists(memberPath(buildingId))
+        && get(memberPath(buildingId)).data.active == true;
+    }
+
+    function memberData(buildingId) {
+      return get(memberPath(buildingId)).data;
+    }
+
+    function memberRole(buildingId) {
+      return memberData(buildingId).role;
+    }
+
+    function memberUnitIds(buildingId) {
+      return memberData(buildingId).unitIds;
+    }
+
+    function memberAccessFromDate(buildingId) {
+      let data = memberData(buildingId);
+      return ('accessFromDate' in data && data.accessFromDate is string) ? data.accessFromDate : '';
+    }
+
+    function isBuildingAdmin(buildingId) {
+      return isSuperAdmin()
+        || (hasActiveMembership(buildingId) && memberRole(buildingId) == 'admin');
+    }
+
+    function isBuildingSzvb(buildingId) {
+      return hasActiveMembership(buildingId) && memberRole(buildingId) == 'szvb';
+    }
+
+    function isBuildingAdminOrSzvb(buildingId) {
+      return isBuildingAdmin(buildingId) || isBuildingSzvb(buildingId);
+    }
+
+    function isBuildingMember(buildingId) {
+      return isSuperAdmin() || hasActiveMembership(buildingId);
+    }
+
+    // Strict check that an Owner is modifying ONLY personal contact fields on their own unit
+    function isValidOwnerContactUpdate() {
+      let allowed = ['phone', 'emergencyContact', 'notes', 'updatedAt'];
+      let diff = request.resource.data.diff(resource.data);
+      return diff.affectedKeys().hasOnly(allowed)
+        && (!('phone' in request.resource.data) || (request.resource.data.phone is string && request.resource.data.phone.size() <= 40))
+        && (!('emergencyContact' in request.resource.data) || (request.resource.data.emergencyContact is string && request.resource.data.emergencyContact.size() <= 200))
+        && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000));
+    }
+
+    // Protect computed financial totals & reserves on buildings/{buildingId} (Cloud Functions only)
+    function buildingFinancialsUnchanged() {
+      let protectedFields = ['balances', 'aggregates', 'initialReserves'];
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedFields);
+    }
+
+    // Ensure banking secrets are NEVER written into client-accessible Firestore building documents
+    function hasNoBankApiSecrets(data) {
+      return !('bankApi' in data)
+        || (data.bankApi is map
+          && !('apiKey' in data.bankApi)
+          && !('clientSecret' in data.bankApi)
+          && !('secretKey' in data.bankApi));
+    }
+
+    // Protect computed balances & RBAC ownership links on units/{unitId} (Cloud Functions only)
+    function unitProtectedFieldsUnchanged() {
+      let protectedFields = ['balances', 'ownerUids', 'activeLoanShares'];
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(protectedFields);
+    }
+
+    // Ensure plaintext passwords/tokens are NEVER stored in unit or user documents
+    function hasNoPlaintextSecrets(data) {
+      return !('pass' in data)
+        && !('password' in data)
+        && !('resetToken' in data)
+        && !('resetTokenExpiry' in data);
+    }
+
+    // Strict validation for immutable audit logs (append-only, server timestamp enforced)
+    function isValidAuditLogCreate(buildingId) {
+      let d = request.resource.data;
+      return d.buildingId == buildingId
+        && d.actorUid == request.auth.uid
+        && d.timestamp == request.time
+        && d.action is string
+        && d.action.size() > 0
+        && d.entityType is string
+        && d.entityId is string
+        && d.summary is string
+        && d.keys().hasAll(['buildingId', 'action', 'entityType', 'entityId', 'actorUid', 'actorRole', 'timestamp', 'summary']);
+    }
+
+    // =========================================================================
+    // USERS COLLECTION
+    // =========================================================================
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+
+      // Users may update ONLY personal UI preferences & business contact profile;
+      // NEVER memberships, role, or isSuperAdmin
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && hasNoPlaintextSecrets(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['preferredLang', 'globalSettings', 'repProfile', 'phone', 'updatedAt']);
+
+      allow create, delete: if false; // Provisioned strictly via Cloud Functions / Admin SDK
+    }
+
+    // =========================================================================
+    // MULTI-TENANT BUILDINGS ROOT
+    // =========================================================================
+    match /buildings/{buildingId} {
+      // Active building members (Admin, SZVB, Owners) read building metadata,
+      // total KK/FA balances, and AGGREGATED building arrears total ONLY
+      allow read: if isBuildingMember(buildingId);
+
+      // Admin updates non-financial metadata only; balances/aggregates/initialReserves
+      // are mutated strictly via atomic Cloud Functions (Option A)
+      allow update: if isBuildingAdmin(buildingId)
+        && buildingFinancialsUnchanged()
+        && hasNoBankApiSecrets(request.resource.data);
+
+      allow create, delete: if false; // Provisioned via Cloud Function for atomic member + auditLog creation
+
+      // -----------------------------------------------------------------------
+      // RBAC MEMBERSHIPS (Server-managed ONLY — zero client escalation possible)
+      // -----------------------------------------------------------------------
+      match /members/{uid} {
+        allow read: if isBuildingAdmin(buildingId)
+          || (isSignedIn() && request.auth.uid == uid);
+        allow write: if false; // Exclusively managed by Cloud Function manageBuildingMember
+      }
+
+      // -----------------------------------------------------------------------
+      // UNITS (Strict Tht./GDPR: Owners read OWN unit ONLY; SZVB R/O all; Admin R/W)
+      // -----------------------------------------------------------------------
+      match /units/{unitId} {
+        // Owner list queries MUST include: where('ownerUids', 'array-contains', request.auth.uid)
+        allow read: if isBuildingAdminOrSzvb(buildingId)
+          || (hasActiveMembership(buildingId) && request.auth.uid in resource.data.ownerUids);
+
+        // Unit creation/deletion & ownerUids/balances mutations run through Cloud Functions;
+        // Admins may edit non-financial master fields directly (tabs 1-5)
+        allow create: if false;
+
+        allow update: if (isBuildingAdmin(buildingId)
+            && unitProtectedFieldsUnchanged()
+            && hasNoPlaintextSecrets(request.resource.data))
+          || (hasActiveMembership(buildingId)
+            && request.auth.uid in resource.data.ownerUids
+            && isValidOwnerContactUpdate());
+
+        allow delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // CATEGORIES (Dynamic income/expense taxonomy)
+      // -----------------------------------------------------------------------
+      match /categories/{categoryId} {
+        allow read: if isBuildingMember(buildingId);
+        allow create, update, delete: if isBuildingAdmin(buildingId);
+      }
+
+      // -----------------------------------------------------------------------
+      // TRANSACTIONS (Paginated Ledger — Strict GDPR Read Isolation + Option A Atomic Writes)
+      // -----------------------------------------------------------------------
+      match /transactions/{txId} {
+        // Admin & SZVB: full read access (including MonthlyDetailModal itemized unit payments)
+        // Regular Owner:
+        //   1. Building-level expenses & building-wide non-unit income ONLY:
+        //      query MUST filter where('visibility', '==', 'building')
+        //   2. Own unit's transactions ONLY (optionally bounded by accessFromDate after sale):
+        //      query MUST filter where('unitId', '==', myUnitId) [and where('date', '>=', accessFromDate)]
+        //   Strictly BLOCKED from reading any other flat's payments or debits!
+        allow get: if isBuildingAdminOrSzvb(buildingId)
+          || (hasActiveMembership(buildingId) && (
+               (resource.data.visibility == 'building' && resource.data.unitId == null)
+               || (resource.data.unitId != null
+                   && resource.data.unitId in memberUnitIds(buildingId)
+                   && (memberAccessFromDate(buildingId) == '' || resource.data.date >= memberAccessFromDate(buildingId)))
+             ));
+
+        // On `list` queries, Firestore statically validates each OR branch against the query's `where()` constraints.
+        // Option A Cloud Functions guarantee `visibility == 'building' <==> unitId == null` on every write.
+        allow list: if isBuildingAdminOrSzvb(buildingId)
+          || (hasActiveMembership(buildingId) && resource.data.visibility == 'building')
+          || (hasActiveMembership(buildingId)
+              && resource.data.unitId in memberUnitIds(buildingId)
+              && (memberAccessFromDate(buildingId) == '' || resource.data.date >= memberAccessFromDate(buildingId)));
+
+        // Option A: All financial writes MUST go through Cloud Functions (mutateTransaction / generateMonthlyAssessments)
+        // ensuring atomic updates to unit balances, building KK/FA balances, aggregated arrears, monthlySummaries & auditLogs.
+        allow write: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // MONTHLY SUMMARIES (GDPR-Safe Aggregated Building Rollups)
+      // -----------------------------------------------------------------------
+      match /monthlySummaries/{yearMonth} {
+        allow read: if isBuildingMember(buildingId);
+        allow write: if false; // Maintained atomically by Cloud Functions
+      }
+
+      // -----------------------------------------------------------------------
+      // LOANS (Strictly Admin & SZVB ONLY — Regular Owners completely blocked!)
+      // -----------------------------------------------------------------------
+      match /loans/{loanId} {
+        allow read: if isBuildingAdminOrSzvb(buildingId);
+        allow write: if false; // Written via Cloud Function mutateLoan to keep unit.activeLoanShares[] & auditLogs atomic
+      }
+
+      // -----------------------------------------------------------------------
+      // AUDIT LOGS (Strictly Immutable — Append-Only!)
+      // -----------------------------------------------------------------------
+      match /auditLogs/{logId} {
+        allow read: if isBuildingAdminOrSzvb(buildingId);
+        allow create: if isBuildingAdmin(buildingId) && isValidAuditLogCreate(buildingId);
+        allow update, delete: if false; // IMMUTABLE — NEVER modifiable or deletable by anyone
+      }
+
+      // -----------------------------------------------------------------------
+      // DOCUMENTS, INFO SECTIONS & CALENDAR EVENTS
+      // -----------------------------------------------------------------------
+      match /documents/{docId} {
+        allow read: if isBuildingAdminOrSzvb(buildingId)
+          || (hasActiveMembership(buildingId) && resource.data.visibility == 'building');
+        allow create, update, delete: if isBuildingAdmin(buildingId);
+      }
+
+      match /infoSections/{sectionId} {
+        allow read: if isBuildingAdminOrSzvb(buildingId)
+          || (hasActiveMembership(buildingId) && resource.data.visibility == 'building');
+        allow create, update, delete: if isBuildingAdmin(buildingId);
+      }
+
+      match /calendarEvents/{eventId} {
+        allow read: if isBuildingAdminOrSzvb(buildingId)
+          || (hasActiveMembership(buildingId) && resource.data.visibility == 'building');
+        allow create, update, delete: if isBuildingAdmin(buildingId);
+      }
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

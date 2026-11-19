@@ -37,8 +37,8 @@ export function AssemblyModal({
   const isEn = currentLang === 'en';
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0] || {
-    name: "Társasház",
-    address: "Batyu utca 21."
+    name: isEn ? "Condominium" : "Társasház",
+    address: ""
   };
 
   // Default: previous full calendar year [Aktuális Év - 1] 01 - 12

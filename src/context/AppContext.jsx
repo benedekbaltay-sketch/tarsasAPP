@@ -2,11 +2,10 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { translations } from '../constants/translations';
 import { getFirebaseInstance } from '../constants/firebaseConfig';
 import { ref, onValue, set, get } from 'firebase/database';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import { recalculateFlatBalances } from '../utils/finances';
 import { playNotificationSound } from '../utils/sound';
 import { RotateCcw, X } from 'lucide-react';
-import { DEFAULT_INFO_SECTIONS } from '../constants/defaultData';
 
 import {
   getPermanentVault,
@@ -14,6 +13,8 @@ import {
   mergeStateWithCloud,
   loadInitialState,
   stripLargeBinaries,
+  stripSensitiveUserFields,
+  stripSensitiveBuildingFields,
   createCloudPayload
 } from './syncEngine';
 
@@ -66,6 +67,7 @@ export function AppProvider({ children }) {
   };
 
   const updateRepProfile = (profileData) => {
+    if (!isCurrentUserAdmin(state.currentUser, state.users)) return;
     persistState(s => ({
       ...s,
       repProfile: {
@@ -77,6 +79,7 @@ export function AppProvider({ children }) {
   };
 
   const updateGlobalSettings = (settingsData) => {
+    if (!isCurrentUserAdmin(state.currentUser, state.users)) return;
     persistState(s => ({
       ...s,
       globalSettings: {
@@ -87,56 +90,17 @@ export function AppProvider({ children }) {
     showToast(state.currentLang === 'en' ? "System preferences updated!" : "Rendszerbeállítások sikeresen mentve!");
   };
 
-  // Helper to ensure Firebase Auth session is active before cloud operations
+  // Helper to verify active Firebase Auth session (relying strictly on Firebase SDK persistence — never storing plaintext passwords)
   const ensureFirebaseAuth = async () => {
     const { auth } = getFirebaseInstance();
     if (!auth) return false;
     if (auth.currentUser) return true;
-
     try {
-      const loggedInRaw = localStorage.getItem("tarsashaz_logged_in_user");
-      let uEmail = "";
-      let uPass = "";
-
-      if (loggedInRaw) {
-        try {
-          const u = JSON.parse(loggedInRaw);
-          uEmail = (u.email || "").trim().toLowerCase();
-          uPass = (u.pass || u.password || "").trim();
-        } catch (e) {}
-      }
-
-      // If not in localStorage, check state.currentUser
-      if (!uEmail && state?.currentUser) {
-        uEmail = (state.currentUser.email || "").trim().toLowerCase();
-        uPass = (state.currentUser.pass || state.currentUser.password || "").trim();
-      }
-
-      const emailCandidates = [];
-      const passCandidates = [];
-
-      if (uEmail) emailCandidates.push(uEmail);
-      if (uPass) passCandidates.push(uPass);
-
-      // Handle Benedek Baltay aliases
-      if (uEmail.startsWith("benedek.baltay")) {
-        if (!emailCandidates.includes("benedek.baltay@gmail.com")) emailCandidates.push("benedek.baltay@gmail.com");
-        if (!emailCandidates.includes("benedek.baltay01@gmail.com")) emailCandidates.push("benedek.baltay01@gmail.com");
-      } else if (uEmail === "superadmin@tarsashaz.hu" || (!uEmail && state?.currentUser?.role === 'superadmin')) {
-        if (!emailCandidates.includes("superadmin@tarsashaz.hu")) emailCandidates.push("superadmin@tarsashaz.hu");
-        if (!passCandidates.includes("admin123")) passCandidates.push("admin123");
-      }
-
-      for (const em of emailCandidates) {
-        for (const pw of passCandidates) {
-          try {
-            await signInWithEmailAndPassword(auth, em, pw);
-            if (auth.currentUser) return true;
-          } catch (err) {}
-        }
+      if (typeof auth.authStateReady === 'function') {
+        await auth.authStateReady();
       }
     } catch (e) {
-      console.warn("Background Firebase Auth auto-reconnect warning:", e.message);
+      console.warn("Firebase Auth state check warning:", e.message);
     }
     return Boolean(auth.currentUser);
   };
@@ -229,15 +193,19 @@ export function AppProvider({ children }) {
 
         recalculateFlatBalances(nextState);
 
-        // LocalStorage write - lightweight synchronous save without multi-megabyte base64 binaries
-        try {
-          const cleanStateForLocal = {
-            ...nextState,
-            buildings: stripLargeBinaries(nextState.buildings || [])
-          };
-          localStorage.setItem("tarsashaz_state", JSON.stringify(cleanStateForLocal));
-        } catch (e) {
-          console.warn("LocalStorage save error:", e);
+        // LocalStorage write - lightweight synchronous save without binaries, passwords, or banking API secrets
+        if (nextState.currentUser) {
+          try {
+            const cleanStateForLocal = {
+              ...nextState,
+              currentUser: stripSensitiveUserFields(nextState.currentUser),
+              users: (nextState.users || []).map(stripSensitiveUserFields),
+              buildings: stripSensitiveBuildingFields(stripLargeBinaries(nextState.buildings || [], { stripInlineAttachments: true }))
+            };
+            localStorage.setItem("tarsashaz_state", JSON.stringify(cleanStateForLocal));
+          } catch (e) {
+            console.warn("LocalStorage save error:", e);
+          }
         }
 
         // For local-only updates (login, logout, active flat, language), complete immediately without cloud mutation
@@ -349,11 +317,15 @@ export function AppProvider({ children }) {
             const merged = mergeStateWithCloud(localState, cloudData);
 
             try {
-              const cleanLocal = {
-                ...merged,
-                buildings: stripLargeBinaries(merged.buildings || [])
-              };
-              localStorage.setItem("tarsashaz_state", JSON.stringify(cleanLocal));
+              if (merged.currentUser) {
+                const cleanLocal = {
+                  ...merged,
+                  currentUser: stripSensitiveUserFields(merged.currentUser),
+                  users: (merged.users || []).map(stripSensitiveUserFields),
+                  buildings: stripSensitiveBuildingFields(stripLargeBinaries(merged.buildings || [], { stripInlineAttachments: true }))
+                };
+                localStorage.setItem("tarsashaz_state", JSON.stringify(cleanLocal));
+              }
             } catch (e) {}
 
             cloudInitialSyncDoneRef.current = true;
@@ -416,8 +388,10 @@ export function AppProvider({ children }) {
       });
     };
 
-    // Attach immediately
-    setupRtdbListener();
+    // Attach immediately only if already authenticated (otherwise onAuthStateChanged attaches after auth resolves)
+    if (!auth || auth.currentUser) {
+      setupRtdbListener();
+    }
 
     // Re-attach whenever Firebase Auth signs in or restores session token
     let unsubscribeAuth = null;
@@ -428,10 +402,38 @@ export function AppProvider({ children }) {
           setCloudSyncError(null);
           setupRtdbListener();
         } else {
-          const reconnected = await ensureFirebaseAuth();
-          if (reconnected) {
-            setupRtdbListener();
+          // No verified Firebase Auth session: clear any stale cached session and show LoginView
+          if (unsubscribeRtdb) {
+            unsubscribeRtdb();
+            unsubscribeRtdb = null;
           }
+          try {
+            localStorage.removeItem("tarsashaz_logged_in_user");
+            localStorage.removeItem("tarsashaz_remember_me");
+            localStorage.removeItem("tarsashaz_state");
+            sessionStorage.removeItem("tarsashaz_session_user");
+          } catch (e) {}
+          setState(prev => prev.currentUser ? {
+            ...prev,
+            currentUser: null,
+            impersonatedFrom: null,
+            activeRoleMode: null,
+            isPortfolioView: false,
+            buildings: [],
+            users: [],
+            flats: [],
+            transactions: [],
+            expenses: [],
+            manualDebits: [],
+            documents: [],
+            docFolders: [],
+            loans: [],
+            infoSections: [],
+            calendarEvents: []
+          } : prev);
+          cloudInitialSyncDoneRef.current = true;
+          setIsInitialSyncDone(true);
+          setIsCloudSyncing(false);
         }
       });
     }
@@ -469,11 +471,15 @@ export function AppProvider({ children }) {
             const merged = mergeStateWithCloud(local, cloudData);
 
             try {
-              const cleanLocal = {
-                ...merged,
-                buildings: stripLargeBinaries(merged.buildings || [])
-              };
-              localStorage.setItem("tarsashaz_state", JSON.stringify(cleanLocal));
+              if (merged.currentUser) {
+                const cleanLocal = {
+                  ...merged,
+                  currentUser: stripSensitiveUserFields(merged.currentUser),
+                  users: (merged.users || []).map(stripSensitiveUserFields),
+                  buildings: stripSensitiveBuildingFields(stripLargeBinaries(merged.buildings || [], { stripInlineAttachments: true }))
+                };
+                localStorage.setItem("tarsashaz_state", JSON.stringify(cleanLocal));
+              }
             } catch (e) {}
 
             const localHasPendingChanges = localRevision > cloudRevision;
@@ -599,13 +605,21 @@ export function AppProvider({ children }) {
             merged.manualDebits = curB.manualDebits || cloudData.manualDebits || [];
             merged.documents = curB.documents || cloudData.documents || [];
             merged.loans = curB.loans || cloudData.loans || [];
-            merged.infoSections = curB.infoSections || (curB.id === 'batyu21' ? JSON.parse(JSON.stringify(DEFAULT_INFO_SECTIONS)) : []);
+            merged.infoSections = curB.infoSections || [];
             merged.buildingInitialReserveCommon = curB.buildingInitialReserveCommon || 0;
             merged.buildingInitialReserveRenovation = curB.buildingInitialReserveRenovation || 0;
             recalculateFlatBalances(merged);
           }
           try {
-            localStorage.setItem("tarsashaz_state", JSON.stringify(merged));
+            if (merged.currentUser) {
+              const cleanLocal = {
+                ...merged,
+                currentUser: stripSensitiveUserFields(merged.currentUser),
+                users: (merged.users || []).map(stripSensitiveUserFields),
+                buildings: stripSensitiveBuildingFields(stripLargeBinaries(merged.buildings || [], { stripInlineAttachments: true }))
+              };
+              localStorage.setItem("tarsashaz_state", JSON.stringify(cleanLocal));
+            }
           } catch (e) {}
           return merged;
         });
@@ -633,8 +647,9 @@ export function AppProvider({ children }) {
     }
   };
 
-  // Force authoritative local state upload to cloud (user triggered or sync-recovery)
+  // Force authoritative local state upload to cloud (admin triggered or sync-recovery)
   const forceSyncLocalToCloud = async (showNotification = true) => {
+    if (!isCurrentUserAdmin(state.currentUser, state.users)) return false;
     const { rtdb, auth } = getFirebaseInstance();
     if (!rtdb) return false;
     setIsCloudSyncing(true);
@@ -663,7 +678,15 @@ export function AppProvider({ children }) {
 
       setState(targetState);
       try {
-        localStorage.setItem("tarsashaz_state", JSON.stringify(targetState));
+        if (targetState.currentUser) {
+          const cleanLocal = {
+            ...targetState,
+            currentUser: stripSensitiveUserFields(targetState.currentUser),
+            users: (targetState.users || []).map(stripSensitiveUserFields),
+            buildings: stripSensitiveBuildingFields(stripLargeBinaries(targetState.buildings || [], { stripInlineAttachments: true }))
+          };
+          localStorage.setItem("tarsashaz_state", JSON.stringify(cleanLocal));
+        }
       } catch (e) {}
 
       setCloudSyncStatus('synced');
@@ -688,7 +711,7 @@ export function AppProvider({ children }) {
   };
 
   // Initialize modular domain actions
-  const authActions = createAuthActions({ state, setState, persistState, showToast, t, ensureFirebaseAuth });
+  const authActions = createAuthActions({ state, setState, persistState, showToast, t, ensureFirebaseAuth, getUserFlats });
   const accountingActions = createAccountingActions({ state, persistState, showToast, t, copiedTx, setCopiedTx, ensureFirebaseAuth });
   const buildingActions = createBuildingActions({ state, setState, persistState, showToast, t });
   const loanActions = createLoanActions({ state, persistState, showToast, t });
@@ -702,38 +725,37 @@ export function AppProvider({ children }) {
       user.isAdminUser === true ||
       user.role === 'admin' ||
       user.role === 'superadmin' ||
-      userEmail === 'benedek.baltay@gmail.com' ||
-      userEmail === 'benedek.baltay01@gmail.com' ||
-      (users || []).some(u => u.email && u.email.toLowerCase().trim() === userEmail && (u.role === 'admin' || u.role === 'superadmin'))
+      Boolean(userEmail && (users || []).some(u => u.email && u.email.toLowerCase().trim() === userEmail && (u.role === 'admin' || u.role === 'superadmin')))
     );
   };
 
   // Switch to Common Representative (KK) Mode
   const switchToKkMode = (buildingId = null) => {
+    if (!isCurrentUserAdmin(state.currentUser, state.users)) return;
     const isEn = state.currentLang === 'en';
     const userEmail = (state.currentUser?.email || "").toLowerCase().trim();
-    const adminUser = (state.users || []).find(u => u.role === 'admin' && (u.email?.toLowerCase().trim() === userEmail || !u.email)) ||
-                      (state.users || []).find(u => u.role === 'admin') || {
+    const adminUser = (state.users || []).find(u => (u.role === 'admin' || u.role === 'superadmin') && u.email?.toLowerCase().trim() === userEmail) ||
+                      (state.users || []).find(u => u.role === 'admin' || u.role === 'superadmin') || {
                         id: "admin",
-                        name: state.currentUser?.name || "Baltay Benedek",
-                        email: userEmail || "benedek.baltay@gmail.com",
+                        name: state.currentUser?.name || (isEn ? "Common Representative" : "Közös Képviselő"),
+                        email: userEmail,
                         role: "admin",
                         flatNum: "0"
                       };
 
-    const targetBuildingId = buildingId || state.currentBuildingId || (state.buildings && state.buildings[0] && state.buildings[0].id) || "batyu21";
-    const curB = (state.buildings || []).find(b => b.id === targetBuildingId) || state.buildings[0];
+    const targetBuildingId = buildingId || state.currentBuildingId || (state.buildings && state.buildings[0] && state.buildings[0].id) || null;
+    const curB = (state.buildings || []).find(b => b.id === targetBuildingId) || (state.buildings || [])[0];
 
-    const updatedUser = {
+    const updatedUser = stripSensitiveUserFields({
       ...adminUser,
-      id: "admin",
-      name: adminUser.name || state.currentUser?.name || "Baltay Benedek",
-      email: userEmail || adminUser.email || "benedek.baltay@gmail.com",
-      role: "admin",
+      id: adminUser.id || "admin",
+      name: adminUser.name || state.currentUser?.name || (isEn ? "Common Representative" : "Közös Képviselő"),
+      email: userEmail || adminUser.email || "",
+      role: adminUser.role === 'superadmin' ? 'superadmin' : 'admin',
       flatNum: "0",
       buildingId: targetBuildingId,
       isAdminUser: true
-    };
+    });
 
     try {
       localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
@@ -775,18 +797,18 @@ export function AppProvider({ children }) {
     }
 
     const chosenFlat = targetFlat || myFlats[0];
-    const targetBuildingId = chosenFlat.buildingId || state.currentBuildingId || "batyu21";
-    const curB = (state.buildings || []).find(b => b.id === targetBuildingId) || state.buildings[0];
+    const targetBuildingId = chosenFlat.buildingId || state.currentBuildingId || (state.buildings && state.buildings[0]?.id) || null;
+    const curB = (state.buildings || []).find(b => b.id === targetBuildingId) || (state.buildings || [])[0];
 
-    const updatedUser = {
+    const updatedUser = stripSensitiveUserFields({
       id: `${targetBuildingId}-${chosenFlat.flatNum}`,
       name: chosenFlat.ownerName || state.currentUser?.name,
-      email: chosenFlat.email || state.currentUser?.email,
+      email: state.currentUser?.email || chosenFlat.email,
       role: "Owner",
       flatNum: chosenFlat.flatNum,
       buildingId: targetBuildingId,
       isAdminUser: false
-    };
+    });
 
     try {
       localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
@@ -949,26 +971,20 @@ export function useApp() {
 export function getUserFlats(user, buildings) {
   if (!user) return [];
   const userEmail = (user.email || "").toLowerCase().trim();
-  const userName = (user.name || "").toLowerCase().trim();
   const res = [];
 
   (buildings || []).forEach(b => {
     (b.flats || []).forEach(f => {
       const fEmail = (f.email || "").toLowerCase().trim();
-      const fName = (f.ownerName || "").toLowerCase().trim();
 
       let matchedShare = null;
       let isMatched = false;
 
-      if (Array.isArray(f.owners) && f.owners.length > 0) {
+      if (Array.isArray(f.owners) && f.owners.length > 0 && userEmail) {
         const matchingOwner = f.owners.find(o => {
-          const oName = (o.name || "").toLowerCase().trim();
           const oEmail = (o.email || "").toLowerCase().trim();
           const oEmails = Array.isArray(o.emails) ? o.emails.map(e => (e || "").toLowerCase().trim()) : [];
-          return (
-            (userEmail && (oEmail === userEmail || oEmails.includes(userEmail))) ||
-            (userName && oName && (oName === userName || userName.includes(oName) || oName.includes(userName)))
-          );
+          return oEmail === userEmail || oEmails.includes(userEmail);
         });
 
         if (matchingOwner) {
@@ -980,8 +996,7 @@ export function getUserFlats(user, buildings) {
       if (!isMatched) {
         if (
           (userEmail && fEmail === userEmail) ||
-          (userName && fName && (fName === userName || userName.includes(fName) || fName.includes(userName))) ||
-          (user.flatNum && user.flatNum === f.flatNum && (!user.buildingId || user.buildingId === b.id))
+          (user.flatNum && user.flatNum !== "0" && user.flatNum === f.flatNum && (!user.buildingId || user.buildingId === b.id))
         ) {
           isMatched = true;
           matchedShare = "1/1";

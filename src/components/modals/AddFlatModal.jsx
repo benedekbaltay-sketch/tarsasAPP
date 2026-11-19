@@ -23,7 +23,7 @@ export function AddFlatModal({ isOpen, onClose }) {
 
   const backdropProps = useBackdropClose(onClose);
 
-  const isAdmin = state.currentUser?.role === 'admin';
+  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   if (!isOpen || !isAdmin) return null;
 
   const handleAddOwner = () => {

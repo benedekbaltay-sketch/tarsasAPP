@@ -26,7 +26,7 @@ export function formatPhoneNumber(val) {
   if (digits.startsWith('06') && !hasLeadingPlus) {
     digits = '36' + digits.slice(2);
   } else if (!hasLeadingPlus && (digits.startsWith('20') || digits.startsWith('30') || digits.startsWith('70') || digits.startsWith('50')) && digits.length >= 8) {
-    // Missing country code, e.g. 203971253 -> 36203971253
+    // Missing country code, e.g. 201234567 -> 36201234567
     digits = '36' + digits;
   } else if (!hasLeadingPlus && digits.length === 8 && digits.startsWith('1')) {
     // Missing country code for Budapest, e.g. 13666666 -> 3613666666

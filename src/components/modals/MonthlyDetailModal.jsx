@@ -13,10 +13,12 @@ import {
   Building,
   CheckCircle2,
   Calendar,
-  Filter
+  Filter,
+  ShieldCheck
 } from 'lucide-react';
-import { formatCurrency, translateCategory, getBuildingAccounts } from '../../utils/finances';
+import { formatCurrency, translateCategory, getBuildingAccounts, isMatchingFlat } from '../../utils/finances';
 import { useBackdropClose } from '../../utils/useBackdropClose';
+import { isSafeDownloadUrl as isSafeAttachmentHref } from '../../utils/fileSecurity';
 
 export function MonthlyDetailModal({
   isOpen,
@@ -28,6 +30,7 @@ export function MonthlyDetailModal({
   const { transactions, expenses, flats, currentLang, currentUser, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const canViewAllUnits = isAdmin || currentUser?.role === 'szvb';
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const allAccounts = useMemo(() => getBuildingAccounts(currentBuilding), [currentBuilding]);
@@ -44,19 +47,23 @@ export function MonthlyDetailModal({
     return `${monthData.year}-${String(monthData.month).padStart(2, '0')}`;
   }, [monthData]);
 
-  // Flat lookup map
+  // Flat lookup map — GDPR: populated ONLY for Admin & SZVB (never exposes other owners' names to Regular Owners)
   const flatMap = useMemo(() => {
+    if (!canViewAllUnits) return {};
     const map = {};
     (flats || []).forEach(f => {
       if (f && f.flatNum) map[String(f.flatNum)] = f;
     });
     return map;
-  }, [flats]);
+  }, [flats, canViewAllUnits]);
 
   // Bank transaction predicate: only real movements affecting the bank account total
   const isBankTx = (tx) => tx && tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
 
+  const isBuildingLevelItem = (flatNum) => !flatNum || flatNum === '-' || flatNum === 'Global' || flatNum === 'Kiadás';
+
   // Aggregate only items belonging to this month that actually affected the bank accounts
+  // GDPR Enforcement: Regular Owners see ONLY building-level expenses/inflows + their OWN unit's payments
   const monthItems = useMemo(() => {
     if (!isOpen || !monthPrefix) return [];
 
@@ -66,6 +73,11 @@ export function MonthlyDetailModal({
     // 1. Bank Payments & Inflows (Befizetések, átvezetések, banki jóváírások)
     (transactions || []).forEach(tx => {
       if (!tx || !tx.date) return;
+      if (!canViewAllUnits) {
+        const isOwnUnit = currentUser?.flatNum && isMatchingFlat(tx.flatNum, currentUser.flatNum);
+        const isBuildingWide = isBuildingLevelItem(tx.flatNum);
+        if (!isOwnUnit && !isBuildingWide) return;
+      }
       if (
         cleanDate(tx.date).startsWith(monthPrefix) && 
         tx.status === 'Verified' && 
@@ -96,6 +108,11 @@ export function MonthlyDetailModal({
     // 2. Bank Expenses & Outflows (Kiadások)
     (expenses || []).forEach(exp => {
       if (!exp || !exp.date) return;
+      if (!canViewAllUnits) {
+        const isOwnUnit = currentUser?.flatNum && isMatchingFlat(exp.flatNum, currentUser.flatNum);
+        const isBuildingWide = isBuildingLevelItem(exp.flatNum);
+        if (!isOwnUnit && !isBuildingWide) return;
+      }
       if (
         cleanDate(exp.date).startsWith(monthPrefix) && 
         exp.includeInBalance !== false && 
@@ -131,7 +148,7 @@ export function MonthlyDetailModal({
     });
 
     return result;
-  }, [isOpen, monthPrefix, transactions, expenses, isEn]);
+  }, [isOpen, monthPrefix, transactions, expenses, isEn, canViewAllUnits, currentUser?.flatNum]);
 
   // Filtered items based on search, type, and account
   const filteredItems = useMemo(() => {
@@ -147,7 +164,7 @@ export function MonthlyDetailModal({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const fNum = String(item.flatNum || '').toLowerCase();
-        const owner = String(flatMap[item.flatNum]?.ownerName || '').toLowerCase();
+        const owner = canViewAllUnits ? String(flatMap[item.flatNum]?.ownerName || '').toLowerCase() : '';
         const prov = String(item.provider || '').toLowerCase();
         const title = String(item.title || '').toLowerCase();
         const comm = String(item.comment || '').toLowerCase();
@@ -167,20 +184,22 @@ export function MonthlyDetailModal({
 
       return true;
     });
-  }, [monthItems, typeFilter, accountFilter, searchQuery, flatMap]);
+  }, [monthItems, typeFilter, accountFilter, searchQuery, flatMap, canViewAllUnits]);
 
-  // Aggregate stats for this month
+  // Aggregate stats for this month: Regular Owners see building-level monthly aggregates from monthData
   const totalInflow = useMemo(() => {
+    if (!canViewAllUnits && monthData?.inflow !== undefined) return Number(monthData.inflow) || 0;
     return monthItems
       .filter(item => !item.isExpense && item.amount > 0 && item.includeInBalance !== false)
       .reduce((sum, item) => sum + item.amount, 0);
-  }, [monthItems]);
+  }, [monthItems, canViewAllUnits, monthData]);
 
   const totalOutflow = useMemo(() => {
+    if (!canViewAllUnits && monthData?.outflow !== undefined) return Number(monthData.outflow) || 0;
     return monthItems
       .filter(item => item.isExpense && item.includeInBalance !== false)
       .reduce((sum, item) => sum + Math.abs(item.amount), 0);
-  }, [monthItems]);
+  }, [monthItems, canViewAllUnits, monthData]);
 
   const netMargin = totalInflow - totalOutflow;
 
@@ -250,6 +269,18 @@ export function MonthlyDetailModal({
             </span>
           </div>
         </div>
+
+        {/* GDPR Privacy Notice for Regular Owners */}
+        {!canViewAllUnits && (
+          <div className="px-4 sm:px-6 py-2.5 bg-blue-50/80 border-b border-blue-100 flex items-center gap-2 text-xs text-[#1E3A8A] shrink-0">
+            <ShieldCheck className="w-4 h-4 shrink-0 text-[#1E3A8A]" />
+            <span>
+              {t.gdpr_monthly_owner_notice || (isEn
+                ? "GDPR / Tht. Privacy: Showing building-level expenses and your own unit's payments only. Other apartments' itemized payments and owner names are restricted to Common Representatives and SZVB."
+                : "GDPR / Tht. adatvédelem: Kizárólag a társasház közös kiadásai és a saját lakásod befizetései jelennek meg. Más lakások tételes befizetései és tulajdonosai kizárólag a közös képviselő és az SZVB számára láthatók.")}
+            </span>
+          </div>
+        )}
 
         {/* Filter and Search Bar */}
         <div className="p-3 sm:px-6 border-b border-gray-100 bg-white flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
@@ -402,14 +433,17 @@ export function MonthlyDetailModal({
                           )}
                         </div>
 
-                        {/* Attachments if any */}
+                        {/* Attachments if any (protocol-sanitized to prevent XSS) */}
                         {item.attachments && item.attachments.length > 0 && (
                           <div className="flex items-center gap-1.5 pt-1 flex-wrap">
-                            {item.attachments.map((att, attIdx) => (
+                            {item.attachments
+                              .filter((att) => isSafeAttachmentHref(att?.data || att?.url))
+                              .map((att, attIdx) => (
                               <a
                                 key={attIdx}
-                                href={att.data}
+                                href={att.data || att.url}
                                 download={att.name}
+                                rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[10px] font-bold text-[#1E3A8A] transition-colors"
                                 title={att.name}
                               >

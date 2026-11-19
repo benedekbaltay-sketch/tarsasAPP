@@ -23,7 +23,8 @@ import {
   ExternalLink,
   CheckCircle2,
   Settings,
-  Key
+  Key,
+  Building2
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { 
@@ -82,9 +83,9 @@ export function TenantView({
   const allAccounts = getBuildingAccounts(currentBuilding);
   const buildingCode = getBuildingPaymentCode(currentBuilding);
 
-  const repName = currentBuilding?.repName || "Baltay Benedek";
-  const repPhone = currentBuilding?.phone || "+36 20 397 1253";
-  const repEmail = currentBuilding?.email || "benedek.baltay@gmail.com";
+  const repName = currentBuilding?.repName || "";
+  const repPhone = currentBuilding?.phone || "";
+  const repEmail = currentBuilding?.email || "";
 
   const copyBankPackage = (accountKey, debtAmount, defaultAmount, iban, ben, comment) => {
     const text = formatBankTransferPackage({
@@ -235,7 +236,7 @@ export function TenantView({
 
           const badge = getBalanceBadge(balance, isEn);
           const debt = balance < 0 ? Math.abs(Math.round(balance)) : 0;
-          const beneficiary = acc.beneficiary || currentBuilding?.name || "Batyu utca 21 Társasház";
+          const beneficiary = acc.beneficiary || currentBuilding?.name || (isEn ? "Condominium" : "Társasház");
           const iban = formatHungarianIban(acc.account);
           const comment = buildPaymentComment({ buildingCode, flatNum: flat.flatNum, fundType: acc.shortName || acc.id });
 
@@ -547,6 +548,51 @@ export function TenantView({
         )}
 
       </div>
+
+      {/* Resident's Own Loan Participation Summary (GDPR-isolated slice — never exposes other units' loans) */}
+      {Array.isArray(flat?.activeLoanShares) && flat.activeLoanShares.length > 0 && (
+        <div className="bg-white rounded-2xl border border-purple-200/80 shadow-xs p-5 space-y-3">
+          <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-purple-100">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-purple-700" />
+              <h3 className="text-sm font-bold text-gray-900 font-display">
+                {t.tenant_own_loans_title || (isEn ? "My Apartment Loan Participation" : "Saját albetét hitelrészvétele")}
+              </h3>
+            </div>
+            <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-bold">
+              {flat.flatNum}. {isEn ? "Flat" : "lakás"}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {flat.activeLoanShares.map((share) => (
+              <div key={share.loanId} className="p-3.5 rounded-xl bg-purple-50/40 border border-purple-100 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-gray-900 truncate">{share.loanTitle}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    share.status === 'paid_off'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-purple-100 text-purple-800'
+                  }`}>
+                    {share.paymentMethod === 'lump_sum'
+                      ? (isEn ? "Paid Lump Sum" : "Egyösszegben rendezve")
+                      : (isEn ? "Monthly Financed" : "Havi törlesztéses")}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-gray-600">
+                  <span>{isEn ? "Apartment share:" : "Albetétre jutó összeg:"}</span>
+                  <strong className="text-gray-900">{Math.round(share.totalShareHuf || 0).toLocaleString('hu-HU')} Ft</strong>
+                </div>
+                {share.paymentMethod === 'financed' && share.monthlyContributionHuf > 0 && (
+                  <div className="flex items-center justify-between text-[11px] text-purple-800">
+                    <span>{isEn ? "Monthly installment:" : "Havi törlesztőrészlet:"}</span>
+                    <strong>{Math.round(share.monthlyContributionHuf).toLocaleString('hu-HU')} Ft / {isEn ? "mo" : "hó"}</strong>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Intelligent Mobile Payment Modal */}
       <SmartMobilePayModal

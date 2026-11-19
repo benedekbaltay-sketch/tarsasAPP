@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { getFirebaseInstance } from '../../constants/firebaseConfig';
 import { sendPasswordResetEmail, confirmPasswordReset } from 'firebase/auth';
-import { X, KeyRound, CheckCircle2, AlertCircle, HelpCircle, Lock, Mail, Phone, ExternalLink, ShieldCheck } from 'lucide-react';
+import { X, KeyRound, CheckCircle2, AlertCircle, HelpCircle, Lock, Mail, Phone } from 'lucide-react';
 
 // 1. Forgot Password Modal
 export function ForgotPasswordModal({ isOpen, onClose }) {
   const { state, t } = useApp();
+  const isEn = state?.currentLang === 'en';
   const [email, setEmail] = useState('');
   const [isSent, setIsSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -31,19 +32,25 @@ export function ForgotPasswordModal({ isOpen, onClose }) {
         try {
           await sendPasswordResetEmail(auth, trimmed, actionCodeSettings);
         } catch (settingsErr) {
+          if (settingsErr.code === 'auth/user-not-found') {
+            // Prevent email enumeration: report generic success state
+            setIsSent(true);
+            return;
+          }
           console.warn("sendPasswordResetEmail with actionCodeSettings fallback:", settingsErr.message);
           await sendPasswordResetEmail(auth, trimmed);
         }
       }
       setIsSent(true);
     } catch (err) {
-      console.warn("sendPasswordResetEmail error:", err.code, err.message);
+      console.warn("sendPasswordResetEmail error:", err.code);
       if (err.code === 'auth/user-not-found') {
-        setErrorMsg("Ezzel az e-mail címmel nem található regisztrált fiók.");
+        // Prevent account/email enumeration by displaying the same confirmation screen
+        setIsSent(true);
       } else if (err.code === 'auth/invalid-email') {
-        setErrorMsg("Kérjük, adj meg egy érvényes e-mail címet.");
+        setErrorMsg(isEn ? "Please enter a valid email address." : "Kérjük, adj meg egy érvényes e-mail címet.");
       } else {
-        setErrorMsg("Hiba történt a kiküldés során. Kérjük, próbáld újra később.");
+        setErrorMsg(isEn ? "An error occurred while sending the email. Please try again later." : "Hiba történt a kiküldés során. Kérjük, próbáld újra később.");
       }
     } finally {
       setLoading(false);
@@ -73,7 +80,9 @@ export function ForgotPasswordModal({ isOpen, onClose }) {
         {!isSent ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <p className="text-xs text-gray-500 leading-relaxed">
-              Add meg a regisztrált e-mail címedet, és a rendszer egy hivatalos jelszó-visszaállító hivatkozást küld a postafiókodba.
+              {isEn
+                ? "Enter your registered email address and we will send an official password reset link to your inbox."
+                : "Add meg a regisztrált e-mail címedet, és a rendszer egy hivatalos jelszó-visszaállító hivatkozást küld a postafiókodba."}
             </p>
 
             {errorMsg && (
@@ -89,7 +98,7 @@ export function ForgotPasswordModal({ isOpen, onClose }) {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="pelda@email.com"
+                placeholder={isEn ? "name@example.com" : "pelda@email.com"}
                 required
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
               />
@@ -107,7 +116,7 @@ export function ForgotPasswordModal({ isOpen, onClose }) {
                 disabled={loading}
                 className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] disabled:opacity-50 cursor-pointer shadow-xs transition-all"
               >
-                {loading ? "Küldés folyamatban..." : t.send_reset_link}
+                {loading ? (isEn ? "Sending..." : "Küldés folyamatban...") : t.send_reset_link}
               </button>
             </div>
           </form>
@@ -118,13 +127,17 @@ export function ForgotPasswordModal({ isOpen, onClose }) {
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <h4 className="text-sm font-bold text-emerald-900">
-                A visszaállító e-mail elküldve!
+                {isEn ? "Password Reset Request Sent" : "Jelszó-visszaállítási kérelem elküldve"}
               </h4>
               <p className="text-xs text-emerald-800 leading-relaxed">
-                A jelszó-visszaállító hivatkozást sikeresen elküldtük a(z) <strong>{email}</strong> címre. Kérjük, nyisd meg a leveleződet, és kattints a levélben lévő hivatkozásra az új jelszó megadásához!
+                {isEn
+                  ? <>If an account exists for <strong>{email}</strong>, a password reset link has been sent. Please open your inbox and follow the link to set a new password.</>
+                  : <>Ha a(z) <strong>{email}</strong> cím szerepel a rendszerünkben, elküldtük a jelszó-visszaállító hivatkozást. Kérjük, nyisd meg a leveleződet, és kattints a levélben lévő hivatkozásra az új jelszó megadásához!</>}
               </p>
               <p className="text-[11px] text-emerald-600 font-medium">
-                (Ha nem találod a levelet pár percen belül, kérjük, ellenőrizd a Spam / Promóciók mappát is.)
+                {isEn
+                  ? "(If you don't see it within a few minutes, please check your Spam or Promotions folder.)"
+                  : "(Ha nem találod a levelet pár percen belül, kérjük, ellenőrizd a Spam / Promóciók mappát is.)"}
               </p>
             </div>
 
@@ -134,7 +147,7 @@ export function ForgotPasswordModal({ isOpen, onClose }) {
                 onClick={handleReset}
                 className="w-full py-2.5 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] cursor-pointer shadow-xs transition-all"
               >
-                {t.close || "Rendben, bezárás"}
+                {t.close || (isEn ? "OK, Close" : "Rendben, bezárás")}
               </button>
             </div>
           </div>
@@ -146,7 +159,8 @@ export function ForgotPasswordModal({ isOpen, onClose }) {
 
 // 2. Reset Password Modal (opened strictly via the secure email link action code)
 export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClose }) {
-  const { t, showToast, persistState } = useApp();
+  const { state, t, showToast } = useApp();
+  const isEn = state?.currentLang === 'en';
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -162,69 +176,71 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
     e.preventDefault();
     setErrorMsg('');
 
-    if (newPassword.length < 6) {
-      setErrorMsg("A biztonságos jelszónak legalább 6 karakter hosszúnak kell lennie.");
+    if (newPassword.length < 10) {
+      setErrorMsg(
+        isEn
+          ? "The new password must be at least 10 characters long."
+          : "A biztonságos jelszónak legalább 10 karakter hosszúnak kell lennie."
+      );
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setErrorMsg("A két jelszó nem egyezik meg.");
+      setErrorMsg(isEn ? "The passwords do not match." : "A két jelszó nem egyezik meg.");
       return;
     }
 
     setLoading(true);
     try {
       const { auth } = getFirebaseInstance();
-      if (auth && oobCode) {
-        await confirmPasswordReset(auth, oobCode, newPassword);
+      if (!auth || !oobCode) {
+        setErrorMsg(
+          isEn
+            ? "Invalid or missing password reset code."
+            : "Érvénytelen vagy hiányzó jelszó-visszaállító kód."
+        );
+        return;
       }
 
-      if (persistState) {
-        persistState(s => {
-          const targetEmail = (email || '').toLowerCase().trim();
-          const updatedUsers = (s.users || []).map(u => {
-            const uEmail = (u.email || '').toLowerCase().trim();
-            if (uEmail === targetEmail || (targetEmail.startsWith("benedek.baltay") && uEmail.startsWith("benedek.baltay"))) {
-              return { ...u, pass: newPassword, password: newPassword };
-            }
-            return u;
-          });
-          const updatedBuildings = (s.buildings || []).map(b => {
-            if (b.flats) {
-              b.flats = b.flats.map(f => {
-                const fEmail = (f.email || '').toLowerCase().trim();
-                if (fEmail === targetEmail) {
-                  return { ...f, pass: newPassword, password: newPassword };
-                }
-                return f;
-              });
-            }
-            return b;
-          });
-          return {
-            ...s,
-            users: updatedUsers,
-            buildings: updatedBuildings
-          };
-        }, true);
-      }
+      // Reset password strictly in Firebase Authentication (never persist plaintext passwords in DB/localStorage)
+      await confirmPasswordReset(auth, oobCode, newPassword);
 
       try {
         if (email) localStorage.setItem("tarsashaz_last_email", email.trim().toLowerCase());
       } catch (e) {}
 
-      showToast("Jelszó sikeresen megváltoztatva! Most már bejelentkezhetsz az új jelszavaddal.");
+      showToast(
+        isEn
+          ? "Password successfully updated! You can now sign in with your new password."
+          : "Jelszó sikeresen megváltoztatva! Most már bejelentkezhetsz az új jelszavaddal."
+      );
       onClose();
     } catch (err) {
-      console.warn("confirmPasswordReset error:", err.code, err.message);
+      console.warn("confirmPasswordReset error:", err.code);
       if (err.code === 'auth/expired-action-code') {
-        setErrorMsg("A jelszó-visszaállító hivatkozás lejárt. Kérjük, igényelj új hivatkozást a bejelentkezés oldalon!");
+        setErrorMsg(
+          isEn
+            ? "The password reset link has expired. Please request a new link on the login page."
+            : "A jelszó-visszaállító hivatkozás lejárt. Kérjük, igényelj új hivatkozást a bejelentkezés oldalon!"
+        );
       } else if (err.code === 'auth/invalid-action-code') {
-        setErrorMsg("A hivatkozás érvénytelen vagy már fel lett használva.");
+        setErrorMsg(
+          isEn
+            ? "This link is invalid or has already been used."
+            : "A hivatkozás érvénytelen vagy már fel lett használva."
+        );
       } else if (err.code === 'auth/weak-password') {
-        setErrorMsg("A megadott jelszó túl gyenge. Kérjük, adj meg egy erősebb jelszót (legalább 6 karakter)!");
+        setErrorMsg(
+          isEn
+            ? "The password is too weak. Please enter a stronger password (at least 10 characters)."
+            : "A megadott jelszó túl gyenge. Kérjük, adj meg egy erősebb jelszót (legalább 10 karakter)!"
+        );
       } else {
-        setErrorMsg("Hiba történt a jelszó mentése során. Kérjük, próbáld újra később.");
+        setErrorMsg(
+          isEn
+            ? "An error occurred while saving your password. Please try again later."
+            : "Hiba történt a jelszó mentése során. Kérjük, próbáld újra később."
+        );
       }
     } finally {
       setLoading(false);
@@ -249,7 +265,9 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
             <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2.5">
               <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-red-900 mb-1">Érvénytelen vagy lejárt hivatkozás</p>
+                <p className="font-semibold text-red-900 mb-1">
+                  {isEn ? "Invalid or expired link" : "Érvénytelen vagy lejárt hivatkozás"}
+                </p>
                 <p className="leading-relaxed">{initialError}</p>
               </div>
             </div>
@@ -259,14 +277,16 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
                 onClick={onClose}
                 className="w-full py-2.5 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] cursor-pointer shadow-xs transition-all"
               >
-                {t.close || "Bezárás"}
+                {t.close || (isEn ? "Close" : "Bezárás")}
               </button>
             </div>
           </div>
         ) : (
           <>
             <p className="text-xs text-gray-500">
-              Új jelszó megadása a(z) <strong>{email}</strong> fiókhoz:
+              {isEn
+                ? <>Set a new password for <strong>{email}</strong>:</>
+                : <>Új jelszó megadása a(z) <strong>{email}</strong> fiókhoz:</>}
             </p>
 
             {errorMsg && (
@@ -283,9 +303,9 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Legalább 6 karakter"
+                  placeholder={isEn ? "At least 10 characters" : "Legalább 10 karakter"}
                   required
-                  minLength={6}
+                  minLength={10}
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
                 />
               </div>
@@ -296,9 +316,9 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="••••••••••"
                   required
-                  minLength={6}
+                  minLength={10}
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
                 />
               </div>
@@ -316,7 +336,7 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
                   disabled={loading}
                   className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] disabled:opacity-50 cursor-pointer shadow-xs transition-all"
                 >
-                  {loading ? "Mentés folyamatban..." : t.save_new_password}
+                  {loading ? (isEn ? "Saving..." : "Mentés folyamatban...") : t.save_new_password}
                 </button>
               </div>
             </form>
@@ -327,10 +347,11 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
   );
 }
 
-// 3. Change Password Modal (Bejelentkezett fióknál csak az új jelszót kell 2x megadni)
+// 3. Change Password Modal (Requires current password re-authentication + min 10 chars)
 export function ChangePasswordModal({ isOpen, onClose }) {
   const { state, t, changePassword } = useApp();
   const isEn = state?.currentLang === 'en';
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -342,8 +363,21 @@ export function ChangePasswordModal({ isOpen, onClose }) {
     e.preventDefault();
     setErrorMsg('');
 
-    if (newPassword.length < 4) {
-      setErrorMsg(isEn ? "The new password must be at least 4 characters long." : "Az új jelszónak legalább 4 karakter hosszúnak kell lennie.");
+    if (!currentPassword) {
+      setErrorMsg(
+        isEn
+          ? "Please enter your current password to verify your identity."
+          : "Kérjük, add meg a jelenlegi jelszavadat a személyazonosságod megerősítéséhez."
+      );
+      return;
+    }
+
+    if (newPassword.length < 10) {
+      setErrorMsg(
+        isEn
+          ? "The new password must be at least 10 characters long."
+          : "Az új jelszónak legalább 10 karakter hosszúnak kell lennie."
+      );
       return;
     }
 
@@ -354,10 +388,11 @@ export function ChangePasswordModal({ isOpen, onClose }) {
 
     setLoading(true);
     try {
-      const res = await changePassword(newPassword);
+      const res = await changePassword(currentPassword, newPassword);
       if (!res.success) {
         setErrorMsg(res.error);
       } else {
+        setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
         onClose();
@@ -381,9 +416,9 @@ export function ChangePasswordModal({ isOpen, onClose }) {
         </div>
 
         <p className="text-xs text-gray-500 leading-relaxed">
-          {isEn 
-            ? "Enter your new password twice to update it. You do not need to enter your current password." 
-            : "Add meg kétszer az új jelszavadat a módosításhoz. A jelenlegi régi jelszó megadása nem szükséges."}
+          {isEn
+            ? "For your security, verify your current password and enter a new password of at least 10 characters."
+            : "A biztonságod érdekében add meg a jelenlegi jelszavadat, majd kétszer az új, legalább 10 karakteres jelszavadat."}
         </p>
 
         {errorMsg && (
@@ -395,14 +430,29 @@ export function ChangePasswordModal({ isOpen, onClose }) {
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              {t.current_password_label || (isEn ? "Current Password" : "Jelenlegi jelszó")}
+            </label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              autoFocus
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
+            />
+          </div>
+
+          <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">{t.new_password_label}</label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder={isEn ? "At least 10 characters" : "Legalább 10 karakter"}
               required
-              autoFocus
+              minLength={10}
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
             />
           </div>
@@ -413,8 +463,9 @@ export function ChangePasswordModal({ isOpen, onClose }) {
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="••••••••••"
               required
+              minLength={10}
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] focus:bg-white transition-all shadow-xs"
             />
           </div>
@@ -441,10 +492,19 @@ export function ChangePasswordModal({ isOpen, onClose }) {
   );
 }
 
-// 4. Help & Contact Modal
+// 4. Help & Contact Modal (Zero hardcoded personal PII; dynamically reads authenticated building rep info if signed in)
 export function HelpModal({ isOpen, onClose }) {
-  const { t } = useApp();
+  const { state, t } = useApp();
+  const isEn = state?.currentLang === 'en';
   if (!isOpen) return null;
+
+  const currentBuilding = state?.currentUser
+    ? (state.buildings || []).find(b => b.id === state.currentBuildingId) || (state.buildings || [])[0]
+    : null;
+  const repName = currentBuilding?.repName || '';
+  const repPhone = currentBuilding?.phone || '';
+  const repEmail = currentBuilding?.email || '';
+  const hasRepContact = Boolean(repName || repPhone || repEmail);
 
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
@@ -454,31 +514,54 @@ export function HelpModal({ isOpen, onClose }) {
             <HelpCircle className="w-5 h-5 text-[#1E3A8A]" />
             <h3 className="text-base font-bold text-gray-900">{t.help_title}</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-700">
+          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-700 cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="space-y-4 text-xs text-gray-600">
           <p className="leading-relaxed">
-            A <strong>Társasházkezelő Portál</strong> a Batyu utca 21. társasház lakói és közös képviselete számára készült, hogy a közös költség és felújítási alap befizetései, egyenlegei és dokumentumai mindig átláthatóak legyenek.
+            {isEn
+              ? <>The <strong>Condominium Management Portal</strong> helps residents and common representatives transparently track common charges, renovation fund contributions, balances, and official condominium documents.</>
+              : <>A <strong>Társasházkezelő Portál</strong> a társasházak lakói és közös képviselete számára készült, hogy a közös költség és felújítási alap befizetései, egyenlegei és dokumentumai mindig átláthatóak legyenek.</>}
           </p>
 
-          <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
-            <h4 className="font-bold text-gray-900 text-sm">Közös Képviselet:</h4>
-            <div className="font-semibold text-gray-800">Baltay Benedek</div>
-            <div className="flex items-center gap-2 text-gray-600">
-              <Phone className="w-3.5 h-3.5 text-[#1E3A8A]" />
-              <a href="tel:+36203971253" className="hover:underline font-mono">+36 20 397 1253</a>
+          {hasRepContact ? (
+            <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+              <h4 className="font-bold text-gray-900 text-sm">
+                {isEn ? "Common Representative:" : "Közös Képviselet:"}
+              </h4>
+              {repName && <div className="font-semibold text-gray-800">{repName}</div>}
+              {repPhone && (
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Phone className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                  <a href={`tel:${repPhone.replace(/\s+/g, '')}`} className="hover:underline font-mono">{repPhone}</a>
+                </div>
+              )}
+              {repEmail && (
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Mail className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                  <a href={`mailto:${repEmail}`} className="hover:underline">{repEmail}</a>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2 text-gray-600">
-              <Mail className="w-3.5 h-3.5 text-[#1E3A8A]" />
-              <a href="mailto:benedek.baltay@gmail.com" className="hover:underline">benedek.baltay@gmail.com</a>
+          ) : (
+            <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5">
+              <h4 className="font-bold text-gray-900 text-sm">
+                {isEn ? "Need help signing in?" : "Segítségre van szükséged a belépéshez?"}
+              </h4>
+              <p className="text-gray-600 leading-relaxed">
+                {isEn
+                  ? "Use the 'Forgot password' link on the login screen to reset your password via email, or contact your condominium's Common Representative."
+                  : "Elfelejtett jelszó esetén használd a bejelentkezési képernyő 'Elfelejtett jelszó' funkcióját, vagy vedd fel a kapcsolatot a társasházad közös képviseletével."}
+              </p>
             </div>
-          </div>
+          )}
 
           <p className="text-[11px] text-gray-400 leading-relaxed">
-            Ha elfelejtette a jelszavát vagy belépési problémát tapasztal, kérjük vegye fel a kapcsolatot a közös képviselettel a fenti elérhetőségeken!
+            {isEn
+              ? "If you experience login issues or need an account provisioned for your apartment, please contact your building's Common Representative."
+              : "Ha belépési problémát tapasztalsz vagy új lakói hozzáférésre van szükséged, kérjük, fordulj a társasház közös képviseletéhez."}
           </p>
         </div>
 
@@ -486,7 +569,7 @@ export function HelpModal({ isOpen, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af]"
+            className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] cursor-pointer"
           >
             {t.close}
           </button>

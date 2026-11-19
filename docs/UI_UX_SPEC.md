@@ -82,8 +82,8 @@ Every flat balance is labeled with an unmistakable status badge:
   - Password input with `Lock` icon and hold-to-peek `Eye` button.
   - "Remember Me" checkbox and primary "Bejelentkezés" button.
   - Footer links: "Elfelejtettem a jelszavam" and "Segítség és Kapcsolat".
-- **Quick Login (Demo)**:
-  - Representative tile only: Baltay Benedek (Admin) for fast testing. Unauthenticated resident demo buttons are removed for privacy and security.
+- **Authentication Only (No Demo/Quick-Login Credentials)**:
+  - Unauthenticated demo buttons and hardcoded credentials are strictly prohibited. All users (Common Representatives, SZVB, and Residents) must authenticate with their Firebase Auth email and password.
 
 ### 2.2 Resident Portal (`TenantView.jsx`)
 - **Dynamic Account Grid (`allAccounts`)**:
@@ -95,7 +95,7 @@ Every flat balance is labeled with an unmistakable status badge:
     - **When settled / overpaid (`debt === 0`)**: Displays *„Nincs hátralék”* / *„Túlfizetés”* banner plus bank transfer details for regular or advance payments.
 - **Common Representative Quick Contact Card**:
   - Prominent banner placed at the very top.
-  - Displays Representative Name (`Baltay Benedek`), direct phone call link (`tel:`) with copy action, and direct email link (`mailto:`) with copy action.
+  - Dynamically displays the building's configured Representative Name (`currentBuilding.repName`), direct phone call link (`tel:`) with copy action, and direct email link (`mailto:`) with copy action (no hardcoded personal details).
 - **Combined Transactions Preview**:
   - Live search input (filters all items instantly without truncation).
   - SheetJS Excel export button.
@@ -852,7 +852,7 @@ Mivel minden egyes társasház önálló gazdasági egység saját bankszámlasz
   - A rendszer emellett a valódi `.xlsx` és `.csv` állományokat is hibátlanul kezeli a beépített SheetJS (`xlsx`) könyvtáron keresztül.
 - **Kinyert Fejléc Adatok**:
   - Számlaszám (`accountNumber`)
-  - Számla elnevezése (`accountName`, pl. "Batyu közös költség (KK)")
+  - Számla elnevezése (`accountName`, pl. "Társasház közös költség (KK)")
   - Lekérdezési időszak (`period`, pl. "2026.10.01 - 2026.10.31")
 - **Oszlop-mapping és Tisztítás**:
   - Forgalom típusa, Tranzakció időpontja / Értéknap, Összeg (+ / -), Ellenoldali számlaszám, Ellenoldali név, Közlemény, Banki tranzakció azonosító.
@@ -969,7 +969,7 @@ Az alkalmazás képes megőrizni az éppen nyitva lévő nézetet és modális a
 
 ### 8.1 Megőrzött Állapotok és URL Szinkronizáció
 - **Albetét Részletes Nézet (`FlatDetailModal`)**: Ha a felhasználó pl. az 1-es lakásban volt (`flatDetailNum = '1'`), újratöltés után a rendszer azonnal az 1-es lakás adatlapját nyitja meg (`#flat=1`).
-- **Albetét Törzsadat Nézet (`EditFlatMasterModal`)**: Ha a törzsadat szerkesztő volt megnyitva (pl. `#master=1&bId=batyu21`), újratöltéskor a teljes 4 füles törzsadat ablak jelenik meg újra.
+- **Albetét Törzsadat Nézet (`EditFlatMasterModal`)**: Ha a törzsadat szerkesztő volt megnyitva (pl. `#master=1&bId=building-001`), újratöltéskor a teljes 4 füles törzsadat ablak jelenik meg újra.
 - **Rétegzett Megnyitás ("Lakások adatai" + Albetét)**: Ha a felhasználó a "Lakások adatai" modálból (`isFlatsDataOpen`) nyitotta meg az 1-es lakást (`#flat=1&from=flats`), frissítéskor mindkét ablak megfelelően megnyílik, és a lakás bezárásakor a felhasználó a megszokott módon a "Lakások adatai" listában marad.
 - **Egyéb Modálok Megőrzése**:
   - Pénzügyi helyzet (`#view=finance`)

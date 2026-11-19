@@ -22,6 +22,7 @@ import {
 import { parseBankFile, matchTransactionsWithFlats } from '../../utils/bankParsers';
 import { formatCurrency, getBuildingAccounts } from '../../utils/finances';
 import { useBackdropClose } from '../../utils/useBackdropClose';
+import { getFirebaseInstance } from '../../constants/firebaseConfig';
 
 export function BankImportModal({ isOpen, onClose }) {
   const { state, t, addMultipleItems, showToast, updateBuildingData } = useApp();
@@ -134,10 +135,44 @@ export function BankImportModal({ isOpen, onClose }) {
     setParseError(null);
 
     try {
-      // Connect to the Node.js backend mTLS endpoint
-      const res = await fetch(`http://localhost:5001/api/bank/sync/${currentBuilding?.id || 'b1'}`, {
+      const configuredUrl = (import.meta.env.VITE_BANK_API_URL || '').trim().replace(/\/+$/, '');
+      const apiBaseUrl = configuredUrl || (import.meta.env.DEV ? 'http://127.0.0.1:5001' : '');
+
+      if (!apiBaseUrl) {
+        throw new Error(
+          t.bank_api_not_configured ||
+            (isEn
+              ? 'Direct Bank API gateway is not configured for this environment.'
+              : 'A közvetlen banki API kapcsolat nincs konfigurálva ebben a környezetben.')
+        );
+      }
+
+      if (!import.meta.env.DEV && !apiBaseUrl.startsWith('https://')) {
+        throw new Error(
+          t.bank_api_https_required ||
+            (isEn
+              ? 'Insecure HTTP bank gateway URL blocked in production.'
+              : 'Nem biztonságos (HTTP) banki API cím blokkolva éles környezetben.')
+        );
+      }
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Building-Id': String(currentBuilding?.id || ''),
+      };
+
+      const { auth } = getFirebaseInstance();
+      if (auth?.currentUser) {
+        const idToken = await auth.currentUser.getIdToken();
+        if (idToken) {
+          headers.Authorization = `Bearer ${idToken}`;
+        }
+      }
+
+      const buildingId = encodeURIComponent(currentBuilding?.id || 'b1');
+      const res = await fetch(`${apiBaseUrl}/api/bank/sync/${buildingId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           buildingIban: currentBuilding?.bankAccountKK || currentBuilding?.bankAccount,
           forceMock: false,
@@ -145,7 +180,11 @@ export function BankImportModal({ isOpen, onClose }) {
       });
 
       if (!res.ok) {
-        throw new Error(`A banki szerver válasza: ${res.status} ${res.statusText}`);
+        throw new Error(
+          isEn
+            ? `Bank server response: ${res.status}`
+            : `A banki szerver válasza: ${res.status}`
+        );
       }
 
       const data = await res.json();
@@ -185,11 +224,13 @@ export function BankImportModal({ isOpen, onClose }) {
       }
 
     } catch (err) {
-      console.error("API sync error:", err);
+      if (import.meta.env.DEV) {
+        console.error("API sync error:", err);
+      }
       setParseError(
         isEn
-          ? `Bank API connection error: ${err.message}. Ensure the backend server is running on port 5001 (npm run server).`
-          : `Banki API kapcsolódási hiba: ${err.message}. Győződjön meg róla, hogy a backend szerver fut az 5001-es porton (npm run server).`
+          ? `Bank API connection error: ${err.message}`
+          : `Banki API kapcsolódási hiba: ${err.message}`
       );
     } finally {
       setIsApiSyncing(false);

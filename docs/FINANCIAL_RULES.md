@@ -227,7 +227,7 @@ Effective October 2026, the condominium's Renovation Fund (`Felújítási Alap`)
   - **Flat**: `Fsz 2`
   - **Target Account**: `Felújítási Alap`
   - **Payment Method**: `Készpénz`
-  - **Sender**: `Baltay Benedek`
+  - **Sender**: `Közös Képviselő (Minta Tulajdonos)`
   - **Comment**: `Kuka mozgatási díj KP`
   - **Flags**: `includeInBalance: true` (credits Flat 2 ledger), `affectsBankBalance: false` (does not affect bank statement balance).
 - **Zero Duplicate Expense**: No duplicate / artificial building expense is recorded. The bank reserve functions (`getBuildingReserve`, `getBuildingRenovationFund`) exclude non-bank cash transactions, keeping the bank fund exactly at $1\,332\,883\text{ Ft}$ while Flat 2 correctly reflects the $-9\,070\text{ Ft}$ closing balance.
@@ -389,7 +389,7 @@ https://azonnalifizetes.hu/HCT/3/1/{BIC}/{BENEFICIARY_NAME}/{ACCOUNT_HOLDER}/{IB
 
 Parameter resolution:
 - `BIC`: Condominium bank BIC/SWIFT code (e.g. `OTPVHUHBXXX` for OTP Bank). Computed via `getBankBic(bankObj)`.
-- `BENEFICIARY_NAME` & `ACCOUNT_HOLDER`: Official condominium name (URI-encoded, e.g. `Batyu%20utca%2021%20T%C3%A1rsash%C3%A1z`).
+- `BENEFICIARY_NAME` & `ACCOUNT_HOLDER`: Official condominium name (URI-encoded, e.g. `Pelda%20utca%201%20T%C3%A1rsash%C3%A1z`).
 - `IBAN`: Condominium sub-account in 28-character Hungarian IBAN format (`HU...`). If the building configuration holds a 16- or 24-digit domestic account number, `formatHungarianIban` automatically computes the ISO 7064 MOD 97-10 check digits.
 - `AMOUNT`: Integer outstanding debt amount: `Math.abs(Math.round(balance))` when `balance < 0`.
 - `COMMENT`: Standardized payment comment (URI-encoded).
@@ -401,8 +401,8 @@ Parameter resolution:
 > Residents may settle multiple months of arrears at once, pay fractional balances caused by previous overpayments, or make ad-hoc contributions. Hardcoding dates corrupts bank matching.
 
 - **Canonical Structure**: `[TÁRSASHÁZ_AZONOSÍTÓ] [LAKÁS_SZÁMA]. lakás [ALAP_TÍPUS]`
-- **KK Example**: `Batyu21 4. lakas KK`
-- **FA Example**: `Batyu21 4. lakas FA`
+- **KK Example**: `Pelda1 4. lakas KK`
+- **FA Example**: `Pelda1 4. lakas FA`
 
 ### 20.4 Conditional Rendering Matrix
 | Condition | Ledger State | QR Code | Mobile Button (`.btn-mobile-pay`) | Status Badge / Action |

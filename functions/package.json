@@ -1,0 +1,17 @@
+{
+  "name": "tarsasapp-functions",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "lint": "node --check index.js && node --check src/financeMath.js && node --check src/authGuard.js && node --check src/transactions.js && node --check src/assessments.js && node --check src/members.js && node --check src/loans.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.1",
+    "firebase-functions": "^7.4.0"
+  }
+}

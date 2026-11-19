@@ -387,9 +387,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null }) {
     currentUser?.isAdminUser === true ||
     currentUser?.role === 'admin' ||
     currentUser?.role === 'superadmin' ||
-    userEmail === 'benedek.baltay@gmail.com' ||
-    userEmail === 'benedek.baltay01@gmail.com' ||
-    (users || []).some(u => u.email && u.email.toLowerCase().trim() === userEmail && (u.role === 'admin' || u.role === 'superadmin'))
+    Boolean(userEmail && (users || []).some(u => u.email && u.email.toLowerCase().trim() === userEmail && (u.role === 'admin' || u.role === 'superadmin')))
   );
 
   // Guarantee calendarEvents is always a valid Array
@@ -426,7 +424,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null }) {
   // Form fields
   const [formTitle, setFormTitle] = useState('');
   const [formBuildingId, setFormBuildingId] = useState(() => {
-    return (typeof initialBuildingId === 'string' && initialBuildingId !== 'all') ? initialBuildingId : (currentBuildingId || 'batyu21');
+    return (typeof initialBuildingId === 'string' && initialBuildingId !== 'all') ? initialBuildingId : (currentBuildingId || (buildings?.[0]?.id || 'all'));
   });
   const [formColor, setFormColor] = useState('blue');
   const [formCategory, setFormCategory] = useState('assembly');
@@ -695,9 +693,10 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null }) {
 
   // Open Form to Add Event
   const handleOpenAddEvent = (presetDate = null) => {
+    if (!isAdmin) return;
     setEditingEvent(null);
     setFormTitle('');
-    const targetBId = (filterBuildingId !== 'all' && filterBuildingId) ? filterBuildingId : (currentBuildingId || 'batyu21');
+    const targetBId = (filterBuildingId !== 'all' && filterBuildingId) ? filterBuildingId : (currentBuildingId || (buildings?.[0]?.id || 'all'));
     setFormBuildingId(targetBId);
     setFormColor('blue');
     setFormCategory('assembly');
@@ -725,9 +724,10 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null }) {
 
   // Open Form to Edit Event
   const handleOpenEditEvent = (ev) => {
+    if (!isAdmin) return;
     setEditingEvent(ev);
     setFormTitle(ev.title || '');
-    setFormBuildingId(ev.buildingId || 'batyu21');
+    setFormBuildingId(ev.buildingId || currentBuildingId || (buildings?.[0]?.id || 'all'));
     setFormColor(ev.color || (ev.category === 'assembly' ? 'emerald' : ev.category === 'maintenance' ? 'amber' : ev.category === 'financial' ? 'purple' : 'blue'));
     setFormCategory(ev.category || 'task');
     const evDateStr = ev.date || formatDateYMD(new Date());
@@ -1372,12 +1372,16 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null }) {
                           const parts = cell.dateStr.split('-');
                           setCurrentDate(new Date(Number(parts[0]), Number(parts[1]) - 1, 1));
                         }
-                        handleOpenAddEvent(cell.dateStr);
+                        if (isAdmin) {
+                          handleOpenAddEvent(cell.dateStr);
+                        } else {
+                          setViewMode('day');
+                        }
                       }}
                       className={`min-h-[44px] sm:min-h-[50px] md:min-h-[56px] lg:min-h-[62px] p-1 sm:p-1.5 transition-all cursor-pointer flex flex-col justify-between overflow-hidden ${
                         cell.isCurrentMonth ? 'bg-white' : 'bg-gray-50/60 text-gray-400'
                       } hover:bg-blue-50/30 group`}
-                      title={isEn ? "Click to record event" : "Kattints esemény rögzítéséhez"}
+                      title={isAdmin ? (isEn ? "Click to record event" : "Kattints esemény rögzítéséhez") : (isEn ? "Click to view day events" : "Kattints a napi események megtekintéséhez")}
                     >
                       {/* Day Number Header */}
                       <div className="flex items-center justify-between">

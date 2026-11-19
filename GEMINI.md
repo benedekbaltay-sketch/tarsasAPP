@@ -1,6 +1,6 @@
 # STRICT PROJECT RULES FOR TARSASAPP
 
-A portál fejlesztése és karbantartása során az alábbi 4 alapszabály és védelmi irányelv kötelező érvényű minden agent és fejlesztő számára:
+A portál fejlesztése és karbantartása során az alábbi 6 alapszabály és védelmi irányelv kötelező érvényű minden agent és fejlesztő számára:
 
 ---
 
@@ -41,4 +41,11 @@ A portál fejlesztése és karbantartása során az alábbi 4 alapszabály és v
 
 ## 5. 🛡️ LEGACY KÓD VÉDELME
 - A `new-project/` mappa a korábbi verzió archívuma, szigorúan **csak olvasható**, soha semmilyen körülmények között nem módosítható.
+
+---
+
+## 6. 🔄 RENDSZERES GIT MENTÉS ÉS PUSH (REGULAR GIT COMMIT & PUSH MANDATE)
+- **Minden nagyobb, ellenőrzött mérföldkő vagy funkcióblokk után rendszeresen committelni és pusholni kell a GitHub távoli tárolóba (`origin/main`)**, hogy sok változtatás soha ne veszhessen el.
+- **Biztonsági ellenőrzés minden commit előtt:** Commit és push előtt kötelező átnézni a `git status` kimenetét, hogy semmilyen titok, `.env` fájl, privát kulcs (`*.key`, `*.pem`, `server/certs/`), adatbázis-mentés (`*snapshot*.json`, `backup_*.json`) vagy valós személyes adat (PII) véletlenül se kerüljön be a Git előzményekbe.
+- **Tiszta, érthető commit üzenetek:** Minden commit előtt legalább a releváns teszteknek és buildnek zöldnek kell lennie.
 

@@ -1,15 +1,41 @@
-import { getPermanentVault, savePermanentVault } from './syncEngine';
+import { getPermanentVault, savePermanentVault, stripSensitiveUserFields } from './syncEngine';
 import { getFirebaseInstance } from '../constants/firebaseConfig';
 import { ref, set, get } from 'firebase/database';
-import { DEFAULT_INFO_SECTIONS } from '../constants/defaultData';
 
 export function createBuildingActions({ state, setState, persistState, showToast, t }) {
+  const isAdmin = () => Boolean(
+    state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'superadmin')
+  );
+
+  const requireAdmin = () => {
+    if (isAdmin()) return true;
+    showToast(
+      t.error_unauthorized || (state.currentLang === 'en' ? "Unauthorized action." : "Nincs jogosultságod ehhez a művelethez."),
+      "error"
+    );
+    return false;
+  };
+
   // Switch Building
   const switchBuilding = (buildingId) => {
     const curB = (state.buildings || []).find(b => b.id === buildingId);
     if (!curB) return;
+    if (!isAdmin() && state.currentUser?.role !== 'szvb') {
+      const userEmail = (state.currentUser?.email || "").toLowerCase().trim();
+      const ownsFlatInBuilding = (curB.flats || []).some(f => {
+        if ((f.email || "").toLowerCase().trim() === userEmail && userEmail) return true;
+        if (Array.isArray(f.owners) && userEmail) {
+          return f.owners.some(o =>
+            (o.email || "").toLowerCase().trim() === userEmail ||
+            (Array.isArray(o.emails) && o.emails.some(e => (e || "").toLowerCase().trim() === userEmail))
+          );
+        }
+        return state.currentUser?.flatNum && state.currentUser.flatNum !== "0" && f.flatNum === state.currentUser.flatNum && state.currentUser.buildingId === buildingId;
+      });
+      if (!ownsFlatInBuilding) return;
+    }
     persistState(s => {
-      const updatedUser = s.currentUser ? { ...s.currentUser, buildingId } : s.currentUser;
+      const updatedUser = s.currentUser ? stripSensitiveUserFields({ ...s.currentUser, buildingId }) : s.currentUser;
       if (updatedUser) {
         try {
           localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
@@ -27,25 +53,27 @@ export function createBuildingActions({ state, setState, persistState, showToast
         manualDebits: curB.manualDebits || [],
         documents: curB.documents || [],
         docFolders: curB.docFolders || [],
-        infoSections: curB.infoSections || (curB.id === 'batyu21' ? JSON.parse(JSON.stringify(DEFAULT_INFO_SECTIONS)) : []),
+        loans: curB.loans || [],
+        infoSections: curB.infoSections || [],
         buildingInitialReserveCommon: curB.buildingInitialReserveCommon || 0,
         buildingInitialReserveRenovation: curB.buildingInitialReserveRenovation || 0
       };
-    });
+    }, 'localOnly');
   };
 
   // Add Flat
   const addFlat = (newFlat) => {
+    if (!requireAdmin()) return;
+    const { pass, password, resetToken, resetTokenExpiry, ...sanitizedFlat } = newFlat || {};
     persistState(s => {
-      const flatWithTimestamp = { ...newFlat, lastUpdated: Date.now() };
+      const flatWithTimestamp = { ...sanitizedFlat, lastUpdated: Date.now() };
       const updatedFlats = [...(s.flats || []), flatWithTimestamp];
       const newUser = {
-        id: newFlat.flatNum,
-        name: newFlat.ownerName,
-        email: newFlat.email,
-        pass: "lakas123",
+        id: sanitizedFlat.flatNum,
+        name: sanitizedFlat.ownerName,
+        email: sanitizedFlat.email,
         role: "Owner",
-        flatNum: newFlat.flatNum,
+        flatNum: sanitizedFlat.flatNum,
         buildingId: s.currentBuildingId
       };
       return {
@@ -59,6 +87,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Delete Flat
   const deleteFlat = (flatNum) => {
+    if (!requireAdmin()) return;
     const vault = getPermanentVault();
     vault.deletedFlatNums = vault.deletedFlatNums || [];
     if (!vault.deletedFlatNums.includes(flatNum)) {
@@ -76,49 +105,65 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Save Flat Master Data
   const saveFlatMaster = (flatNum, updatedData) => {
+    let safeUpdate = updatedData || {};
+    if (!isAdmin()) {
+      // Non-admin Owners may only update their own unit's personal contact fields
+      if (!state.currentUser || state.currentUser.role !== 'Owner' || state.currentUser.flatNum !== flatNum) {
+        requireAdmin();
+        return;
+      }
+      safeUpdate = {};
+      if (updatedData?.phone !== undefined) safeUpdate.phone = updatedData.phone;
+      if (updatedData?.emergencyContact !== undefined) safeUpdate.emergencyContact = updatedData.emergencyContact;
+      if (updatedData?.notes !== undefined) safeUpdate.notes = updatedData.notes;
+    } else {
+      const { pass, password, resetToken, resetTokenExpiry, ...clean } = updatedData || {};
+      safeUpdate = clean;
+    }
+
     persistState(s => {
       const updatedFlats = (s.flats || []).map(f => {
         if (f.flatNum === flatNum) {
-          return { ...f, ...updatedData, lastUpdated: Date.now() };
+          return { ...f, ...safeUpdate, lastUpdated: Date.now() };
         }
         return f;
       });
 
-      // Also update email or name in users
-      const updatedUsers = (s.users || []).map(u => {
+      // Also update email or name in users (Admin edits only)
+      const updatedUsers = isAdmin() ? (s.users || []).map(u => {
         if (u.flatNum === flatNum && u.role === "Owner") {
           let indName = u.name;
-          if (Array.isArray(updatedData.owners) && updatedData.owners.length > 0) {
+          if (Array.isArray(safeUpdate.owners) && safeUpdate.owners.length > 0) {
             const uEmail = (u.email || "").toLowerCase().trim();
-            const matchedOwner = updatedData.owners.find(o => {
+            const matchedOwner = safeUpdate.owners.find(o => {
               const oEmail = (o.email || "").toLowerCase().trim();
               const oEmails = Array.isArray(o.emails) ? o.emails.map(e => (e || "").toLowerCase().trim()) : [];
               return uEmail && (oEmail === uEmail || oEmails.includes(uEmail));
             });
             if (matchedOwner && matchedOwner.name) {
               indName = matchedOwner.name;
-            } else if (updatedData.owners.length === 1 && updatedData.owners[0].name) {
-              indName = updatedData.owners[0].name;
+            } else if (safeUpdate.owners.length === 1 && safeUpdate.owners[0].name) {
+              indName = safeUpdate.owners[0].name;
             }
-          } else if (updatedData.ownerName) {
-            indName = updatedData.ownerName;
+          } else if (safeUpdate.ownerName) {
+            indName = safeUpdate.ownerName;
           }
 
-          return {
+          return stripSensitiveUserFields({
             ...u,
             name: indName,
-            email: updatedData.email || u.email
-          };
+            email: safeUpdate.email || u.email
+          });
         }
         return u;
-      });
+      }) : (s.users || []);
 
       let updatedCurUser = s.currentUser;
-      if (s.currentUser && s.currentUser.flatNum === flatNum && s.currentUser.role === 'Owner') {
+      if (isAdmin() && s.currentUser && s.currentUser.flatNum === flatNum && s.currentUser.role === 'Owner') {
         let indName = s.currentUser.name;
-        if (Array.isArray(updatedData.owners) && updatedData.owners.length > 0) {
+        if (Array.isArray(safeUpdate.owners) && safeUpdate.owners.length > 0) {
           const uEmail = (s.currentUser.email || "").toLowerCase().trim();
-          const matchedOwner = updatedData.owners.find(o => {
+          const matchedOwner = safeUpdate.owners.find(o => {
             const oEmail = (o.email || "").toLowerCase().trim();
             const oEmails = Array.isArray(o.emails) ? o.emails.map(e => (e || "").toLowerCase().trim()) : [];
             return uEmail && (oEmail === uEmail || oEmails.includes(uEmail));
@@ -145,6 +190,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Document management: Upload Document
   const uploadDocument = async (newDoc) => {
+    if (!requireAdmin()) return;
     const docId = newDoc.id || `doc-${Date.now()}`;
     const fileContent = newDoc.fileData;
 
@@ -185,6 +231,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Document management: Update Document (Edit title, filename, folder, or replace file)
   const updateDocument = async (docId, updatedDocData) => {
+    if (!requireAdmin()) return;
     const fileContent = updatedDocData.fileData;
     if (fileContent) {
       const { rtdb } = getFirebaseInstance();
@@ -229,6 +276,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Document management: Move Document to Folder (or null for root)
   const moveDocument = (docId, targetFolderId) => {
+    if (!requireAdmin()) return;
     persistState(s => {
       const targetBId = s.currentBuildingId;
       const updatedDocs = (s.documents || []).map(doc => {
@@ -256,6 +304,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Document management: Delete Document
   const deleteDocument = (docId) => {
+    if (!requireAdmin()) return;
     const vault = getPermanentVault();
     vault.deletedIds = vault.deletedIds || [];
     if (!vault.deletedIds.includes(docId)) {
@@ -286,6 +335,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Folder management: Create Folder
   const createDocFolder = (folderData) => {
+    if (!requireAdmin()) return null;
     const newFolder = {
       id: folderData.id || `folder-${Date.now()}`,
       name: folderData.name?.trim() || "Új mappa",
@@ -315,6 +365,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Folder management: Update / Rename Folder
   const updateDocFolder = (folderId, updatedData) => {
+    if (!requireAdmin()) return;
     persistState(s => {
       const targetBId = s.currentBuildingId;
       const updatedFolders = (s.docFolders || []).map(f => {
@@ -344,6 +395,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Folder management: Delete Folder (Moves contained documents safely to root!)
   const deleteDocFolder = (folderId) => {
+    if (!requireAdmin()) return;
     persistState(s => {
       const targetBId = s.currentBuildingId;
       const updatedFolders = (s.docFolders || []).filter(f => f.id !== folderId);
@@ -392,6 +444,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Add Building
   const addBuilding = (newBuilding) => {
+    if (!requireAdmin()) return;
     persistState(s => ({
       ...s,
       buildings: [...(s.buildings || []), newBuilding],
@@ -409,11 +462,13 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Toggle Grid Edit Mode
   const toggleGridEditMode = () => {
+    if (!requireAdmin()) return;
     setState(s => ({ ...s, isGridEditMode: !s.isGridEditMode }));
   };
 
   // Update Building Representative Contact Info
   const updateBuildingRepInfo = (buildingId, repData) => {
+    if (!requireAdmin()) return;
     persistState(s => {
       const updatedBuildings = (s.buildings || []).map(b => {
         if (b.id === buildingId) {
@@ -430,7 +485,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
       });
 
       let updatedCurrentUser = s.currentUser;
-      if (s.currentUser && s.currentUser.role === 'admin') {
+      if (s.currentUser && (s.currentUser.role === 'admin' || s.currentUser.role === 'superadmin')) {
         updatedCurrentUser = {
           ...s.currentUser,
           name: repData.repName || s.currentUser.name,
@@ -449,16 +504,22 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Update Building Master Data (Name, Tax Number, Default Bank, etc.)
   const updateBuildingData = (buildingId, data) => {
+    if (!requireAdmin()) return;
+    const sanitizedData = { ...(data || {}) };
+    if (sanitizedData.bankApi && typeof sanitizedData.bankApi === 'object') {
+      const { apiKey, clientSecret, secretKey, ...safeBankApi } = sanitizedData.bankApi;
+      sanitizedData.bankApi = safeBankApi;
+    }
     persistState(s => {
       const targetId = buildingId || s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
       const updatedBuildings = (s.buildings || []).map(b => {
         if (b.id === targetId) {
           return {
             ...b,
-            ...data,
-            name: data.name !== undefined ? data.name : b.name,
-            taxNumber: data.taxNumber !== undefined ? data.taxNumber : b.taxNumber,
-            defaultBank: data.defaultBank !== undefined ? data.defaultBank : b.defaultBank
+            ...sanitizedData,
+            name: sanitizedData.name !== undefined ? sanitizedData.name : b.name,
+            taxNumber: sanitizedData.taxNumber !== undefined ? sanitizedData.taxNumber : b.taxNumber,
+            defaultBank: sanitizedData.defaultBank !== undefined ? sanitizedData.defaultBank : b.defaultBank
           };
         }
         return b;
@@ -469,13 +530,14 @@ export function createBuildingActions({ state, setState, persistState, showToast
         buildings: updatedBuildings
       };
     });
-    if (data.name !== undefined || data.taxNumber !== undefined) {
+    if (sanitizedData.name !== undefined || sanitizedData.taxNumber !== undefined) {
       showToast(state.currentLang === 'en' ? "Building data updated!" : "A ház adatai sikeresen elmentve!");
     }
   };
 
   // Save Info Sections for active building
   const saveInfoSections = (sections) => {
+    if (!requireAdmin()) return;
     persistState(s => {
       const updatedBuildings = (s.buildings || []).map(b => {
         if (b.id === s.currentBuildingId) {
@@ -497,6 +559,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Update building bank accounts (bankKK, bankFA, and customBankAccounts)
   const updateBuildingBankAccounts = (buildingId, { bankKK, bankFA, customBankAccounts }) => {
+    if (!requireAdmin()) return;
     persistState(s => {
       const targetId = buildingId || s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
       const updatedBuildings = (s.buildings || []).map(b => {
@@ -521,6 +584,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Add a new custom bank account to building
   const addCustomBankAccount = (buildingId, newAccount) => {
+    if (!requireAdmin()) return null;
     const accountWithId = {
       id: newAccount.id || `acc-${Date.now()}`,
       name: newAccount.name.trim(),
@@ -557,6 +621,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Delete a custom bank account from building
   const deleteCustomBankAccount = (buildingId, accountId) => {
+    if (!requireAdmin()) return;
     persistState(s => {
       const targetId = buildingId || s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
       const updatedBuildings = (s.buildings || []).map(b => {
