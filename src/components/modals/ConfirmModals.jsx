@@ -105,11 +105,29 @@ export function DeleteTxConfirmModal({ isOpen, itemId, itemType, onClose, onConf
 export function DeleteDocConfirmModal({ isOpen, docId, onClose, onConfirm }) {
   const { state, t } = useApp();
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
+  const backdropProps = useBackdropClose(onClose);
+
+  useEffect(() => {
+    if (!isOpen || !docId || !isAdmin) return;
+    const handleKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        onConfirm(docId);
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isOpen, docId, isAdmin, onClose, onConfirm]);
+
   if (!isOpen || !docId || !isAdmin) return null;
 
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-sm p-6 text-center space-y-4">
+    <div {...backdropProps} className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-sm p-6 text-center space-y-4" onClick={(e) => e.stopPropagation()}>
         <div className="w-14 h-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
           <Trash2 className="w-7 h-7" />
         </div>
@@ -118,7 +136,7 @@ export function DeleteDocConfirmModal({ isOpen, docId, onClose, onConfirm }) {
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            className="flex-1 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer"
           >
             {t.cancel}
           </button>
@@ -128,7 +146,7 @@ export function DeleteDocConfirmModal({ isOpen, docId, onClose, onConfirm }) {
               onConfirm(docId);
               onClose();
             }}
-            className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold"
+            className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold cursor-pointer"
           >
             {t.delete_btn}
           </button>
@@ -143,11 +161,29 @@ export function DeleteFolderConfirmModal({ isOpen, folder, onClose, onConfirm })
   const { state, t } = useApp();
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   const isEn = state.currentLang === 'en';
+  const backdropProps = useBackdropClose(onClose);
+
+  useEffect(() => {
+    if (!isOpen || !folder || !isAdmin) return;
+    const handleKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        onConfirm(folder.id);
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isOpen, folder, isAdmin, onClose, onConfirm]);
+
   if (!isOpen || !folder || !isAdmin) return null;
 
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-sm p-6 text-center space-y-4">
+    <div {...backdropProps} className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-sm p-6 text-center space-y-4" onClick={(e) => e.stopPropagation()}>
         <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
           <Trash2 className="w-7 h-7" />
         </div>
@@ -159,7 +195,7 @@ export function DeleteFolderConfirmModal({ isOpen, folder, onClose, onConfirm })
             "{folder.name}"
           </p>
           <p className="text-[11px] text-gray-500 mt-2">
-            {t.delete_folder_desc || (isEn ? "The documents inside will remain safe and move to the root folder." : "A mappában lévő dokumentumok biztonságban megmaradnak, és automatikusan a főkönyvtárba kerülnek.")}
+            {t.delete_folder_desc || (isEn ? "Subfolders and documents inside will remain safe and move up one level." : "A mappában lévő almappák és dokumentumok biztonságban megmaradnak, és egy szinttel feljebb kerülnek.")}
           </p>
         </div>
         <div className="flex gap-2.5 pt-2">

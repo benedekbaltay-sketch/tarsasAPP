@@ -12,6 +12,7 @@
     "test:rules": "firebase emulators:exec --only firestore \"node --test tests/firestore.rules.test.mjs\"",
     "test:security": "node --test tests/securityControls.test.mjs",
     "test:adapter": "node --test tests/firestoreAdapter.test.mjs",
+    "test:explorer": "node --test tests/docExplorer.test.mjs",
     "migrate:emulator": "node scripts/migrateRtdbToFirestore.mjs --target=emulator",
     "verify:emulator": "node scripts/verifyMigrationParity.mjs --target=emulator"
   },

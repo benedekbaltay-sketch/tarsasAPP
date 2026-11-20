@@ -20,7 +20,8 @@ import {
   uploadAttachmentsToStorage,
   slugifyUnitId,
 } from '../services/firestoreAdapter';
-import { sanitizeFileName } from '../utils/fileSecurity';
+import { sanitizeFileName, readFileAsDataUrl } from '../utils/fileSecurity';
+import { planExplorerMove, planExplorerDelete, planFolderTreeCopy } from '../utils/docExplorer';
 
 export function createBuildingActions({ state, setState, persistState, showToast, t, reloadCurrentBuilding, hydrateAndSwitchBuilding }) {
   const isAdmin = () => Boolean(
@@ -350,6 +351,96 @@ export function createBuildingActions({ state, setState, persistState, showToast
     showToast(state.currentLang === 'en' ? "Document uploaded!" : "Dokumentum feltöltve!");
   };
 
+  // Document management: Batch Upload Documents (Drag & Drop multi-file support)
+  const uploadDocumentsBatch = async (newDocsArray = []) => {
+    if (!requireAdmin()) return 0;
+    const validItems = Array.isArray(newDocsArray) ? newDocsArray.filter(Boolean) : [];
+    if (validItems.length === 0) return 0;
+
+    const isEn = state.currentLang === 'en';
+    const baseTs = Date.now();
+    const prepared = validItems.map((item, idx) => {
+      const docId = item.id || `doc-${baseTs}-${idx}-${Math.random().toString(36).slice(2, 6)}`;
+      return {
+        ...item,
+        id: docId,
+        fileName: sanitizeFileName(item.fileName || `${docId}.${item.fileType || 'pdf'}`),
+        folderId: item.folderId || null,
+      };
+    });
+
+    if (IS_FIRESTORE_MODE) {
+      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+      if (!buildingId) return 0;
+      try {
+        await Promise.all(
+          prepared.map(async (item) => {
+            let storagePath = null;
+            if (item.fileData && typeof item.fileData === 'string' && item.fileData.startsWith('data:')) {
+              storagePath = `buildings/${buildingId}/documents/${item.id}/${item.fileName}`;
+              await uploadBase64ToStorage(storagePath, item.fileData, item.mimeType);
+            }
+            const { fileData: _omit, ...meta } = item;
+            await saveBuildingDocument(buildingId, item.id, {
+              ...meta,
+              hasFile: Boolean(storagePath),
+              storagePath,
+              visibility: item.visibility === 'admin' ? 'admin' : 'building',
+            });
+          })
+        );
+        if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+        showToast(
+          prepared.length === 1
+            ? (isEn ? "Document uploaded!" : "Dokumentum feltöltve!")
+            : (isEn ? `${prepared.length} documents uploaded!` : `${prepared.length} dokumentum feltöltve!`)
+        );
+        return prepared.length;
+      } catch (err) {
+        console.warn('Firestore uploadDocumentsBatch error:', err.message);
+        showToast(isEn ? "Failed to upload documents." : "Nem sikerült feltölteni a dokumentumokat.", "error");
+        return 0;
+      }
+    }
+
+    const { rtdb } = getFirebaseInstance();
+    if (rtdb) {
+      prepared.forEach((item) => {
+        if (item.fileData) {
+          set(ref(rtdb, `condo_files/${item.id}`), item.fileData).catch((err) => {
+            console.warn("Error uploading batch file to condo_files:", err.message);
+          });
+        }
+      });
+    }
+
+    const metadataDocs = prepared.map(({ fileData, ...rest }) => ({
+      ...rest,
+      fileData: null,
+      hasFile: Boolean(fileData),
+    }));
+
+    persistState((s) => {
+      const targetBId = s.currentBuildingId;
+      const updatedDocs = [...metadataDocs, ...(s.documents || [])];
+      const updatedBuildings = (s.buildings || []).map((b) =>
+        b.id === targetBId ? { ...b, documents: updatedDocs } : b
+      );
+      return {
+        ...s,
+        buildings: updatedBuildings,
+        documents: updatedDocs,
+      };
+    });
+
+    showToast(
+      prepared.length === 1
+        ? (isEn ? "Document uploaded!" : "Dokumentum feltöltve!")
+        : (isEn ? `${prepared.length} documents uploaded!` : `${prepared.length} dokumentum feltöltve!`)
+    );
+    return prepared.length;
+  };
+
   // Document management: Update Document (Edit title, filename, folder, or replace file)
   const updateDocument = async (docId, updatedDocData) => {
     if (!requireAdmin()) return;
@@ -471,10 +562,14 @@ export function createBuildingActions({ state, setState, persistState, showToast
     if (IS_FIRESTORE_MODE) {
       const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
       const existing = (state.documents || []).find(d => d.id === docId);
+      const isSharedStoragePath = Boolean(
+        existing?.storagePath &&
+        (state.documents || []).some(d => d.id !== docId && d.storagePath === existing.storagePath)
+      );
       if (buildingId && docId) {
         Promise.all([
           deleteBuildingDocument(buildingId, docId),
-          existing?.storagePath ? deleteFromStorage(existing.storagePath) : Promise.resolve(),
+          existing?.storagePath && !isSharedStoragePath ? deleteFromStorage(existing.storagePath) : Promise.resolve(),
         ])
           .then(() => typeof reloadCurrentBuilding === 'function' && reloadCurrentBuilding(buildingId))
           .catch(err => console.warn('Firestore deleteDocument error:', err.message));
@@ -600,40 +695,46 @@ export function createBuildingActions({ state, setState, persistState, showToast
     showToast(state.currentLang === 'en' ? "Folder updated!" : "Mappa módosítva!");
   };
 
-  // Folder management: Delete Folder (Moves contained documents safely to root!)
+  // Folder management: Delete Folder (Promotes contained subfolders & documents safely to parent/root!)
   const deleteDocFolder = (folderId) => {
     if (!requireAdmin()) return;
+    const isEn = state.currentLang === 'en';
     if (IS_FIRESTORE_MODE) {
       const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
-      const updatedFolders = (state.docFolders || []).filter(f => f.id !== folderId);
-      const affectedDocs = (state.documents || []).filter(d => d.folderId === folderId);
+      const { remainingFolders, remainingDocs } = planExplorerDelete({
+        folders: state.docFolders || [],
+        docs: state.documents || [],
+        folderIds: [folderId],
+        docIds: [],
+      });
+      const prevById = new Map((state.documents || []).map(d => [d.id, d]));
+      const changedDocs = remainingDocs.filter(d => (prevById.get(d.id)?.folderId || null) !== (d.folderId || null));
       if (buildingId) {
         Promise.all([
-          updateBuildingMetadata(buildingId, { docFolders: updatedFolders }),
-          ...affectedDocs.map(d => saveBuildingDocument(buildingId, d.id, { ...d, folderId: null })),
+          updateBuildingMetadata(buildingId, { docFolders: remainingFolders }),
+          ...changedDocs.map(d => saveBuildingDocument(buildingId, d.id, d)),
         ])
           .then(() => typeof reloadCurrentBuilding === 'function' && reloadCurrentBuilding(buildingId))
           .catch(err => console.warn('Firestore deleteDocFolder error:', err.message));
       }
-      showToast(state.currentLang === 'en' ? "Folder deleted! Contained files moved to root." : "Mappa törölve! A dokumentumok a főkönyvtárba kerültek.");
+      showToast(isEn ? "Folder deleted! Contained items moved safely up." : "Mappa törölve! A benne lévő elemek biztonságban feljebb kerültek.");
       return;
     }
 
     persistState(s => {
       const targetBId = s.currentBuildingId;
-      const updatedFolders = (s.docFolders || []).filter(f => f.id !== folderId);
-      const updatedDocs = (s.documents || []).map(d => {
-        if (d.folderId === folderId) {
-          return { ...d, folderId: null };
-        }
-        return d;
+      const { remainingFolders, remainingDocs } = planExplorerDelete({
+        folders: s.docFolders || [],
+        docs: s.documents || [],
+        folderIds: [folderId],
+        docIds: [],
       });
       const updatedBuildings = (s.buildings || []).map(b => {
         if (b.id === targetBId) {
           return {
             ...b,
-            docFolders: updatedFolders,
-            documents: updatedDocs
+            docFolders: remainingFolders,
+            documents: remainingDocs
           };
         }
         return b;
@@ -641,11 +742,294 @@ export function createBuildingActions({ state, setState, persistState, showToast
       return {
         ...s,
         buildings: updatedBuildings,
-        docFolders: updatedFolders,
-        documents: updatedDocs
+        docFolders: remainingFolders,
+        documents: remainingDocs
       };
     });
-    showToast(state.currentLang === 'en' ? "Folder deleted! Contained files moved to root." : "Mappa törölve! A dokumentumok a főkönyvtárba kerültek.");
+    showToast(isEn ? "Folder deleted! Contained items moved safely up." : "Mappa törölve! A benne lévő elemek biztonságban feljebb kerültek.");
+  };
+
+  // Explorer batch action: Move multiple documents & folders with strict cycle protection
+  const moveExplorerItems = async ({ docIds = [], folderIds = [] } = {}, targetFolderId = null) => {
+    if (!requireAdmin()) return { movedCount: 0, skippedCyclicCount: 0 };
+    const isEn = state.currentLang === 'en';
+    const plan = planExplorerMove({
+      folders: state.docFolders || [],
+      docs: state.documents || [],
+      folderIds,
+      docIds,
+      targetFolderId,
+    });
+
+    if (plan.movedCount === 0) {
+      if (plan.skippedCyclicCount > 0) {
+        showToast(
+          isEn
+            ? "A folder cannot be moved into itself or one of its subfolders."
+            : "Egy mappa nem helyezhető át önmagába vagy saját almappájába.",
+          "error"
+        );
+      }
+      return { movedCount: 0, skippedCyclicCount: plan.skippedCyclicCount };
+    }
+
+    if (IS_FIRESTORE_MODE) {
+      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+      if (buildingId) {
+        try {
+          const ops = [];
+          if (plan.movedFolderIds.length > 0) {
+            ops.push(updateBuildingMetadata(buildingId, { docFolders: plan.updatedFolders }));
+          }
+          for (const movedDocId of plan.movedDocIds) {
+            const docObj = plan.updatedDocs.find(d => d.id === movedDocId);
+            if (docObj) ops.push(saveBuildingDocument(buildingId, movedDocId, docObj));
+          }
+          await Promise.all(ops);
+          if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+        } catch (err) {
+          console.warn('Firestore moveExplorerItems error:', err.message);
+          showToast(isEn ? "Failed to move items." : "Nem sikerült áthelyezni az elemeket.", "error");
+          return { movedCount: 0, skippedCyclicCount: plan.skippedCyclicCount };
+        }
+      }
+    } else {
+      persistState(s => {
+        const targetBId = s.currentBuildingId;
+        const freshPlan = planExplorerMove({
+          folders: s.docFolders || [],
+          docs: s.documents || [],
+          folderIds,
+          docIds,
+          targetFolderId,
+        });
+        const updatedBuildings = (s.buildings || []).map(b =>
+          b.id === targetBId
+            ? { ...b, docFolders: freshPlan.updatedFolders, documents: freshPlan.updatedDocs }
+            : b
+        );
+        return {
+          ...s,
+          buildings: updatedBuildings,
+          docFolders: freshPlan.updatedFolders,
+          documents: freshPlan.updatedDocs,
+        };
+      });
+    }
+
+    if (plan.skippedCyclicCount > 0) {
+      showToast(
+        isEn
+          ? `${plan.movedCount} item(s) moved (nested self-target folder skipped).`
+          : `${plan.movedCount} elem áthelyezve (saját almappába történő áthelyezés kihagyva).`
+      );
+    } else {
+      showToast(
+        plan.movedCount === 1
+          ? (isEn ? "Item moved!" : "Elem áthelyezve!")
+          : (isEn ? `${plan.movedCount} items moved!` : `${plan.movedCount} elem áthelyezve!`)
+      );
+    }
+    return { movedCount: plan.movedCount, skippedCyclicCount: plan.skippedCyclicCount };
+  };
+
+  // Explorer batch action: Deep copy documents & folders (Ctrl+C / Ctrl+V)
+  const duplicateExplorerItems = async ({ docIds = [], folderIds = [] } = {}, targetFolderId = null) => {
+    if (!requireAdmin()) return 0;
+    const isEn = state.currentLang === 'en';
+    const { newFolders, newDocs } = planFolderTreeCopy({
+      folders: state.docFolders || [],
+      docs: state.documents || [],
+      sourceFolderIds: folderIds,
+      sourceDocIds: docIds,
+      targetFolderId,
+      isEn,
+    });
+
+    const totalCreated = newFolders.length + newDocs.length;
+    if (totalCreated === 0) return 0;
+
+    if (IS_FIRESTORE_MODE) {
+      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+      if (!buildingId) return 0;
+      try {
+        const ops = [];
+        if (newFolders.length > 0) {
+          ops.push(updateBuildingMetadata(buildingId, { docFolders: [...(state.docFolders || []), ...newFolders] }));
+        }
+        await Promise.all([
+          ...ops,
+          ...newDocs.map(async (clone) => {
+            const { _sourceDocId, fileData: _omit, ...docMeta } = clone;
+            let finalStoragePath = docMeta.storagePath || null;
+            if (docMeta.storagePath) {
+              try {
+                const signedUrl = await getSecureStorageDownloadUrl(docMeta.storagePath);
+                const resp = await fetch(signedUrl);
+                if (resp.ok) {
+                  const blob = await resp.blob();
+                  const dataUrl = await readFileAsDataUrl(blob);
+                  const safeName = sanitizeFileName(docMeta.fileName || `${docMeta.id}.${docMeta.fileType || 'pdf'}`);
+                  finalStoragePath = `buildings/${buildingId}/documents/${docMeta.id}/${safeName}`;
+                  await uploadBase64ToStorage(finalStoragePath, dataUrl, blob.type || undefined);
+                }
+              } catch (copyErr) {
+                console.warn('Firestore storage clone fallback (shared path):', copyErr.message);
+              }
+            }
+            await saveBuildingDocument(buildingId, docMeta.id, {
+              ...docMeta,
+              storagePath: finalStoragePath,
+              hasFile: Boolean(finalStoragePath || docMeta.hasFile),
+            });
+          }),
+        ]);
+        if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+      } catch (err) {
+        console.warn('Firestore duplicateExplorerItems error:', err.message);
+        showToast(isEn ? "Failed to paste copied items." : "Nem sikerült beilleszteni a másolt elemeket.", "error");
+        return 0;
+      }
+    } else {
+      const { rtdb } = getFirebaseInstance();
+      // Copy binary payloads in RTDB condo_files/ for cloned docs that have stored files
+      if (rtdb) {
+        await Promise.all(
+          newDocs.map(async (clone) => {
+            if (!clone._sourceDocId || !clone.hasFile) return;
+            try {
+              const snap = await get(ref(rtdb, `condo_files/${clone._sourceDocId}`));
+              if (snap.exists()) {
+                await set(ref(rtdb, `condo_files/${clone.id}`), snap.val());
+              }
+            } catch (copyErr) {
+              console.warn('RTDB file clone error:', copyErr.message);
+            }
+          })
+        );
+      }
+
+      const cleanedNewDocs = newDocs.map(({ _sourceDocId, ...rest }) => rest);
+      persistState(s => {
+        const targetBId = s.currentBuildingId;
+        const updatedFolders = [...(s.docFolders || []), ...newFolders];
+        const updatedDocs = [...cleanedNewDocs, ...(s.documents || [])];
+        const updatedBuildings = (s.buildings || []).map(b =>
+          b.id === targetBId
+            ? { ...b, docFolders: updatedFolders, documents: updatedDocs }
+            : b
+        );
+        return {
+          ...s,
+          buildings: updatedBuildings,
+          docFolders: updatedFolders,
+          documents: updatedDocs,
+        };
+      });
+    }
+
+    showToast(
+      totalCreated === 1
+        ? (isEn ? "Item pasted!" : "Elem beillesztve!")
+        : (isEn ? `${totalCreated} items pasted!` : `${totalCreated} elem beillesztve!`)
+    );
+    return totalCreated;
+  };
+
+  // Explorer batch action: Delete multiple documents & folders safely
+  const deleteExplorerItems = async ({ docIds = [], folderIds = [] } = {}) => {
+    if (!requireAdmin()) return 0;
+    const isEn = state.currentLang === 'en';
+    const plan = planExplorerDelete({
+      folders: state.docFolders || [],
+      docs: state.documents || [],
+      folderIds,
+      docIds,
+    });
+
+    const totalDeleted = plan.deletedDocIds.length + plan.deletedFolderIds.length;
+    if (totalDeleted === 0) return 0;
+
+    if (IS_FIRESTORE_MODE) {
+      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
+      if (buildingId) {
+        try {
+          const remainingPaths = new Set(plan.remainingDocs.map(d => d.storagePath).filter(Boolean));
+          const prevDocById = new Map((state.documents || []).map(d => [d.id, d]));
+          const changedDocs = plan.remainingDocs.filter(
+            d => (prevDocById.get(d.id)?.folderId || null) !== (d.folderId || null)
+          );
+          const ops = [];
+          if (plan.deletedFolderIds.length > 0) {
+            ops.push(updateBuildingMetadata(buildingId, { docFolders: plan.remainingFolders }));
+          }
+          for (const d of changedDocs) {
+            ops.push(saveBuildingDocument(buildingId, d.id, d));
+          }
+          for (const delId of plan.deletedDocIds) {
+            ops.push(deleteBuildingDocument(buildingId, delId));
+            const oldDoc = prevDocById.get(delId);
+            if (oldDoc?.storagePath && !remainingPaths.has(oldDoc.storagePath)) {
+              ops.push(deleteFromStorage(oldDoc.storagePath));
+            }
+          }
+          await Promise.all(ops);
+          if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
+        } catch (err) {
+          console.warn('Firestore deleteExplorerItems error:', err.message);
+          showToast(isEn ? "Failed to delete selected items." : "Nem sikerült törölni a kijelölt elemeket.", "error");
+          return 0;
+        }
+      }
+    } else {
+      if (plan.deletedDocIds.length > 0) {
+        const vault = getPermanentVault();
+        vault.deletedIds = vault.deletedIds || [];
+        let changedVault = false;
+        for (const id of plan.deletedDocIds) {
+          if (!vault.deletedIds.includes(id)) {
+            vault.deletedIds.push(id);
+            changedVault = true;
+          }
+        }
+        if (changedVault) savePermanentVault(vault);
+
+        const { rtdb } = getFirebaseInstance();
+        if (rtdb) {
+          plan.deletedDocIds.forEach(id => {
+            set(ref(rtdb, `condo_files/${id}`), null).catch(() => {});
+          });
+        }
+      }
+
+      persistState(s => {
+        const targetBId = s.currentBuildingId;
+        const freshPlan = planExplorerDelete({
+          folders: s.docFolders || [],
+          docs: s.documents || [],
+          folderIds,
+          docIds,
+        });
+        const updatedBuildings = (s.buildings || []).map(b =>
+          b.id === targetBId
+            ? { ...b, docFolders: freshPlan.remainingFolders, documents: freshPlan.remainingDocs }
+            : b
+        );
+        return {
+          ...s,
+          buildings: updatedBuildings,
+          docFolders: freshPlan.remainingFolders,
+          documents: freshPlan.remainingDocs,
+        };
+      });
+    }
+
+    showToast(
+      totalDeleted === 1
+        ? (isEn ? "Item deleted!" : "Elem törölve!")
+        : (isEn ? `${totalDeleted} items deleted!` : `${totalDeleted} elem törölve!`)
+    );
+    return totalDeleted;
   };
 
   // Dedicated document file store helper (Cloud Storage signed URL in Firestore mode, condo_files in legacy RTDB)
@@ -1054,9 +1438,13 @@ export function createBuildingActions({ state, setState, persistState, showToast
     deleteFlat,
     saveFlatMaster,
     uploadDocument,
+    uploadDocumentsBatch,
     updateDocument,
     moveDocument,
+    moveExplorerItems,
+    duplicateExplorerItems,
     deleteDocument,
+    deleteExplorerItems,
     fetchDocumentFile,
     createDocFolder,
     updateDocFolder,

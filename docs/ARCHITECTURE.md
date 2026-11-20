@@ -136,7 +136,7 @@ A moduláris architektúra 6 specializált logikai egységre tagolódik:
 5. **`buildingActions.js`** (Épület-, Lakás- és Dokumentum-kezelés):
    - Új épület felvitele adószámmal és kezdőtartalékkal (`addBuilding`), épületváltás (`switchBuilding`), adatmódosítás (`updateBuildingData`, `updateBuildingRepInfo`, `saveInfoSections`).
    - Lakások életciklusa (`addFlat`, `deleteFlat`, `saveFlatMaster`, `resetFlatPassword`).
-   - Dokumentumtár kezelése (`uploadDocument`, `deleteDocument`, `fetchDocumentFile`).
+   - Dokumentumtár és egymásba ágyazható mapparendszer kezelése (`uploadDocument`, `uploadDocumentsBatch`, `updateDocument`, `moveDocument`, `moveExplorerItems`, `duplicateExplorerItems`, `deleteDocument`, `deleteExplorerItems`, `createDocFolder`, `updateDocFolder`, `deleteDocFolder`, `fetchDocumentFile` — tiszta hierarchikus segédfüggvényekkel a `src/utils/docExplorer.js` modulban).
 6. **`AppContext.jsx`** (Központi Orchestrator & Állapot-kezelő):
    - Atomi állapotgép (`state`, `setState`, `persistState`) és `revision` számláló.
    - Valós idejű Firebase RTDB WebSocket figyelő (`onValue`).
