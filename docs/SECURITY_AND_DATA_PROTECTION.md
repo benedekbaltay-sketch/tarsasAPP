@@ -73,7 +73,7 @@ All Phase 1 Firestore rules, Storage rules, atomic Cloud Functions, migration/pa
 All code-level security controls from the full 21-finding cybersecurity audit (`H-1`, `H-4`, `H-5`, `H-6`, `M-3`, `M-5`, `M-6`, `L-3`) have been implemented and verified with automated tests (`npm run test:security`, `npm run test:atomic`, `npm run test:rules`, `npm audit` = **0 vulnerabilities**):
 
 1. **Centralized File Upload & Download Security (`src/utils/fileSecurity.js` — H-4)**:
-   - Magic-byte signature validation (`%PDF-`, PNG, JPEG, WEBP, ZIP/OOXML, OLE2) + strict extension & MIME allowlist + 2 MB size cap across **all** upload surfaces (`DocumentsModal.jsx`, `UniversalTransactionModal.jsx`, `EditTransactionModal.jsx`, `RepresentativeSections.jsx`).
+   - Magic-byte signature validation (`%PDF-`, PNG, JPEG, WEBP, ZIP/OOXML, OLE2) + strict extension & MIME allowlist (blocking videos & executable/script formats) + tiered size caps (**10 MB** `MAX_DOCUMENT_BYTES` for repository documents like long SZMSZ PDFs in `DocumentsModal.jsx` matching `storage.rules`, **2 MB** `MAX_ATTACHMENT_BYTES` for transaction/info attachments in `UniversalTransactionModal.jsx`, `EditTransactionModal.jsx`, `RepresentativeSections.jsx`).
    - Strictly blocks `.svg`, `.html`, `.htm`, `.js`, `.xml`, and polyglot/renamed HTML/SVG files from upload, inline `<img>` preview, and download.
    - Protocol-allowlisted `isSafeDownloadUrl()` and `triggerSafeDownload()` across all attachment downloads (`MonthlyDetailModal`, `EditTransactionModal`, `DocumentsModal`, `RepresentativeSections`).
    - `stripLargeBinaries(..., { stripInlineAttachments: true })` strips inline Base64 attachments before persisting to `localStorage` without affecting cloud backups.

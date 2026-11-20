@@ -29,6 +29,7 @@ import {
   Home,
   AlertTriangle,
   Eye,
+  ExternalLink,
 } from 'lucide-react';
 import { ProfileSwitcherButton } from '../ProfileSwitcherButton';
 import { NavLogoButton } from '../NavLogoButton';
@@ -40,6 +41,8 @@ import {
   readFileAsDataUrl,
   triggerSafeDownload,
   getFileValidationErrorMessage,
+  formatFileSize,
+  MAX_DOCUMENT_BYTES,
   ALLOWED_ACCEPT_ATTR,
 } from '../../utils/fileSecurity';
 import {
@@ -285,7 +288,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
   const {
     state,
     t,
-    uploadDocument,
     uploadDocumentsBatch,
     updateDocument,
     moveExplorerItems,
@@ -346,15 +348,9 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     type: null, // 'folder' | 'doc' | 'background'
   });
 
-  // Upload Form state
+  // Direct OS file picker input ref & Oversized File Modal state (iLovePDF helper)
   const fileInputRef = useRef(null);
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [docTitle, setDocTitle] = useState('');
-  const [fileData, setFileData] = useState(null);
-  const [fileName, setFileName] = useState('');
-  const [fileSize, setFileSize] = useState('');
-  const [fileType, setFileType] = useState('pdf');
-  const [uploadFolderId, setUploadFolderId] = useState(null);
+  const [oversizedFiles, setOversizedFiles] = useState([]); // [{ name, sizeFormatted }]
 
   // Folder modal state (Create / Color settings)
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
@@ -533,11 +529,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
       onClose();
     }
   }, [currentUser, isOpen, onClose]);
-
-  // Keep upload target folder synced with current folder
-  useEffect(() => {
-    setUploadFolderId(currentFolderId);
-  }, [currentFolderId]);
 
   // Clear selection and pending rename when switching folders
   const navigateToFolder = useCallback(
@@ -736,7 +727,8 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     }
   }, [selectedParsed.docIds, allDocs, handleDownload]);
 
-  // External Drag & Drop Batch File Upload (strictly validated with magic-byte guard!)
+  // Direct File Upload & External Drag & Drop Batch Handler
+  // Enforces 10 MB per-document limit (long SZMSZ allowed, videos & huge files blocked) + magic bytes
   const handleExternalFilesDrop = useCallback(
     async (fileList, targetFolderId) => {
       if (!isAdmin) return;
@@ -747,25 +739,33 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
       try {
         const today = new Date().toISOString().slice(0, 10);
         const readyDocs = [];
-        let firstErrorMsg = null;
-        let rejectedCount = 0;
+        const tooLargeList = [];
+        let firstOtherErrorMsg = null;
+        let otherRejectedCount = 0;
 
         for (const file of files) {
-          const check = await validateUploadFile(file);
+          const check = await validateUploadFile(file, { maxBytes: MAX_DOCUMENT_BYTES });
           if (!check.ok) {
-            rejectedCount += 1;
-            if (!firstErrorMsg) {
-              firstErrorMsg = getFileValidationErrorMessage(check.reason, t, isEn);
+            if (check.reason === 'too_large') {
+              tooLargeList.push({
+                name: file.name || (isEn ? 'Unknown file' : 'Ismeretlen fájl'),
+                sizeFormatted: formatFileSize(file.size),
+              });
+            } else {
+              otherRejectedCount += 1;
+              if (!firstOtherErrorMsg) {
+                firstOtherErrorMsg = getFileValidationErrorMessage(check.reason, t, isEn, 10);
+              }
             }
             continue;
           }
 
           try {
             const dataUrl = await readFileAsDataUrl(file);
-            const titleGuess =
-              check.sanitizedName.replace(/\.[^/.]+$/, '').replace(/[_]+/g, ' ').trim() || check.sanitizedName;
+            // Preserve the exact OS filename cleanly without mangling underscores or hyphens
+            const exactBaseName = check.sanitizedName.replace(/\.[^/.]+$/, '') || check.sanitizedName;
             readyDocs.push({
-              title: titleGuess,
+              title: exactBaseName,
               fileName: check.sanitizedName,
               fileSize: check.sizeFormatted,
               fileType: check.ext || 'pdf',
@@ -775,7 +775,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
               folderId: targetFolderId || null,
             });
           } catch {
-            rejectedCount += 1;
+            otherRejectedCount += 1;
           }
         }
 
@@ -783,13 +783,17 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
           await uploadDocumentsBatch(readyDocs);
         }
 
-        if (rejectedCount > 0) {
+        if (tooLargeList.length > 0) {
+          setOversizedFiles(tooLargeList);
+        }
+
+        if (otherRejectedCount > 0) {
           showToast(
             readyDocs.length > 0
               ? isEn
-                ? `${rejectedCount} file(s) skipped due to size or security format rules.`
-                : `${rejectedCount} fájl kihagyva méret- vagy biztonsági formátumkorlát miatt.`
-              : firstErrorMsg ||
+                ? `${otherRejectedCount} file(s) skipped due to unsupported file format (videos and unsafe files are blocked).`
+                : `${otherRejectedCount} fájl kihagyva nem támogatott formátum miatt (videók és nem engedélyezett fájlok tiltva).`
+              : firstOtherErrorMsg ||
                   (isEn ? 'Unsupported or invalid file.' : 'Nem támogatott vagy érvénytelen fájl.'),
             'error'
           );
@@ -808,6 +812,15 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     const handleKeyDown = (e) => {
       // Skip all explorer shortcuts while DocumentPreviewModal is open
       if (previewDoc) return;
+
+      // Handle Oversized File (iLovePDF) modal shortcuts
+      if (oversizedFiles.length > 0) {
+        if (e.key === 'Escape' || e.key === 'Enter') {
+          e.preventDefault();
+          setOversizedFiles([]);
+        }
+        return;
+      }
 
       // Handle Single Doc Delete Modal shortcuts
       if (docToDelete) {
@@ -950,6 +963,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     isOpen,
     isAdmin,
     previewDoc,
+    oversizedFiles,
     renamingKey,
     docToDelete,
     bulkDeletePayload,
@@ -1252,76 +1266,20 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     }
   };
 
-  // Upload Form Handlers
-  const handleRemoveFile = () => {
-    setFileData(null);
-    setFileName('');
-    setFileSize('');
-    setFileType('pdf');
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleCancelUpload = () => {
-    setDocTitle('');
-    handleRemoveFile();
-    setIsUploadOpen(false);
-  };
-
-  const handleFileObjectSelected = async (file) => {
-    if (!file) return;
-    const check = await validateUploadFile(file);
-    if (!check.ok) {
-      showToast(getFileValidationErrorMessage(check.reason, t, isEn), 'error');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-
-    setFileName(check.sanitizedName);
-    setFileSize(check.sizeFormatted);
-    setFileType(check.ext || 'pdf');
-
-    if (!docTitle.trim()) {
-      const nameWithoutExt = check.sanitizedName.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
-      setDocTitle(nameWithoutExt);
-    }
-
-    try {
-      const dataUrl = await readFileAsDataUrl(file);
-      setFileData(dataUrl);
-    } catch {
-      showToast(isEn ? 'Error reading file.' : 'Hiba történt a fájl beolvasásakor.', 'error');
+  // Direct OS File Picker Handler (opened via Új -> Dokumentum or Right-click -> Feltöltés)
+  const triggerDirectFilePicker = () => {
+    if (!isAdmin) return;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
     }
   };
 
-  const handleFileChange = async (e) => {
+  const handleDirectFileInputChange = async (e) => {
     const files = Array.from(e.target.files || []);
+    e.target.value = '';
     if (files.length === 0) return;
-    if (files.length === 1) {
-      await handleFileObjectSelected(files[0]);
-    } else {
-      await handleExternalFilesDrop(files, uploadFolderId);
-      handleCancelUpload();
-    }
-  };
-
-  const handleUploadSubmit = (e) => {
-    e.preventDefault();
-    if (!docTitle.trim()) return;
-
-    uploadDocument({
-      id: `doc-${Date.now()}`,
-      title: docTitle.trim(),
-      fileName: fileName || `${docTitle.trim().replace(/\s+/g, '_')}.pdf`,
-      fileSize: fileSize || '1.0 MB',
-      fileType: fileType || 'pdf',
-      uploadDate: new Date().toISOString().slice(0, 10),
-      fileData: fileData || null,
-      folderId: uploadFolderId || null,
-    });
-
-    setDocTitle('');
-    handleRemoveFile();
-    setIsUploadOpen(false);
+    await handleExternalFilesDrop(files, currentFolderId);
   };
 
   // Folder Create / Color Settings Modal Handlers
@@ -1460,9 +1418,22 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
         </div>
       </div>
 
-      {/* Main Content Area */}
+      {/* Hidden Direct OS File Picker Input (opened via Új -> Dokumentum or Right-click) */}
+      {isAdmin && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={ALLOWED_ACCEPT_ATTR}
+          onChange={handleDirectFileInputChange}
+          className="hidden"
+        />
+      )}
+
+      {/* Main Content Area (scrollbar-gutter: stable eliminates width jump when folder is empty!) */}
       <div
         className="flex-1 min-h-0 overflow-y-auto w-full overscroll-contain relative"
+        style={{ scrollbarGutter: 'stable' }}
         onClick={() => {
           setIsNewMenuOpen(false);
           if (renamingKey) {
@@ -1487,7 +1458,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                 {t.explorer_drop_upload_target || (isEn ? 'Target folder' : 'Célmappa')}: {activeDropFolderName}
               </p>
               <p className="text-[11px] text-gray-400">
-                {t.max_file_size_hint || 'PDF, Word, Excel, JPG, PNG, WEBP (max 2 MB)'}
+                {t.max_file_size_hint || (isEn ? 'PDF, Word, Excel or image format (max 10 MB)' : 'PDF, Word, Excel vagy képformátum (max. 10 MB)')}
               </p>
             </div>
           </div>
@@ -1662,7 +1633,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                             role="menuitem"
                             onClick={() => {
                               setIsNewMenuOpen(false);
-                              setIsUploadOpen(true);
+                              triggerDirectFilePicker();
                             }}
                             className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-blue-50 text-gray-800 font-semibold cursor-pointer"
                           >
@@ -1808,174 +1779,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
           </div>
 
           {/* ============================================================== */}
-          {/* ADMIN UPLOAD PANEL (Opened via Új -> Dokumentum)               */}
-          {/* ============================================================== */}
-          {isAdmin && isUploadOpen && (
-            <div
-              className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs animate-fadeIn"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                <div className="flex items-center gap-2.5">
-                  <UploadCloud className="w-5 h-5 text-[#1E3A8A]" />
-                  <h4 className="text-sm font-bold text-gray-900">
-                    {t.upload_document}
-                    {currentFolder ? ` → ${getFolderPathLabel(currentFolder.id)}` : ''}
-                  </h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCancelUpload}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <form onSubmit={handleUploadSubmit} className="mt-4 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      {t.doc_title_label} *
-                    </label>
-                    <input
-                      type="text"
-                      value={docTitle}
-                      onChange={(e) => setDocTitle(e.target.value)}
-                      placeholder={isEn ? 'e.g. 2026 Annual Budget Report' : 'pl. 2026. Évi költségvetési beszámoló'}
-                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      {t.doc_folder_label || (isEn ? 'Target Folder' : 'Mappa kiválasztása')}
-                    </label>
-                    <select
-                      value={uploadFolderId || ''}
-                      onChange={(e) => setUploadFolderId(e.target.value || null)}
-                      className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A] cursor-pointer"
-                    >
-                      <option value="">{t.no_folder_root || (isEn ? 'Root Folder (No folder)' : 'Főkönyvtár (Nincs mappa)')}</option>
-                      {folderOptions.map(({ folder, depth }) => (
-                        <option key={folder.id} value={folder.id}>
-                          {'\u00A0\u00A0'.repeat(depth)}
-                          {depth > 0 ? '↳ ' : ''}
-                          {folder.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    {t.doc_file_label || (isEn ? 'Document file' : 'Dokumentum fájl')}
-                  </label>
-
-                  {fileName ? (
-                    <div className="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-200 rounded-xl">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-lg bg-blue-100 text-[#1E3A8A] flex items-center justify-center shrink-0">
-                          {renderFileIcon(fileType, 'w-5 h-5')}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-gray-900 truncate" title={fileName}>
-                            {fileName}
-                          </div>
-                          <div className="text-[11px] text-gray-500 font-medium">
-                            {fileSize} • {fileType?.toUpperCase()}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0 ml-2">
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="px-2.5 py-1 text-xs text-[#1E3A8A] hover:bg-blue-100 rounded-lg font-bold cursor-pointer transition-colors"
-                        >
-                          {t.choose_different_file || (isEn ? 'Choose different' : 'Másik fájl')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleRemoveFile}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
-                          title={t.delete || 'Törlés'}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onDrop={async (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        externalDragDepthRef.current = 0;
-                        setIsExternalFileDragging(false);
-                        const files = Array.from(e.dataTransfer?.files || []);
-                        if (files.length === 1) {
-                          await handleFileObjectSelected(files[0]);
-                        } else if (files.length > 1) {
-                          await handleExternalFilesDrop(files, uploadFolderId);
-                          handleCancelUpload();
-                        }
-                      }}
-                      className="border-2 border-dashed border-gray-300 hover:border-[#1E3A8A] bg-gray-50/70 hover:bg-blue-50/20 rounded-xl p-5 text-center cursor-pointer transition-all group"
-                    >
-                      <UploadCloud className="w-7 h-7 text-gray-400 group-hover:text-[#1E3A8A] mx-auto mb-1.5 transition-colors" />
-                      <div className="text-xs font-bold text-gray-700 group-hover:text-[#1E3A8A]">
-                        {t.drop_file_here || (isEn ? 'Click or drag & drop files here' : 'Kattints ide vagy húzd ide a fájlokat')}
-                      </div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">
-                        {t.max_file_size_hint || 'PDF, Word, Excel, JPG, PNG, WEBP (max 2 MB)'}
-                      </div>
-                    </div>
-                  )}
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept={ALLOWED_ACCEPT_ATTR}
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
-                  <button
-                    type="button"
-                    onClick={handleCancelUpload}
-                    className="px-4 py-2 border border-gray-200 hover:bg-gray-100 text-gray-600 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
-                  >
-                    {t.cancel || 'Mégse'}
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={!docTitle.trim()}
-                    className={`px-4 py-2 font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 ${
-                      !docTitle.trim()
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        : 'bg-[#1E3A8A] hover:bg-[#1e40af] text-white cursor-pointer'
-                    }`}
-                  >
-                    <UploadCloud className="w-4 h-4" />
-                    <span>{t.doc_upload_btn || (isEn ? 'Upload' : 'Feltöltés')}</span>
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* ============================================================== */}
-          {/* UNIFIED EXPLORER VIEWPORT (LIST VIEW OR LARGE ICONS VIEW)      */}
+          {/* UNIFIED EXPLORER VIEWPORT (CONSISTENT WIDTH & MINIMAL EMPTY)   */}
           {/* ============================================================== */}
           {isUploadingDrop && (
             <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-2.5 flex items-center gap-2.5 text-xs font-bold text-[#1E3A8A] animate-pulse">
@@ -1984,62 +1788,14 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
             </div>
           )}
 
-          {totalVisibleItems === 0 ? (
-            <div
-              className="bg-white rounded-2xl border border-gray-200 p-10 sm:p-14 text-center space-y-3 shadow-xs"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center mx-auto">
-                <FolderOpen className="w-7 h-7" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-gray-800">
-                  {isSearching
-                    ? t.no_docs_found || (isEn ? 'No matching items found' : 'Nincs találat')
-                    : currentFolderId
-                    ? t.empty_folder || (isEn ? 'This folder is empty.' : 'Ez a mappa még üres.')
-                    : t.no_docs_found}
-                </h4>
-                <p className="text-xs text-gray-400 mt-1 max-w-md mx-auto">
-                  {isAdmin
-                    ? t.explorer_drag_upload_hint ||
-                      (isEn
-                        ? 'Drag & drop files straight from File Explorer, or create a subfolder.'
-                        : 'Húzz be fájlokat közvetlenül a Windows Fájlkezelőből, vagy hozz létre almappát.')
-                    : currentFolderId
-                    ? t.empty_folder_desc
-                    : t.no_docs_desc}
-                </p>
-              </div>
-              {isAdmin && !isSearching && (
-                <div className="flex items-center justify-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={openCreateFolderModal}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                  >
-                    <FolderPlus className="w-4 h-4" />
-                    <span>{t.explorer_new_folder_item || (isEn ? 'Folder' : 'Mappa')}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsUploadOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                  >
-                    <UploadCloud className="w-4 h-4" />
-                    <span>{t.explorer_new_doc_item || (isEn ? 'Document' : 'Dokumentum')}</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : viewMode === 'list' ? (
+          {viewMode === 'list' ? (
             /* ------------------------------------------------------------ */
             /* 1. WINDOWS EXPLORER LIST / DETAILS VIEW (UNIFIED TABLE)      */
             /* ------------------------------------------------------------ */
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
-              {/* Column Header Row */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden min-h-[360px] flex flex-col">
+              {/* Column Header Row (always visible so layout never jumps when empty!) */}
               <div
-                className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_105px_100px_84px] md:grid-cols-[minmax(0,1fr)_110px_145px_100px_88px] items-center gap-2 px-3 sm:px-4 py-2 bg-gray-50/90 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider"
+                className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_105px_100px_84px] md:grid-cols-[minmax(0,1fr)_110px_145px_100px_88px] items-center gap-2 px-3 sm:px-4 py-2 bg-gray-50/90 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider shrink-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 <button
@@ -2077,7 +1833,16 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                 <span className="text-right pr-1">&nbsp;</span>
               </div>
 
-              {/* Unified Rows: Folders first, then Documents */}
+              {totalVisibleItems === 0 ? (
+                <div className="flex-1 flex items-center justify-center py-16 px-4 text-center">
+                  <p className="text-xs sm:text-sm text-gray-400 font-medium">
+                    {isSearching
+                      ? t.explorer_no_search_results || (isEn ? 'No matching items found.' : 'Nincs találat.')
+                      : t.empty_folder || (isEn ? 'This folder is empty.' : 'A mappa üres.')}
+                  </p>
+                </div>
+              ) : (
+              /* Unified Rows: Folders first, then Documents */
               <div className="divide-y divide-gray-100">
                 {displayedFolders.map((folder) => {
                   const key = makeSelectionKey('folder', folder.id);
@@ -2322,12 +2087,22 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                   );
                 })}
               </div>
+              )}
             </div>
           ) : (
             /* ------------------------------------------------------------ */
             /* 2. WINDOWS EXPLORER LARGE ICONS VIEW (UNIFIED GRID)          */
             /* ------------------------------------------------------------ */
-            <div className="bg-white rounded-2xl border border-gray-200 p-3 sm:p-4 shadow-xs">
+            <div className="bg-white rounded-2xl border border-gray-200 p-3 sm:p-4 shadow-xs min-h-[360px] flex flex-col">
+              {totalVisibleItems === 0 ? (
+                <div className="flex-1 flex items-center justify-center py-16 px-4 text-center">
+                  <p className="text-xs sm:text-sm text-gray-400 font-medium">
+                    {isSearching
+                      ? t.explorer_no_search_results || (isEn ? 'No matching items found.' : 'Nincs találat.')
+                      : t.empty_folder || (isEn ? 'This folder is empty.' : 'A mappa üres.')}
+                  </p>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5 sm:gap-3">
                 {/* Folder Tiles */}
                 {displayedFolders.map((folder) => {
@@ -2529,6 +2304,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                   );
                 })}
               </div>
+              )}
             </div>
           )}
 
@@ -2777,8 +2553,8 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                   <button
                     type="button"
                     onClick={() => {
-                      setIsUploadOpen(true);
                       setContextMenu((prev) => ({ ...prev, isOpen: false }));
+                      triggerDirectFilePicker();
                     }}
                     className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-blue-50 text-gray-800 font-semibold cursor-pointer"
                   >
@@ -2825,6 +2601,102 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* OVERSIZED FILE MODAL WITH ILOVEPDF COMPRESSION LINK            */}
+      {/* ============================================================== */}
+      {oversizedFiles.length > 0 && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setOversizedFiles([])}
+        >
+          <div
+            className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-md p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 font-display">
+                    {t.explorer_file_too_large_title || (isEn ? 'File is too large' : 'A fájl mérete túl nagy')}
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {t.explorer_file_too_large_limit ||
+                      (isEn
+                        ? 'Maximum file size is 10 MB per document (videos and oversized files cannot be uploaded).'
+                        : 'Egy dokumentum maximális mérete 10 MB lehet (videók és túl nagy fájlok nem tölthetők fel).')}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOversizedFiles([])}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Rejected oversized filenames list */}
+            <div className="bg-red-50/70 border border-red-200/80 rounded-xl p-3 space-y-1.5 max-h-28 overflow-y-auto">
+              {oversizedFiles.map((f, idx) => (
+                <div key={`${f.name}-${idx}`} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-semibold text-gray-800 truncate" title={f.name}>
+                    {f.name}
+                  </span>
+                  <span className="font-bold text-red-600 shrink-0 tabular-nums">
+                    {f.sizeFormatted}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* iLovePDF Compression Explanation & Direct Link */}
+            <div className="bg-blue-50/70 border border-blue-200/80 rounded-2xl p-4 space-y-3">
+              <p className="text-xs text-gray-700 leading-relaxed">
+                {t.explorer_compress_pdf_help ||
+                  (isEn
+                    ? 'If a longer PDF document (e.g. bylaws, founding deed, or scanned minutes) exceeds 10 MB, you can quickly reduce its file size for free using the link below:'
+                    : 'Ha egy hosszabb PDF dokumentum (pl. SZMSZ, alapító okirat vagy szkennelt jegyzőkönyv) meghaladja a 10 MB-ot, az alábbi oldalon gyorsan és ingyenesen csökkentheted a PDF méretét:')}
+              </p>
+
+              <a
+                href="https://www.ilovepdf.com/compress_pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 px-3.5 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors"
+              >
+                <span>{t.explorer_compress_pdf_btn || (isEn ? 'Compress PDF (iLovePDF)' : 'PDF méretének csökkentése (iLovePDF)')}</span>
+                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+              </a>
+
+              <div className="text-center">
+                <a
+                  href="https://www.ilovepdf.com/compress_pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-mono text-[#1E3A8A] hover:underline break-all"
+                >
+                  https://www.ilovepdf.com/compress_pdf
+                </a>
+              </div>
+            </div>
+
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setOversizedFiles([])}
+                className="w-full py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                {t.explorer_understood_btn || (isEn ? 'Got it' : 'Rendben')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

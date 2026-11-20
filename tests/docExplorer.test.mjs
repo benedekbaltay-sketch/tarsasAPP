@@ -20,6 +20,7 @@ import {
   isSafePreviewImageSource,
   parseXlsxPreviewSheets,
 } from '../src/utils/docPreview.js';
+import { validateUploadFile, MAX_DOCUMENT_BYTES } from '../src/utils/fileSecurity.js';
 import writeXlsxFile from 'write-excel-file/universal';
 
 const SAMPLE_FOLDERS = [
@@ -218,4 +219,40 @@ test('In-app document preview enforces magic bytes, blocks SVG/HTML, and parses 
   assert.equal(sheets[0].name, 'Elszámolás');
   assert.deepEqual(sheets[0].rows[0], ['Lakás', 'Egyenleg']);
   assert.deepEqual(sheets[0].rows[1], ['1. lakás', '15000']);
+});
+
+test('Repository 10 MB document limit permits long SZMSZ PDFs, rejects >10 MB PDFs for iLovePDF modal, and blocks videos', async () => {
+  const pdfHead = new TextEncoder().encode('%PDF-1.7\n');
+
+  // 8 MB SZMSZ PDF -> allowed under MAX_DOCUMENT_BYTES (10 MB)
+  const szmszPdf = {
+    name: '2026_SZMSZ_vegleges.pdf',
+    type: 'application/pdf',
+    size: 8 * 1024 * 1024,
+    slice: () => ({ async arrayBuffer() { return pdfHead.buffer; } }),
+  };
+  const okRes = await validateUploadFile(szmszPdf, { maxBytes: MAX_DOCUMENT_BYTES });
+  assert.equal(okRes.ok, true);
+  assert.equal(okRes.sanitizedName, '2026_SZMSZ_vegleges.pdf');
+
+  // 14 MB PDF -> blocked with reason 'too_large' (opens iLovePDF compression modal)
+  const hugePdf = {
+    name: 'Szkennelt_Alapito_Okirat.pdf',
+    type: 'application/pdf',
+    size: 14 * 1024 * 1024,
+    slice: () => ({ async arrayBuffer() { return pdfHead.buffer; } }),
+  };
+  const tooLargeRes = await validateUploadFile(hugePdf, { maxBytes: MAX_DOCUMENT_BYTES });
+  assert.equal(tooLargeRes.ok, false);
+  assert.equal(tooLargeRes.reason, 'too_large');
+
+  // 50 MB MP4 video -> blocked cleanly as 'unsupported_type' (NOT mistaken for compressible PDF!)
+  const videoFile = {
+    name: 'kozgyules_video.mp4',
+    type: 'video/mp4',
+    size: 50 * 1024 * 1024,
+  };
+  const videoRes = await validateUploadFile(videoFile, { maxBytes: MAX_DOCUMENT_BYTES });
+  assert.equal(videoRes.ok, false);
+  assert.equal(videoRes.reason, 'unsupported_type');
 });

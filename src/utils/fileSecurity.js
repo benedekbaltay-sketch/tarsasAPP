@@ -9,7 +9,8 @@
  * 5. Safe download/preview URL allowlisting (blocks javascript:, data:text/html, data:image/svg+xml)
  */
 
-export const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024; // 2 MB
+export const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024; // 2 MB (transaction/invoice attachments)
+export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 MB (condominium repository documents, e.g. long SZMSZ PDFs)
 export const MAX_BANK_STATEMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export const ALLOWED_ATTACHMENT_EXTENSIONS = Object.freeze([
@@ -219,20 +220,20 @@ export async function validateUploadFile(file, options = {}) {
     return { ok: false, reason: 'unsupported_type' };
   }
 
-  if (file.size <= 0) {
-    return { ok: false, reason: 'invalid_content' };
-  }
-
-  if (file.size > maxBytes) {
-    return { ok: false, reason: 'too_large' };
-  }
-
   const sanitizedName = sanitizeFileName(file.name);
   const dotIdx = sanitizedName.lastIndexOf('.');
   const ext = dotIdx > 0 ? sanitizedName.slice(dotIdx + 1).toLowerCase() : '';
 
   if (!ext || !allowedExtensions.includes(ext)) {
     return { ok: false, reason: 'unsupported_type' };
+  }
+
+  if (file.size <= 0) {
+    return { ok: false, reason: 'invalid_content' };
+  }
+
+  if (file.size > maxBytes) {
+    return { ok: false, reason: 'too_large' };
   }
 
   const mime = String(file.type || '').toLowerCase().trim();
@@ -349,8 +350,13 @@ export function triggerSafeDownload(url, fileName) {
 /**
  * Returns a localized error toast message for validateUploadFile failure reasons.
  */
-export function getFileValidationErrorMessage(reason, t = {}, isEn = false) {
+export function getFileValidationErrorMessage(reason, t = {}, isEn = false, maxMb = 2) {
   if (reason === 'too_large') {
+    if (maxMb !== 2) {
+      return isEn
+        ? `The uploaded file is too large! Maximum allowed size is ${maxMb} MB.`
+        : `A feltöltött fájl mérete túl nagy! A megengedett maximális méret ${maxMb} MB.`;
+    }
     return (
       t.file_too_large ||
       (isEn
