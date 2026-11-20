@@ -12,6 +12,15 @@ import {
   planFolderTreeCopy,
   getDocumentTypeLabel,
 } from '../src/utils/docExplorer.js';
+import {
+  dataUrlToUint8Array,
+  createSafePdfBlobUrl,
+  extractParagraphsFromWordXml,
+  getExcelColumnLetter,
+  isSafePreviewImageSource,
+  parseXlsxPreviewSheets,
+} from '../src/utils/docPreview.js';
+import writeXlsxFile from 'write-excel-file/universal';
 
 const SAMPLE_FOLDERS = [
   { id: 'f-2026', name: '2026', parentId: null, color: 'amber', createdAt: '2026-01-01' },
@@ -160,4 +169,53 @@ test('Localized Windows-Explorer-style document type labels', () => {
   assert.equal(getDocumentTypeLabel('pdf', true), 'PDF Document');
   assert.equal(getDocumentTypeLabel('xlsx', false), 'Excel táblázat');
   assert.equal(getDocumentTypeLabel('png', true), 'PNG Image');
+});
+
+test('In-app document preview enforces magic bytes, blocks SVG/HTML, and parses XLSX & DOCX safely', async () => {
+  // Base64 decoding & PDF magic byte validation
+  const fakeHtmlAsPdf = dataUrlToUint8Array(
+    `data:application/pdf;base64,${Buffer.from('<html><script>alert(1)</script></html>').toString('base64')}`
+  );
+  assert.equal(createSafePdfBlobUrl(fakeHtmlAsPdf), null);
+
+  const realPdf = dataUrlToUint8Array(
+    `data:application/pdf;base64,${Buffer.from('%PDF-1.7\n1 0 obj\n<<>>\nendobj').toString('base64')}`
+  );
+  const blobUrl = createSafePdfBlobUrl(realPdf);
+  assert.equal(typeof blobUrl, 'string');
+  assert.ok(blobUrl.startsWith('blob:'));
+  URL.revokeObjectURL(blobUrl);
+
+  // Image preview blocks SVG XSS payloads while allowing safe PNG Data URLs
+  assert.equal(isSafePreviewImageSource('data:image/svg+xml;base64,PHN2Zz4=', 'evil.svg'), false);
+  assert.equal(isSafePreviewImageSource('data:image/png;base64,iVBORw0KGgo=', 'photo.png'), true);
+
+  // Excel column letters
+  assert.equal(getExcelColumnLetter(0), 'A');
+  assert.equal(getExcelColumnLetter(25), 'Z');
+  assert.equal(getExcelColumnLetter(26), 'AA');
+
+  // DOCX Word XML paragraph extraction
+  const paragraphs = extractParagraphsFromWordXml(
+    `<w:document><w:body>
+      <w:p><w:r><w:t>Közgyűlési </w:t></w:r><w:r><w:t>jegyzőkönyv &amp; határozat</w:t></w:r></w:p>
+      <w:p><w:r><w:t>1. napirendi pont</w:t></w:r></w:p>
+    </w:body></w:document>`
+  );
+  assert.deepEqual(paragraphs, ['Közgyűlési jegyzőkönyv & határozat', '1. napirendi pont']);
+
+  // Live XLSX buffer preview parsing via read-excel-file/universal
+  const xlsxBlob = await writeXlsxFile(
+    [
+      [{ value: 'Lakás', type: String }, { value: 'Egyenleg', type: String }],
+      [{ value: '1. lakás', type: String }, { value: 15000, type: Number }],
+    ],
+    { sheet: 'Elszámolás' }
+  ).toBlob();
+  const xlsxBuf = await xlsxBlob.arrayBuffer();
+  const sheets = await parseXlsxPreviewSheets(new Uint8Array(xlsxBuf));
+  assert.equal(sheets.length, 1);
+  assert.equal(sheets[0].name, 'Elszámolás');
+  assert.deepEqual(sheets[0].rows[0], ['Lakás', 'Egyenleg']);
+  assert.deepEqual(sheets[0].rows[1], ['1. lakás', '15000']);
 });

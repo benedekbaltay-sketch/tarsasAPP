@@ -18,11 +18,9 @@ import {
   RefreshCw,
   MoreVertical,
   ArrowUp,
-  Move,
   Check,
   Edit2,
   FileSpreadsheet,
-  FileCheck,
   List,
   LayoutGrid,
   Copy,
@@ -30,11 +28,13 @@ import {
   ClipboardPaste,
   Home,
   AlertTriangle,
+  Eye,
 } from 'lucide-react';
 import { ProfileSwitcherButton } from '../ProfileSwitcherButton';
 import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
 import { DeleteFolderConfirmModal } from './ConfirmModals';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 import {
   validateUploadFile,
   readFileAsDataUrl,
@@ -51,6 +51,120 @@ import {
   buildHierarchicalFolderList,
   getDocumentTypeLabel,
 } from '../../utils/docExplorer';
+
+// ============================================================================
+// WINDOWS 11 TWO-TONE EXPLORER TOOLBAR ICONS
+// ============================================================================
+function Win11NewIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="w-[18px] h-[18px] shrink-0" aria-hidden="true">
+      <circle cx="10" cy="10" r="8" stroke="#525252" strokeWidth="1.35" />
+      <path d="M10 6.2V13.8M6.2 10H13.8" stroke="#0067C0" strokeWidth="1.55" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function Win11CutIcon({ active }) {
+  const base = active ? '#404040' : '#BDBDBD';
+  const accent = active ? '#0067C0' : '#9DC6EC';
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="w-[18px] h-[18px]" aria-hidden="true">
+      <path d="M5.5 3.5L12.6 13.4M14.5 3.5L7.4 13.4" stroke={base} strokeWidth="1.35" strokeLinecap="round" />
+      <circle cx="6.3" cy="15.2" r="2.1" stroke={accent} strokeWidth="1.35" />
+      <circle cx="13.7" cy="15.2" r="2.1" stroke={accent} strokeWidth="1.35" />
+    </svg>
+  );
+}
+
+function Win11CopyIcon({ active }) {
+  const base = active ? '#404040' : '#BDBDBD';
+  const accent = active ? '#0067C0' : '#9DC6EC';
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="w-[18px] h-[18px]" aria-hidden="true">
+      <path
+        d="M6.8 6.5H5.5C4.67 6.5 4 7.17 4 8V15.5C4 16.33 4.67 17 5.5 17H11.5C12.33 17 13 16.33 13 15.5V14.2"
+        stroke={base}
+        strokeWidth="1.35"
+        strokeLinecap="round"
+      />
+      <rect x="7.5" y="3.2" width="8.5" height="10.8" rx="1.6" stroke={accent} strokeWidth="1.35" />
+    </svg>
+  );
+}
+
+function Win11PasteIcon({ active }) {
+  const base = active ? '#404040' : '#BDBDBD';
+  const accent = active ? '#0067C0' : '#9DC6EC';
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="w-[18px] h-[18px]" aria-hidden="true">
+      <path
+        d="M7.4 4.2H5.6C4.72 4.2 4 4.92 4 5.8V15.2C4 16.08 4.72 16.8 5.6 16.8H8.6"
+        stroke={base}
+        strokeWidth="1.35"
+        strokeLinecap="round"
+      />
+      <path
+        d="M12.6 4.2H14.2C15.08 4.2 15.8 4.92 15.8 5.8V7.2"
+        stroke={base}
+        strokeWidth="1.35"
+        strokeLinecap="round"
+      />
+      <rect x="7.3" y="2.8" width="5.4" height="2.6" rx="0.9" stroke={base} strokeWidth="1.3" />
+      <rect x="9.6" y="7.8" width="6.8" height="9" rx="1.4" stroke={accent} strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function Win11RenameIcon({ active }) {
+  const base = active ? '#404040' : '#BDBDBD';
+  const accent = active ? '#0067C0' : '#9DC6EC';
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="w-[19px] h-[19px]" aria-hidden="true">
+      <path
+        d="M11.8 6.2H4.5C3.67 6.2 3 6.87 3 7.7V12.8C3 13.63 3.67 14.3 4.5 14.3H11.8M15.4 6.2H15.8C16.63 6.2 17.3 6.87 17.3 7.7V12.8C17.3 13.63 16.63 14.3 15.8 14.3H15.4"
+        stroke={base}
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+      <path d="M5.7 12.2L7.5 8.1L9.3 12.2M6.3 11H8.7" stroke={accent} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M13.6 4.2V16.2M12.2 4.2H15M12.2 16.2H15" stroke={accent} strokeWidth="1.35" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function Win11ShareDownloadIcon({ active }) {
+  const base = active ? '#404040' : '#BDBDBD';
+  const accent = active ? '#0067C0' : '#9DC6EC';
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="w-[18px] h-[18px]" aria-hidden="true">
+      <path
+        d="M10.2 5.2H5.8C4.8 5.2 4 6 4 7V14.5C4 15.5 4.8 16.3 5.8 16.3H13.3C14.3 16.3 15.1 15.5 15.1 14.5V11.6"
+        stroke={base}
+        strokeWidth="1.35"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8.5 12.2C8.9 9.2 11 7.6 14.5 7.6H16.2M16.2 7.6L13.3 4.8M16.2 7.6L13.3 10.4"
+        stroke={accent}
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function Win11TrashIcon({ active }) {
+  const base = active ? '#404040' : '#BDBDBD';
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="w-[18px] h-[18px]" aria-hidden="true">
+      <path d="M3.8 5.8H16.2" stroke={base} strokeWidth="1.35" strokeLinecap="round" />
+      <path d="M7.6 5.8V4.3C7.6 3.7 8.05 3.2 8.65 3.2H11.35C11.95 3.2 12.4 3.7 12.4 4.3V5.8" stroke={base} strokeWidth="1.35" strokeLinecap="round" />
+      <path d="M5.4 5.8L6.2 15.4C6.27 16.2 6.95 16.8 7.75 16.8H12.25C13.05 16.8 13.73 16.2 13.8 15.4L14.6 5.8" stroke={base} strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.6 9V13.8M11.4 9V13.8" stroke={base} strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 const FOLDER_COLORS = {
   amber: {
@@ -197,6 +311,13 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingDocId, setLoadingDocId] = useState(null);
 
+  // "Új ▾" dropdown menu state
+  const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
+  const newMenuRef = useRef(null);
+
+  // In-App Document Preview Modal state (opened on fast double-click or Enter!)
+  const [previewDoc, setPreviewDoc] = useState(null);
+
   // Windows Explorer Selection, Clipboard & Inline Rename state
   const [selectedKeys, setSelectedKeys] = useState([]); // array of 'folder:id' | 'doc:id'
   const [lastSelectedKey, setLastSelectedKey] = useState(null);
@@ -210,7 +331,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
 
   // Drag & Drop state (External OS files + Internal docs/folders)
   const [isExternalFileDragging, setIsExternalFileDragging] = useState(false);
-  const [dragOverTarget, setDragOverTarget] = useState(null); // { kind: 'folder' | 'root' | 'up', id: string | null }
+  const [dragOverTarget, setDragOverTarget] = useState(null); // { kind: 'folder' | 'root' | 'up' | 'crumb', id: string | null }
   const [isDraggingInternal, setIsDraggingInternal] = useState(false);
   const externalDragDepthRef = useRef(0);
   const internalDragPayloadRef = useRef(null); // { docIds: [], folderIds: [] }
@@ -235,28 +356,16 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
   const [fileType, setFileType] = useState('pdf');
   const [uploadFolderId, setUploadFolderId] = useState(null);
 
-  // Folder modal state (Create / Settings)
+  // Folder modal state (Create / Color settings)
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [editingFolder, setEditingFolder] = useState(null);
   const [folderModalName, setFolderModalName] = useState('');
   const [folderModalColor, setFolderModalColor] = useState('amber');
-  const [folderToDelete, setFolderToDelete] = useState(null);
 
   // Delete confirmation modal states (single doc, single folder, or bulk selection)
   const [docToDelete, setDocToDelete] = useState(null);
+  const [folderToDelete, setFolderToDelete] = useState(null);
   const [bulkDeletePayload, setBulkDeletePayload] = useState(null); // { docIds: [], folderIds: [] }
-
-  // Edit / Replace Document Modal state
-  const [isEditDocModalOpen, setIsEditDocModalOpen] = useState(false);
-  const [editingDoc, setEditingDoc] = useState(null);
-  const [editDocTitle, setEditDocTitle] = useState('');
-  const [editDocFileName, setEditDocFileName] = useState('');
-  const [editDocFolderId, setEditDocFolderId] = useState(null);
-  const [editReplacementFile, setEditReplacementFile] = useState(null);
-  const editFileInputRef = useRef(null);
-
-  // Move Items Modal state (supports single or multi-select docs & folders)
-  const [movePayload, setMovePayload] = useState(null); // { docIds: [], folderIds: [], label: string }
 
   const allFolders = useMemo(() => docFolders || [], [docFolders]);
   const allDocs = useMemo(() => documents || [], [documents]);
@@ -362,11 +471,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
 
   const folderOptions = useMemo(() => buildHierarchicalFolderList(allFolders), [allFolders]);
 
-  const moveModalFolderOptions = useMemo(() => {
-    if (!movePayload) return [];
-    return buildHierarchicalFolderList(allFolders, new Set(movePayload.folderIds || []));
-  }, [allFolders, movePayload]);
-
   const folderPathMap = useMemo(() => {
     const map = new Map();
     for (const entry of folderOptions) {
@@ -383,6 +487,18 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
       // ignore storage errors
     }
   };
+
+  // Close "Új ▾" dropdown on outside click
+  useEffect(() => {
+    if (!isNewMenuOpen) return;
+    const handleOutside = (event) => {
+      if (newMenuRef.current && !newMenuRef.current.contains(event.target)) {
+        setIsNewMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isNewMenuOpen]);
 
   // Clear pending rename timer cleanly
   const cancelPendingRenameTimer = useCallback(() => {
@@ -427,6 +543,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
   const navigateToFolder = useCallback(
     (folderId) => {
       cancelPendingRenameTimer();
+      setIsNewMenuOpen(false);
       setRenamingKey(null);
       setSelectedKeys([]);
       setLastSelectedKey(null);
@@ -581,7 +698,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     [isAdmin, selectedParsed, allFolders, allDocs, onOpenDeleteDocConfirm]
   );
 
-  // Download Handler
+  // Explicit Download Handler
   const handleDownload = useCallback(
     async (doc) => {
       let data = doc.fileData;
@@ -607,6 +724,17 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     },
     [fetchDocumentFile, showToast, t, isEn]
   );
+
+  // Toolbar 5th Icon Action: Download selected document(s)
+  const handleDownloadSelectedDocs = useCallback(async () => {
+    if (selectedParsed.docIds.length === 0) return;
+    for (const dId of selectedParsed.docIds) {
+      const found = allDocs.find((d) => d.id === dId);
+      if (found) {
+        await handleDownload(found);
+      }
+    }
+  }, [selectedParsed.docIds, allDocs, handleDownload]);
 
   // External Drag & Drop Batch File Upload (strictly validated with magic-byte guard!)
   const handleExternalFilesDrop = useCallback(
@@ -634,7 +762,8 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
 
           try {
             const dataUrl = await readFileAsDataUrl(file);
-            const titleGuess = check.sanitizedName.replace(/\.[^/.]+$/, '').replace(/[_]+/g, ' ').trim() || check.sanitizedName;
+            const titleGuess =
+              check.sanitizedName.replace(/\.[^/.]+$/, '').replace(/[_]+/g, ' ').trim() || check.sanitizedName;
             readyDocs.push({
               title: titleGuess,
               fileName: check.sanitizedName,
@@ -677,6 +806,9 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     if (!isOpen) return;
 
     const handleKeyDown = (e) => {
+      // Skip all explorer shortcuts while DocumentPreviewModal is open
+      if (previewDoc) return;
+
       // Handle Single Doc Delete Modal shortcuts
       if (docToDelete) {
         if (e.key === 'Escape') {
@@ -712,11 +844,9 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
       // Skip explorer shortcuts if a sub-dialog is open
-      if (isFolderModalOpen || isEditDocModalOpen || Boolean(movePayload) || Boolean(folderToDelete)) {
+      if (isFolderModalOpen || Boolean(folderToDelete)) {
         if (e.key === 'Escape') {
           setIsFolderModalOpen(false);
-          setIsEditDocModalOpen(false);
-          setMovePayload(null);
           setFolderToDelete(null);
         }
         return;
@@ -726,7 +856,9 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
       const lowerKey = e.key.toLowerCase();
 
       if (e.key === 'Escape') {
-        if (contextMenu.isOpen) {
+        if (isNewMenuOpen) {
+          setIsNewMenuOpen(false);
+        } else if (contextMenu.isOpen) {
           setContextMenu((prev) => ({ ...prev, isOpen: false }));
         } else if (selectedKeys.length > 0) {
           setSelectedKeys([]);
@@ -789,14 +921,14 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
         return;
       }
 
-      // Backspace or Alt+ArrowUp -> Go up one folder level (Windows Explorer standard)
+      // Backspace or Alt+ArrowUp -> Go up one folder level
       if ((e.key === 'Backspace' || (e.altKey && e.key === 'ArrowUp')) && currentFolderId !== null) {
         e.preventDefault();
         navigateUp();
         return;
       }
 
-      // Enter -> Open selected folder or download selected document
+      // Enter -> Open selected folder OR open in-app Preview for selected document
       if (e.key === 'Enter' && selectedKeys.length === 1) {
         const parsed = parseSelectionKey(selectedKeys[0]);
         if (parsed?.type === 'folder') {
@@ -806,7 +938,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
           const d = allDocs.find((item) => item.id === parsed.id);
           if (d) {
             e.preventDefault();
-            handleDownload(d);
+            setPreviewDoc(d);
           }
         }
       }
@@ -817,13 +949,13 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
   }, [
     isOpen,
     isAdmin,
+    previewDoc,
     renamingKey,
     docToDelete,
     bulkDeletePayload,
     isFolderModalOpen,
-    isEditDocModalOpen,
-    movePayload,
     folderToDelete,
+    isNewMenuOpen,
     contextMenu.isOpen,
     selectedKeys,
     selectedParsed,
@@ -839,7 +971,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     handlePasteInto,
     startInlineRename,
     triggerDeleteForPayload,
-    handleDownload,
     deleteDocument,
     deleteExplorerItems,
   ]);
@@ -851,6 +982,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
   // =========================================================================
   const handleItemClick = (e, type, item) => {
     e.stopPropagation();
+    setIsNewMenuOpen(false);
     const key = makeSelectionKey(type, item.id);
     if (renamingKey === key) return;
     if (renamingKey) commitInlineRename();
@@ -885,7 +1017,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     const elapsedSinceLastClick = lastClickRef.current.key === key ? now - lastClickRef.current.time : Infinity;
 
     if (isAdmin && wasSoleSelected && elapsedSinceLastClick >= 420) {
-      // Delay briefly so a fast double-click initiated on an already-selected item cancels rename and opens instead
       cancelPendingRenameTimer();
       renameTimerRef.current = setTimeout(() => {
         renameTimerRef.current = null;
@@ -901,6 +1032,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     lastClickRef.current = { key, time: now };
   };
 
+  // Fast Double-Click: opens Folder OR opens In-App Preview Modal for Document (never auto-downloads!)
   const handleItemDoubleClick = (e, type, item) => {
     e.stopPropagation();
     const key = makeSelectionKey(type, item.id);
@@ -910,7 +1042,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     if (type === 'folder') {
       navigateToFolder(item.id);
     } else {
-      handleDownload(item);
+      setPreviewDoc(item);
     }
   };
 
@@ -927,7 +1059,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     const payload = internalDragPayloadRef.current;
     if (!payload) return false;
     const dest = targetFolderId || null;
-    // Block dropping a folder onto itself or any of its descendants
     for (const fId of payload.folderIds || []) {
       if (isDescendantFolder(allFolders, dest, fId)) return false;
     }
@@ -1050,7 +1181,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
   };
 
   const handleTargetDragLeave = (e, targetKind, targetFolderId) => {
-    // Only clear if actually leaving the drop target element (not moving into its children)
     if (e.currentTarget.contains(e.relatedTarget)) return;
     setDragOverTarget((prev) =>
       prev?.kind === targetKind && prev?.id === (targetFolderId || null) ? null : prev
@@ -1088,10 +1218,11 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
   const handleContextMenu = (e, item, type) => {
     e.preventDefault();
     e.stopPropagation();
+    setIsNewMenuOpen(false);
     cancelPendingRenameTimer();
 
-    const menuWidth = 230;
-    const menuHeight = 310;
+    const menuWidth = 225;
+    const menuHeight = 270;
     const x = Math.min(e.clientX, window.innerWidth - menuWidth - 10);
     const y = Math.min(e.clientY, window.innerHeight - menuHeight - 10);
 
@@ -1168,7 +1299,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     if (files.length === 1) {
       await handleFileObjectSelected(files[0]);
     } else {
-      // Multi-file selection uploads directly as a batch
       await handleExternalFilesDrop(files, uploadFolderId);
       handleCancelUpload();
     }
@@ -1194,7 +1324,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     setIsUploadOpen(false);
   };
 
-  // Folder Create / Settings Modal Handlers
+  // Folder Create / Color Settings Modal Handlers
   const openCreateFolderModal = () => {
     setEditingFolder(null);
     setFolderModalName('');
@@ -1230,88 +1360,11 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     setEditingFolder(null);
   };
 
-  // Document Edit / Replace Modal Handlers
-  const openEditDocModal = (doc) => {
-    setEditingDoc(doc);
-    setEditDocTitle(doc.title || '');
-    setEditDocFileName(doc.fileName || '');
-    setEditDocFolderId(doc.folderId || '');
-    setEditReplacementFile(null);
-    setIsEditDocModalOpen(true);
-  };
-
-  const handleEditReplacementFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const check = await validateUploadFile(file);
-    if (!check.ok) {
-      showToast(getFileValidationErrorMessage(check.reason, t, isEn), 'error');
-      if (editFileInputRef.current) editFileInputRef.current.value = '';
-      return;
-    }
-
-    try {
-      const dataUrl = await readFileAsDataUrl(file);
-      setEditReplacementFile({
-        name: check.sanitizedName,
-        size: check.sizeFormatted,
-        type: check.ext || 'pdf',
-        data: dataUrl,
-      });
-    } catch {
-      showToast(isEn ? 'Error reading file.' : 'Hiba történt a fájl beolvasásakor.', 'error');
-    }
-  };
-
-  const handleEditDocSubmit = (e) => {
-    e.preventDefault();
-    if (!editingDoc || !editDocTitle.trim()) return;
-
-    const updatedData = {
-      title: editDocTitle.trim(),
-      fileName: editDocFileName.trim() || editingDoc.fileName,
-      folderId: editDocFolderId ? editDocFolderId : null,
-    };
-
-    if (editReplacementFile) {
-      updatedData.fileData = editReplacementFile.data;
-      updatedData.fileName = editReplacementFile.name;
-      updatedData.fileSize = editReplacementFile.size;
-      updatedData.fileType = editReplacementFile.type;
-    }
-
-    updateDocument(editingDoc.id, updatedData);
-    setIsEditDocModalOpen(false);
-    setEditingDoc(null);
-    setEditReplacementFile(null);
-  };
-
-  // Move Modal Handlers
-  const openMoveDialog = (payload, label) => {
-    setMovePayload({
-      docIds: payload.docIds || [],
-      folderIds: payload.folderIds || [],
-      label,
-    });
-  };
-
-  const handleMoveDialogSelect = async (targetFolderId) => {
-    if (!movePayload) return;
-    await moveExplorerItems(
-      { docIds: movePayload.docIds, folderIds: movePayload.folderIds },
-      targetFolderId || null
-    );
-    setMovePayload(null);
-    setSelectedKeys([]);
-  };
-
   const getFolderPathLabel = (folderId) => {
     if (!folderId) return t.root_folder_breadcrumb || (isEn ? 'Root Folder' : 'Főkönyvtár');
     return folderPathMap.get(folderId) || (t.root_folder_breadcrumb || (isEn ? 'Root Folder' : 'Főkönyvtár'));
   };
 
-  const clipboardTotal = (clipboard?.docIds?.length || 0) + (clipboard?.folderIds?.length || 0);
   const totalVisibleItems = displayedFolders.length + displayedDocs.length;
 
   const renderFileIcon = (fileType, sizeClass = 'w-5 h-5') => {
@@ -1330,7 +1383,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     );
   };
 
-  // Resolve active payload for context menu actions (acts on full multi-selection if right-clicked item is part of it)
   const getContextActionPayload = () => {
     if (!contextMenu.item || !contextMenu.type) return { docIds: [], folderIds: [] };
     const key = makeSelectionKey(contextMenu.type, contextMenu.item.id);
@@ -1347,6 +1399,13 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
     dragOverTarget?.kind === 'folder'
       ? allFolders.find((f) => f.id === dragOverTarget.id)?.name || ''
       : currentFolder?.name || (t.root_folder_breadcrumb || (isEn ? 'Root Folder' : 'Főkönyvtár'));
+
+  // Command bar button active flags (matching Windows 11 Explorer)
+  const canCutOrCopy = selectedParsed.total > 0;
+  const canPaste = Boolean(clipboard && (clipboard.docIds.length + clipboard.folderIds.length) > 0);
+  const canRename = selectedKeys.length === 1;
+  const canDownloadSelection = selectedParsed.docIds.length > 0;
+  const canDelete = selectedParsed.total > 0;
 
   return (
     <div
@@ -1405,6 +1464,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
       <div
         className="flex-1 min-h-0 overflow-y-auto w-full overscroll-contain relative"
         onClick={() => {
+          setIsNewMenuOpen(false);
           if (renamingKey) {
             commitInlineRename();
           } else {
@@ -1435,14 +1495,14 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
 
         <div className="p-3 sm:p-4 md:p-6 space-y-3.5 max-w-6xl mx-auto w-full">
           {/* ============================================================== */}
-          {/* WINDOWS EXPLORER RIBBON: ADDRESS BAR + COMMAND BAR             */}
+          {/* WINDOWS 11 EXPLORER RIBBON: ADDRESS BAR + COMMAND BAR          */}
           {/* ============================================================== */}
           <div
-            className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden"
+            className="bg-white rounded-2xl border border-gray-200 shadow-xs"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Row 1: Up Button + Multi-Level Droppable Breadcrumb Bar + View Toggle */}
-            <div className="px-3 sm:px-4 py-2.5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2.5 bg-slate-50/60">
+            <div className="px-3 sm:px-4 py-2.5 border-b border-gray-100 rounded-t-2xl flex flex-wrap items-center justify-between gap-2.5 bg-slate-50/60">
               <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-x-auto">
                 {/* Up One Level Button (also droppable to move items up!) */}
                 <button
@@ -1552,88 +1612,122 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
               </div>
             </div>
 
-            {/* Row 2: Explorer Command Buttons + Search Input */}
-            <div className="px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
-              {/* Left: Primary & Selection Actions */}
-              <div className="flex flex-wrap items-center gap-1.5">
+            {/* Row 2: Windows 11 Command Bar + Search Input */}
+            <div className="px-3 sm:px-4 py-2 rounded-b-2xl flex flex-wrap items-center justify-between gap-2.5 bg-white">
+              {/* Left: Windows 11 Minimalist Command Buttons */}
+              <div className="flex items-center gap-0.5 sm:gap-1.5">
                 {isAdmin && (
                   <>
+                    {/* (+) Új ▾ Dropdown (Folder / Document only) */}
+                    <div className="relative" ref={newMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsNewMenuOpen((prev) => !prev)}
+                        aria-expanded={isNewMenuOpen}
+                        aria-haspopup="menu"
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] font-medium text-gray-800 transition-colors cursor-pointer ${
+                          isNewMenuOpen ? 'bg-gray-100' : 'hover:bg-gray-100/90 active:bg-gray-200/70'
+                        }`}
+                        title={t.explorer_new_btn || (isEn ? 'New' : 'Új')}
+                      >
+                        <Win11NewIcon />
+                        <span>{t.explorer_new_btn || (isEn ? 'New' : 'Új')}</span>
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 text-gray-500 transition-transform duration-150 ${
+                            isNewMenuOpen ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </button>
+
+                      {isNewMenuOpen && (
+                        <div
+                          role="menu"
+                          className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl border border-gray-200 shadow-xl py-1.5 z-40 animate-fadeIn text-xs"
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setIsNewMenuOpen(false);
+                              openCreateFolderModal();
+                            }}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-blue-50 text-gray-800 font-semibold cursor-pointer"
+                          >
+                            <Folder className="w-4 h-4 fill-amber-400/90 text-amber-600 shrink-0" />
+                            <span>{t.explorer_new_folder_item || (isEn ? 'Folder' : 'Mappa')}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setIsNewMenuOpen(false);
+                              setIsUploadOpen(true);
+                            }}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-blue-50 text-gray-800 font-semibold cursor-pointer"
+                          >
+                            <FileText className="w-4 h-4 text-[#0067C0] shrink-0" />
+                            <span>{t.explorer_new_doc_item || (isEn ? 'Document' : 'Dokumentum')}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Vertical Divider */}
+                    <div className="w-px h-6 bg-gray-200 mx-1.5 sm:mx-2 shrink-0" />
+
+                    {/* 1. Cut (Kivágás) */}
                     <button
                       type="button"
-                      onClick={openCreateFolderModal}
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
-                      title={t.new_folder_btn || (isEn ? 'New Folder' : 'Új mappa')}
-                    >
-                      <FolderPlus className="w-3.5 h-3.5" />
-                      <span>{t.new_folder_btn || (isEn ? 'New Folder' : 'Új mappa')}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsUploadOpen((prev) => !prev)}
-                      className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
-                      title={t.upload_document}
-                    >
-                      <UploadCloud className="w-3.5 h-3.5" />
-                      <span>{t.upload_document || (isEn ? 'Upload' : 'Feltöltés')}</span>
-                    </button>
-
-                    <div className="hidden sm:block w-px h-6 bg-gray-200 mx-1" />
-
-                    {/* Explorer Clipboard & Item Actions */}
-                    <button
-                      type="button"
-                      disabled={selectedParsed.total === 0}
-                      onClick={() => handleCopySelection()}
-                      className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
-                        selectedParsed.total === 0
-                          ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
-                          : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700 cursor-pointer'
-                      }`}
-                      title={`${t.explorer_copy_btn || (isEn ? 'Copy' : 'Másolás')} (Ctrl+C)`}
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span className="hidden xl:inline">{t.explorer_copy_btn || (isEn ? 'Copy' : 'Másolás')}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={selectedParsed.total === 0}
+                      disabled={!canCutOrCopy}
                       onClick={() => handleCutSelection()}
-                      className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
-                        selectedParsed.total === 0
-                          ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
-                          : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700 cursor-pointer'
+                      className={`p-2 rounded-lg transition-colors flex items-center justify-center ${
+                        canCutOrCopy
+                          ? 'hover:bg-gray-100 active:bg-gray-200/70 cursor-pointer'
+                          : 'cursor-default'
                       }`}
                       title={`${t.explorer_cut_btn || (isEn ? 'Cut' : 'Kivágás')} (Ctrl+X)`}
+                      aria-label={t.explorer_cut_btn || (isEn ? 'Cut' : 'Kivágás')}
                     >
-                      <Scissors className="w-3.5 h-3.5" />
-                      <span className="hidden xl:inline">{t.explorer_cut_btn || (isEn ? 'Cut' : 'Kivágás')}</span>
+                      <Win11CutIcon active={canCutOrCopy} />
                     </button>
 
+                    {/* 2. Copy (Másolás) */}
                     <button
                       type="button"
-                      disabled={!clipboard}
+                      disabled={!canCutOrCopy}
+                      onClick={() => handleCopySelection()}
+                      className={`p-2 rounded-lg transition-colors flex items-center justify-center ${
+                        canCutOrCopy
+                          ? 'hover:bg-gray-100 active:bg-gray-200/70 cursor-pointer'
+                          : 'cursor-default'
+                      }`}
+                      title={`${t.explorer_copy_btn || (isEn ? 'Copy' : 'Másolás')} (Ctrl+C)`}
+                      aria-label={t.explorer_copy_btn || (isEn ? 'Copy' : 'Másolás')}
+                    >
+                      <Win11CopyIcon active={canCutOrCopy} />
+                    </button>
+
+                    {/* 3. Paste (Beillesztés) */}
+                    <button
+                      type="button"
+                      disabled={!canPaste}
                       onClick={() => handlePasteInto(currentFolderId)}
-                      className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
-                        !clipboard
-                          ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
-                          : 'border-blue-300 bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] cursor-pointer shadow-2xs'
+                      className={`p-2 rounded-lg transition-colors flex items-center justify-center ${
+                        canPaste
+                          ? 'hover:bg-gray-100 active:bg-gray-200/70 cursor-pointer'
+                          : 'cursor-default'
                       }`}
                       title={`${t.explorer_paste_btn || (isEn ? 'Paste' : 'Beillesztés')} (Ctrl+V)`}
+                      aria-label={t.explorer_paste_btn || (isEn ? 'Paste' : 'Beillesztés')}
                     >
-                      <ClipboardPaste className="w-3.5 h-3.5" />
-                      <span className="hidden xl:inline">{t.explorer_paste_btn || (isEn ? 'Paste' : 'Beillesztés')}</span>
-                      {clipboardTotal > 0 && (
-                        <span className="px-1.5 py-0.2 rounded-full bg-[#1E3A8A] text-white text-[10px] font-bold leading-4">
-                          {clipboardTotal}
-                        </span>
-                      )}
+                      <Win11PasteIcon active={canPaste} />
                     </button>
 
+                    {/* 4. Rename (Átnevezés [A|]) */}
                     <button
                       type="button"
-                      disabled={selectedKeys.length !== 1}
+                      disabled={!canRename}
                       onClick={() => {
                         const parsed = parseSelectionKey(selectedKeys[0]);
                         if (parsed?.type === 'folder') {
@@ -1644,56 +1738,47 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                           if (d) startInlineRename('doc', d);
                         }
                       }}
-                      className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
-                        selectedKeys.length !== 1
-                          ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
-                          : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700 cursor-pointer'
+                      className={`p-2 rounded-lg transition-colors flex items-center justify-center ${
+                        canRename
+                          ? 'hover:bg-gray-100 active:bg-gray-200/70 cursor-pointer'
+                          : 'cursor-default'
                       }`}
                       title={`${t.explorer_rename_btn || (isEn ? 'Rename' : 'Átnevezés')} (F2)`}
+                      aria-label={t.explorer_rename_btn || (isEn ? 'Rename' : 'Átnevezés')}
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
-                      <span className="hidden xl:inline">{t.explorer_rename_btn || (isEn ? 'Rename' : 'Átnevezés')}</span>
+                      <Win11RenameIcon active={canRename} />
                     </button>
 
+                    {/* 5. Share / Download (Letöltés) */}
                     <button
                       type="button"
-                      disabled={selectedParsed.total === 0}
-                      onClick={() =>
-                        openMoveDialog(
-                          selectedParsed,
-                          selectedParsed.total === 1
-                            ? (() => {
-                                const p = parseSelectionKey(selectedKeys[0]);
-                                if (p?.type === 'folder') {
-                                  return allFolders.find((f) => f.id === p.id)?.name || '';
-                                }
-                                return allDocs.find((d) => d.id === p?.id)?.title || '';
-                              })()
-                            : `${selectedParsed.total} ${t.items_count || (isEn ? 'items' : 'elem')}`
-                        )
-                      }
-                      className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
-                        selectedParsed.total === 0
-                          ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
-                          : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700 cursor-pointer'
+                      disabled={!canDownloadSelection}
+                      onClick={handleDownloadSelectedDocs}
+                      className={`p-2 rounded-lg transition-colors flex items-center justify-center ${
+                        canDownloadSelection
+                          ? 'hover:bg-gray-100 active:bg-gray-200/70 cursor-pointer'
+                          : 'cursor-default'
                       }`}
-                      title={t.move_doc_btn || (isEn ? 'Move' : 'Áthelyezés')}
+                      title={t.download || (isEn ? 'Download' : 'Letöltés')}
+                      aria-label={t.download || (isEn ? 'Download' : 'Letöltés')}
                     >
-                      <Move className="w-3.5 h-3.5" />
+                      <Win11ShareDownloadIcon active={canDownloadSelection} />
                     </button>
 
+                    {/* 6. Delete (Törlés) */}
                     <button
                       type="button"
-                      disabled={selectedParsed.total === 0}
+                      disabled={!canDelete}
                       onClick={() => triggerDeleteForPayload()}
-                      className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-all ${
-                        selectedParsed.total === 0
-                          ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
-                          : 'border-red-200 bg-white hover:bg-red-50 text-red-600 cursor-pointer'
+                      className={`p-2 rounded-lg transition-colors flex items-center justify-center ${
+                        canDelete
+                          ? 'hover:bg-red-50 active:bg-red-100/80 cursor-pointer'
+                          : 'cursor-default'
                       }`}
                       title={t.context_delete || (isEn ? 'Delete (Del)' : 'Törlés (Del)')}
+                      aria-label={t.context_delete || (isEn ? 'Delete' : 'Törlés')}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Win11TrashIcon active={canDelete} />
                     </button>
                   </>
                 )}
@@ -1720,47 +1805,10 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                 )}
               </div>
             </div>
-
-            {/* Active Clipboard Strip */}
-            {isAdmin && clipboard && clipboardTotal > 0 && (
-              <div className="px-3 sm:px-4 py-2 bg-blue-50/80 border-t border-blue-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 text-[#1E3A8A] font-semibold">
-                  {clipboard.mode === 'cut' ? (
-                    <Scissors className="w-3.5 h-3.5 shrink-0" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5 shrink-0" />
-                  )}
-                  <span>
-                    {clipboardTotal}{' '}
-                    {clipboard.mode === 'cut'
-                      ? t.explorer_clipboard_cut || (isEn ? 'item(s) cut — press Ctrl+V to move here' : 'elem kivágva — nyomj Ctrl+V-t a beillesztéshez')
-                      : t.explorer_clipboard_copied || (isEn ? 'item(s) copied to clipboard' : 'elem másolva a vágólapra')}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handlePasteInto(currentFolderId)}
-                    className="px-2.5 py-1 rounded-lg bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-                  >
-                    <ClipboardPaste className="w-3 h-3" />
-                    <span>{t.explorer_paste_here || (isEn ? 'Paste here (Ctrl+V)' : 'Beillesztés ide (Ctrl+V)')}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setClipboard(null)}
-                    className="p-1 rounded-lg text-gray-500 hover:bg-blue-100 hover:text-gray-800 cursor-pointer"
-                    title={t.explorer_clipboard_clear || (isEn ? 'Clear clipboard' : 'Vágólap ürítése')}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* ============================================================== */}
-          {/* ADMIN UPLOAD PANEL (Collapsible, supports drag-drop & browse)  */}
+          {/* ADMIN UPLOAD PANEL (Opened via Új -> Dokumentum)               */}
           {/* ============================================================== */}
           {isAdmin && isUploadOpen && (
             <div
@@ -1956,7 +2004,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                   {isAdmin
                     ? t.explorer_drag_upload_hint ||
                       (isEn
-                        ? 'Drag & drop files straight from File Explorer, upload via button, or create a subfolder.'
+                        ? 'Drag & drop files straight from File Explorer, or create a subfolder.'
                         : 'Húzz be fájlokat közvetlenül a Windows Fájlkezelőből, vagy hozz létre almappát.')
                     : currentFolderId
                     ? t.empty_folder_desc
@@ -1971,7 +2019,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
                   >
                     <FolderPlus className="w-4 h-4" />
-                    <span>{t.new_folder_btn || (isEn ? 'New Folder' : 'Új mappa')}</span>
+                    <span>{t.explorer_new_folder_item || (isEn ? 'Folder' : 'Mappa')}</span>
                   </button>
                   <button
                     type="button"
@@ -1979,7 +2027,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
                   >
                     <UploadCloud className="w-4 h-4" />
-                    <span>{t.upload_document || (isEn ? 'Upload' : 'Feltöltés')}</span>
+                    <span>{t.explorer_new_doc_item || (isEn ? 'Document' : 'Dokumentum')}</span>
                   </button>
                 </div>
               )}
@@ -2029,7 +2077,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                 <span className="text-right pr-1">&nbsp;</span>
               </div>
 
-              {/* Unified Rows: Folders first, then Documents (identical visual geometry!) */}
+              {/* Unified Rows: Folders first, then Documents */}
               <div className="divide-y divide-gray-100">
                 {displayedFolders.map((folder) => {
                   const key = makeSelectionKey('folder', folder.id);
@@ -2060,7 +2108,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                           : 'bg-white hover:bg-slate-50/90'
                       } ${isCut ? 'opacity-50' : ''}`}
                     >
-                      {/* Col 1: Folder Icon + Name / Inline Rename Input */}
+                      {/* Col 1: Folder Icon + Name / Inline Rename */}
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-8 h-8 rounded-lg ${style.iconBg} flex items-center justify-center shrink-0`}>
                           {isDropHovered ? (
@@ -2183,7 +2231,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                           : 'bg-white hover:bg-slate-50/90'
                       } ${isCut ? 'opacity-50' : ''}`}
                     >
-                      {/* Col 1: File Icon + Title / Inline Rename Input */}
+                      {/* Col 1: File Icon + Title / Inline Rename */}
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-8 h-8 rounded-lg border ${meta.iconBg} flex items-center justify-center shrink-0`}>
                           {renderFileIcon(doc.fileType, 'w-4 h-4')}
@@ -2311,7 +2359,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                           : 'border-transparent hover:border-gray-200 hover:bg-slate-50/90'
                       } ${isCut ? 'opacity-50' : ''}`}
                     >
-                      {/* Top-right context button */}
                       {isAdmin && (
                         <button
                           type="button"
@@ -2326,7 +2373,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                         </button>
                       )}
 
-                      {/* Large Folder Icon */}
                       <div className="relative w-16 h-14 flex items-center justify-center">
                         {isDropHovered ? (
                           <FolderOpen className={`w-14 h-14 ${style.fill} drop-shadow-2xs transition-transform scale-105`} strokeWidth={1.6} />
@@ -2340,7 +2386,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                         )}
                       </div>
 
-                      {/* Name / Inline Rename */}
                       <div className="w-full min-w-0">
                         {isRenaming ? (
                           <input
@@ -2386,7 +2431,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                   );
                 })}
 
-                {/* Document Tiles (Matching Large Icons Visual Rhythm!) */}
+                {/* Document Tiles */}
                 {displayedDocs.map((doc) => {
                   const key = makeSelectionKey('doc', doc.id);
                   const meta = getFileVisualMeta(doc.fileType);
@@ -2409,7 +2454,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                           : 'border-transparent hover:border-gray-200 hover:bg-slate-50/90'
                       } ${isCut ? 'opacity-50' : ''}`}
                     >
-                      {/* Top-left Download & Top-right Menu */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -2441,7 +2485,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                         </button>
                       )}
 
-                      {/* Large Document Icon + Extension Badge */}
                       <div className="relative w-14 h-14 flex items-center justify-center">
                         <div className={`w-12 h-14 rounded-xl border ${meta.iconBg} flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform`}>
                           {renderFileIcon(doc.fileType, 'w-7 h-7')}
@@ -2451,7 +2494,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                         </span>
                       </div>
 
-                      {/* Title / Inline Rename */}
                       <div className="w-full min-w-0">
                         {isRenaming ? (
                           <input
@@ -2512,8 +2554,8 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
               <div className="hidden md:block text-gray-400">
                 {t.explorer_shortcuts_legend ||
                   (isEn
-                    ? 'Double-click: open • Slow 2nd click / F2: rename • Ctrl+C/X/V • Del: delete'
-                    : 'Dupla klikk: megnyitás • Lassú 2. klikk / F2: átnevezés • Ctrl+C/X/V • Del: törlés')}
+                    ? 'Double-click: open / preview • Slow 2nd click / F2: rename • Ctrl+C/X/V • Del: delete'
+                    : 'Dupla klikk: megnyitás / előnézet • Lassú 2. klikk / F2: átnevezés • Ctrl+C/X/V • Del: törlés')}
               </div>
             )}
           </div>
@@ -2521,13 +2563,13 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
       </div>
 
       {/* ============================================================== */}
-      {/* RIGHT-CLICK CONTEXT MENU                                       */}
+      {/* RIGHT-CLICK CONTEXT MENU (NO Edit/Replace, NO Move button!)    */}
       {/* ============================================================== */}
       {contextMenu.isOpen && (
         <div
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
-          className="fixed z-50 bg-white rounded-2xl border border-gray-200 shadow-xl py-1.5 min-w-[220px] animate-fadeIn text-xs"
+          className="fixed z-50 bg-white rounded-2xl border border-gray-200 shadow-xl py-1.5 min-w-[215px] animate-fadeIn text-xs"
         >
           {/* 1. Folder Context Menu */}
           {contextMenu.type === 'folder' && contextMenu.item && (
@@ -2598,7 +2640,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                     <span>{t.explorer_cut_btn || (isEn ? 'Cut' : 'Kivágás')} (Ctrl+X)</span>
                   </button>
 
-                  {clipboard && (
+                  {canPaste && (
                     <button
                       type="button"
                       onClick={() => {
@@ -2608,26 +2650,9 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-blue-50 text-[#1E3A8A] font-semibold cursor-pointer"
                     >
                       <ClipboardPaste className="w-4 h-4 text-[#1E3A8A]" />
-                      <span>{t.explorer_paste_here || (isEn ? 'Paste into folder' : 'Beillesztés ide')}</span>
+                      <span>{t.explorer_paste_here || (isEn ? 'Paste here' : 'Beillesztés ide')}</span>
                     </button>
                   )}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const payload = getContextActionPayload();
-                      const count = payload.docIds.length + payload.folderIds.length;
-                      openMoveDialog(
-                        payload,
-                        count > 1 ? `${count} ${t.items_count || (isEn ? 'items' : 'elem')}` : contextMenu.item.name
-                      );
-                      setContextMenu((prev) => ({ ...prev, isOpen: false }));
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-blue-50 text-gray-800 font-semibold cursor-pointer"
-                  >
-                    <Move className="w-4 h-4 text-amber-500" />
-                    <span>{t.context_move || (isEn ? 'Move to Folder...' : 'Áthelyezés mappába...')}</span>
-                  </button>
 
                   <div className="my-1 border-t border-gray-100" />
 
@@ -2647,9 +2672,21 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
             </>
           )}
 
-          {/* 2. Document Context Menu */}
+          {/* 2. Document Context Menu (Preview + Download + Rename/Copy/Cut/Delete) */}
           {contextMenu.type === 'doc' && contextMenu.item && (
             <>
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewDoc(contextMenu.item);
+                  setContextMenu((prev) => ({ ...prev, isOpen: false }));
+                }}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-blue-50 text-[#1E3A8A] font-bold cursor-pointer"
+              >
+                <Eye className="w-4 h-4 text-[#1E3A8A]" />
+                <span>{t.explorer_preview_btn || (isEn ? 'Open preview' : 'Előnézet megnyitása')}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -2681,20 +2718,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                   <button
                     type="button"
                     onClick={() => {
-                      openEditDocModal(contextMenu.item);
-                      setContextMenu((prev) => ({ ...prev, isOpen: false }));
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-blue-50 text-gray-800 font-semibold cursor-pointer"
-                  >
-                    <FileCheck className="w-4 h-4 text-emerald-600" />
-                    <span>{t.context_edit || (isEn ? 'Edit & Replace File' : 'Szerkesztés és Fájlcsere')}</span>
-                  </button>
-
-                  <div className="my-1 border-t border-gray-100" />
-
-                  <button
-                    type="button"
-                    onClick={() => {
                       handleCopySelection(getContextActionPayload());
                       setContextMenu((prev) => ({ ...prev, isOpen: false }));
                     }}
@@ -2714,23 +2737,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                   >
                     <Scissors className="w-4 h-4 text-gray-600" />
                     <span>{t.explorer_cut_btn || (isEn ? 'Cut' : 'Kivágás')} (Ctrl+X)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const payload = getContextActionPayload();
-                      const count = payload.docIds.length + payload.folderIds.length;
-                      openMoveDialog(
-                        payload,
-                        count > 1 ? `${count} ${t.items_count || (isEn ? 'items' : 'elem')}` : contextMenu.item.title
-                      );
-                      setContextMenu((prev) => ({ ...prev, isOpen: false }));
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-blue-50 text-gray-800 font-semibold cursor-pointer"
-                  >
-                    <Move className="w-4 h-4 text-amber-500" />
-                    <span>{t.context_move || (isEn ? 'Move to Folder...' : 'Áthelyezés mappába...')}</span>
                   </button>
 
                   <div className="my-1 border-t border-gray-100" />
@@ -2780,7 +2786,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                     <span>{t.context_upload_doc || (isEn ? 'Upload Document' : 'Új dokumentum feltöltése')}</span>
                   </button>
 
-                  {clipboard && (
+                  {canPaste && (
                     <>
                       <div className="my-1 border-t border-gray-100" />
                       <button
@@ -2821,6 +2827,16 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
           )}
         </div>
       )}
+
+      {/* ============================================================== */}
+      {/* IN-APP DOCUMENT PREVIEW MODAL (ZERO AUTO-DOWNLOAD)             */}
+      {/* ============================================================== */}
+      <DocumentPreviewModal
+        doc={previewDoc}
+        isOpen={Boolean(previewDoc)}
+        onClose={() => setPreviewDoc(null)}
+        onDownload={handleDownload}
+      />
 
       {/* ============================================================== */}
       {/* CREATE / EDIT FOLDER MODAL                                     */}
@@ -2920,246 +2936,6 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* EDIT / REPLACE DOCUMENT MODAL                                  */}
-      {/* ============================================================== */}
-      {isEditDocModalOpen && editingDoc && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
-          onClick={() => setIsEditDocModalOpen(false)}
-        >
-          <div
-            className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-lg p-6 space-y-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center">
-                  <Edit2 className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-bold text-gray-900 font-display">
-                  {t.edit_doc_modal_title || (isEn ? 'Edit Document & Replace File' : 'Dokumentum szerkesztése és fájlcsere')}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsEditDocModalOpen(false)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleEditDocSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  {t.doc_title_label || (isEn ? 'Document Title' : 'Dokumentum megnevezése')} *
-                </label>
-                <input
-                  type="text"
-                  value={editDocTitle}
-                  onChange={(e) => setEditDocTitle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    {t.doc_filename_label || (isEn ? 'Filename' : 'Fájlnév')}
-                  </label>
-                  <input
-                    type="text"
-                    value={editDocFileName}
-                    onChange={(e) => setEditDocFileName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    {t.doc_folder_label || (isEn ? 'Target Folder' : 'Mappa kiválasztása')}
-                  </label>
-                  <select
-                    value={editDocFolderId || ''}
-                    onChange={(e) => setEditDocFolderId(e.target.value || null)}
-                    className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A] cursor-pointer"
-                  >
-                    <option value="">{t.no_folder_root || (isEn ? 'Root Folder (No folder)' : 'Főkönyvtár (Nincs mappa)')}</option>
-                    {folderOptions.map(({ folder, depth }) => (
-                      <option key={folder.id} value={folder.id}>
-                        {'\u00A0\u00A0'.repeat(depth)}
-                        {depth > 0 ? '↳ ' : ''}
-                        {folder.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* File Replacement Section */}
-              <div className="pt-2 border-t border-gray-100">
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                  {t.replace_file_label || (isEn ? 'Replace File (optional)' : 'Fájl megváltoztatása / cseréje (opcionális)')}
-                </label>
-
-                {editReplacementFile ? (
-                  <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <FileCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-                      <div className="min-w-0 text-xs">
-                        <div className="font-bold text-gray-900 truncate">{editReplacementFile.name}</div>
-                        <div className="text-[11px] text-emerald-700">
-                          {editReplacementFile.size} • {isEn ? 'New version' : 'Új verzió'}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditReplacementFile(null);
-                        if (editFileInputRef.current) editFileInputRef.current.value = '';
-                      }}
-                      className="text-xs text-red-600 hover:underline font-bold shrink-0 ml-2 cursor-pointer"
-                    >
-                      {t.cancel || 'Mégse'}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <FileText className="w-5 h-5 text-gray-400 shrink-0" />
-                      <div className="min-w-0 text-xs">
-                        <div className="font-bold text-gray-700 truncate">{editingDoc.fileName}</div>
-                        <div className="text-[11px] text-gray-400">
-                          {editingDoc.fileSize} • {t.current_file || (isEn ? 'Current file' : 'Jelenlegi fájl')}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => editFileInputRef.current?.click()}
-                      className="px-3 py-1 bg-white border border-gray-200 hover:bg-gray-100 text-[#1E3A8A] font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0 ml-2"
-                    >
-                      {t.choose_different_file || (isEn ? 'Replace file' : 'Fájl cseréje')}
-                    </button>
-                  </div>
-                )}
-
-                <input
-                  ref={editFileInputRef}
-                  type="file"
-                  accept={ALLOWED_ACCEPT_ATTR}
-                  onChange={handleEditReplacementFileChange}
-                  className="hidden"
-                />
-              </div>
-
-              <div className="flex gap-2.5 pt-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setIsEditDocModalOpen(false)}
-                  className="flex-1 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                >
-                  {t.cancel || 'Mégse'}
-                </button>
-                <button
-                  type="submit"
-                  disabled={!editDocTitle.trim()}
-                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-colors cursor-pointer shadow-xs ${
-                    !editDocTitle.trim() ? 'bg-gray-300 cursor-not-allowed' : 'bg-[#1E3A8A] hover:bg-[#1e40af]'
-                  }`}
-                >
-                  {t.save_changes_btn || 'Módosítások mentése'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* MOVE ITEMS TO FOLDER MODAL (HIERARCHICAL & CYCLE-SAFE)         */}
-      {/* ============================================================== */}
-      {movePayload && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
-          onClick={() => setMovePayload(null)}
-        >
-          <div
-            className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-sm p-6 space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                  <Move className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-base font-bold text-gray-900 font-display truncate">
-                    {movePayload.docIds.length + movePayload.folderIds.length > 1
-                      ? t.explorer_move_selected_title || (isEn ? 'Move selected items' : 'Kijelölt elemek áthelyezése')
-                      : t.move_doc_modal_title || (isEn ? 'Move to Folder' : 'Áthelyezés mappába')}
-                  </h3>
-                  <span className="text-xs text-gray-500 truncate block">{movePayload.label}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setMovePayload(null)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 cursor-pointer shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-1.5 max-h-64 overflow-y-auto py-1">
-              {/* Root destination */}
-              <button
-                type="button"
-                onClick={() => handleMoveDialogSelect(null)}
-                className="w-full flex items-center justify-between p-2.5 rounded-xl border border-gray-200 hover:bg-blue-50 hover:border-blue-200 text-gray-800 text-xs font-bold transition-all cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <Home className="w-4 h-4 text-[#1E3A8A]" />
-                  <span>{t.root_folder_breadcrumb || (isEn ? 'Root Folder' : 'Főkönyvtár')}</span>
-                </div>
-              </button>
-
-              {/* Hierarchical Folders list (cycle targets already excluded) */}
-              {moveModalFolderOptions.map(({ folder, depth }) => {
-                const style = FOLDER_COLORS[folder.color] || FOLDER_COLORS.amber;
-                return (
-                  <button
-                    key={folder.id}
-                    type="button"
-                    onClick={() => handleMoveDialogSelect(folder.id)}
-                    style={{ paddingLeft: `${10 + depth * 16}px` }}
-                    className="w-full flex items-center justify-between pr-3 py-2.5 rounded-xl border border-gray-200 hover:bg-blue-50 hover:border-blue-200 text-gray-800 text-xs font-bold transition-all cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Folder className={`w-4 h-4 shrink-0 ${style.fill}`} />
-                      <span className="truncate">{folder.name}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => setMovePayload(null)}
-                className="w-full py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-semibold cursor-pointer"
-              >
-                {t.cancel || 'Mégse'}
-              </button>
-            </div>
           </div>
         </div>
       )}
