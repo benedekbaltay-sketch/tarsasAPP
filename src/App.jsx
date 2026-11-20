@@ -172,6 +172,7 @@ function MainLayout() {
     }
   };
   const [isGlobalBalancesOpen, setIsGlobalBalancesOpen] = useState(() => Boolean(initialNavState?.isGlobalBalancesOpen));
+  const [globalBalancesMode, setGlobalBalancesMode] = useState('full'); // 'accounts' (Bank accounts & reserves only) | 'full' (Building settings + Bank + API)
   const [buildingSettingsTargetId, setBuildingSettingsTargetId] = useState(() => initialNavState?.buildingSettingsTargetId || null);
   const [isAddFlatOpen, setIsAddFlatOpen] = useState(false);
   const [editFlatMasterData, setEditFlatMasterData] = useState(() => initialNavState?.editFlatMasterData || null); // { buildingId, flatNum }
@@ -559,6 +560,7 @@ function MainLayout() {
       case 'building-settings':
         if (isAdmin) {
           setBuildingSettingsTargetId(state.currentBuildingId);
+          setGlobalBalancesMode('full');
           setIsGlobalBalancesOpen(true);
         }
         break;
@@ -680,6 +682,7 @@ function MainLayout() {
               }}
               onOpenBuildingSettings={(bId) => {
                 setBuildingSettingsTargetId(bId);
+                setGlobalBalancesMode('full');
                 setIsGlobalBalancesOpen(true);
               }}
             />
@@ -691,6 +694,7 @@ function MainLayout() {
               onOpenAddFlat={() => setIsAddFlatOpen(true)}
               onOpenGlobalBalances={() => {
                 setBuildingSettingsTargetId(state.currentBuildingId);
+                setGlobalBalancesMode('accounts');
                 setIsGlobalBalancesOpen(true);
               }}
               onOpenGlobalAddTx={() => handleOpenUniversalTx({ scope: 'global' })}
@@ -863,8 +867,10 @@ function MainLayout() {
       <GlobalBalancesModal
         isOpen={Boolean(isAdmin && isGlobalBalancesOpen)}
         buildingId={buildingSettingsTargetId || state.currentBuildingId}
+        mode={globalBalancesMode}
         onClose={() => {
           setIsGlobalBalancesOpen(false);
+          setGlobalBalancesMode('full');
           setBuildingSettingsTargetId(null);
         }}
       />

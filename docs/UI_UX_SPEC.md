@@ -110,12 +110,12 @@ Every flat balance is labeled with an unmistakable status badge:
     - The dropdown offers (1) one-click return to **Társasházaim (Portfólió) / My Condos (Portfolio)** overview, and (2) a scrollable list of all managed condominiums with the active building marked (`Aktív` / `Active` + checkmark) for instant switching between managed buildings without returning to the portfolio page first.
     - Admin duplicate switching via `ProfileSwitcherButton` is suppressed in `Header.jsx` (residents with multiple flats continue seeing `[👥 Profilváltás]`), while `BuildingSelectorModal` (opened from fullscreen modals) also includes the matching Portfolio overview shortcut.
   - The redundant in-page blue context bar (`← Vissza a Társasházaimhoz`, `Aktív ház`, `Ház adatai & Bank`) has been removed from `AdminView.jsx`, and the redundant `← Vissza a Társasházaimhoz` button and `Aktív ház` card have been removed from the 3-line side drawer (`IosSideDrawer.jsx`).
-  - **Ház adatai & Bank / Building Details & Bank** is placed directly as a dedicated menu item (`building-settings`) inside the building-specific 3-line side drawer (`IosSideDrawer.jsx`), opening `GlobalBalancesModal` cleanly for Admins.
+  - **Ház adatai & Bank / Building Details & Bank** is placed directly as a dedicated menu item (`building-settings`) inside the building-specific 3-line side drawer (`IosSideDrawer.jsx`), opening `GlobalBalancesModal` in `mode="full"` (Building Master Data + Bank Accounts + Banking API Integration).
 - **Top Navigation Tabs**:
   - **Vezérlőpult (Dashboard)**: Core administrative dashboard (KPIs, Arrears Grid, Transactions).
   - **Közgyűlés (General Assembly)**: Dedicated section for generating official assembly financial statements and accounting packages.
 - **Top KPI Row**:
-  - **Card 1 (Folyószámlák és Tartalékok)**: Single unified edit pencil button (`Pencil`) opening `GlobalBalancesModal`. Dynamically displays KK, FA, and all custom account reserves.
+  - **Card 1 (Folyószámlák és Tartalékok)**: Single unified edit pencil button (`Pencil`) opening `GlobalBalancesModal` in dedicated **`mode="accounts"`** (**Folyószámlák és Tartalékok szerkesztése**), displaying **strictly bank account fields only** (KK & FA account names, account-holding banks, account numbers, current bank balances, and custom bank sub-accounts — hiding building master data and Banking API integration). Dynamically displays KK, FA, and all custom account reserves.
   - **Card 2 (Összes Hátralék)**: Total Arrears across all apartments + "+ Új tétel rögzítése" universal entry button.
 - **Monthly Balance Margin Card**:
   - Current month cashflow margin (+/-) with Inflow vs Outflow comparison.

@@ -707,6 +707,9 @@ export const translations = {
 
     // Building-specific settings & Banking API
     bld_settings_title: "Társasház Beállításai & Bank",
+    bank_accounts_edit_title: "Folyószámlák és Tartalékok szerkesztése",
+    bank_accounts_saved_toast: "A bankszámlák és tartalékok adatai sikeresen elmentve!",
+    bank_provider_label: "Számlavezető bank",
     bld_settings_subtitle: "Épület alapadatok, banki számlaszámok és házspecifikus API integráció",
     bld_settings_tab_general: "Épület adatai & Számlák",
     bld_settings_tab_api: "Banki API Integráció",
@@ -1577,6 +1580,9 @@ export const translations = {
 
     // Building-specific settings & Banking API
     bld_settings_title: "Building Settings & Banking",
+    bank_accounts_edit_title: "Edit Bank Accounts & Reserves",
+    bank_accounts_saved_toast: "Bank accounts & reserves saved!",
+    bank_provider_label: "Account-Holding Bank",
     bld_settings_subtitle: "Building master data, bank accounts, and building-specific API integration",
     bld_settings_tab_general: "Building Details & Accounts",
     bld_settings_tab_api: "Banking API Integration",
