@@ -24,10 +24,11 @@ import { formatCurrency, getBuildingAccounts } from '../../utils/finances';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 import { getFirebaseInstance } from '../../constants/firebaseConfig';
 
-export function BankImportModal({ isOpen, onClose }) {
+export function BankImportModal({ isOpen, onClose, embedded = false }) {
   const { state, t, addMultipleItems, showToast, updateBuildingData } = useApp();
-  const { flats, currentLang, buildings, currentBuildingId, transactions: existingTxs, expenses: existingExpenses } = state;
+  const { flats, currentLang, buildings, currentBuildingId, currentUser, transactions: existingTxs, expenses: existingExpenses } = state;
   const isEn = currentLang === 'en';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
   const currentBuilding = useMemo(() => {
     return (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0] || {};
@@ -93,8 +94,10 @@ export function BankImportModal({ isOpen, onClose }) {
 
   useEffect(() => {
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      document.documentElement.style.overflow = 'hidden';
+      if (!embedded) {
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+      }
       if (currentBuilding?.defaultBank) {
         setSelectedBank(currentBuilding.defaultBank);
       }
@@ -112,7 +115,7 @@ export function BankImportModal({ isOpen, onClose }) {
       setIsCompleted(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }, [isOpen, currentBuilding]);
+  }, [isOpen, embedded, currentBuilding]);
 
   // Derived groups of matched items
   const verifiedItems = useMemo(() => {
@@ -480,17 +483,17 @@ export function BankImportModal({ isOpen, onClose }) {
     }
   };
 
-  const backdropProps = useBackdropClose(onClose);
+  const backdropProps = useBackdropClose(embedded ? () => {} : onClose);
 
-  if (!isOpen) return null;
+  if (!isOpen || !isAdmin) return null;
 
-  return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn cursor-default"
-      {...backdropProps}
-    >
+  const contentCard = (
       <div 
-        className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden my-auto animate-scaleUp"
+        className={
+          embedded
+            ? "bg-white rounded-2xl border border-gray-200 shadow-xs w-full flex flex-col overflow-hidden animate-fadeIn"
+            : "bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden my-auto animate-scaleUp"
+        }
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -510,18 +513,20 @@ export function BankImportModal({ isOpen, onClose }) {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors shrink-0 cursor-pointer"
-            title={isEn ? "Close" : "Bezárás"}
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {!embedded && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors shrink-0 cursor-pointer"
+              title={isEn ? "Close" : "Bezárás"}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Modal Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
+        <div className={embedded ? "p-4 sm:p-6 space-y-6" : "p-4 sm:p-6 overflow-y-auto flex-1 space-y-6"}>
 
           {/* 1. Bank Selector Bar */}
           <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -1158,26 +1163,40 @@ export function BankImportModal({ isOpen, onClose }) {
 
         </div>
 
-        {/* Modal Footer */}
-        <div className="p-4 sm:p-5 border-t border-gray-100 bg-gray-50/80 flex items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-gray-500">
-            {parsedMeta && (
-              <span>
-                {t.bank_import_total_read}: <strong>{matchedItems.length} db</strong>
-              </span>
+        {/* Modal Footer (only in standalone modal mode, or summary strip when parsed in embedded mode) */}
+        {(!embedded || parsedMeta) && (
+          <div className="p-4 sm:p-5 border-t border-gray-100 bg-gray-50/80 flex items-center justify-between gap-3 shrink-0">
+            <div className="text-xs text-gray-500">
+              {parsedMeta && (
+                <span>
+                  {t.bank_import_total_read}: <strong>{matchedItems.length} db</strong>
+                </span>
+              )}
+            </div>
+
+            {!embedded && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-100 text-gray-700 text-xs font-bold shadow-2xs transition-all cursor-pointer"
+              >
+                {isEn ? "Close" : "Bezárás"}
+              </button>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-100 text-gray-700 text-xs font-bold shadow-2xs transition-all cursor-pointer"
-          >
-            {isEn ? "Close" : "Bezárás"}
-          </button>
-        </div>
+        )}
 
       </div>
+  );
+
+  if (embedded) return contentCard;
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn cursor-default"
+      {...backdropProps}
+    >
+      {contentCard}
     </div>
   );
 }

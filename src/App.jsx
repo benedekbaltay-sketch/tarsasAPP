@@ -177,9 +177,14 @@ function MainLayout() {
   const [isAddFlatOpen, setIsAddFlatOpen] = useState(false);
   const [editFlatMasterData, setEditFlatMasterData] = useState(() => initialNavState?.editFlatMasterData || null); // { buildingId, flatNum }
   const [isFlatsDataOpen, setIsFlatsDataOpen] = useState(() => Boolean(initialNavState?.isFlatsDataOpen));
-  const [isFinancialSituationOpen, setIsFinancialSituationOpen] = useState(() => Boolean(initialNavState?.isFinancialSituationOpen));
+  const [isFinancialSituationOpen, setIsFinancialSituationOpen] = useState(() =>
+    Boolean(initialNavState?.isFinancialSituationOpen || initialNavState?.isLoansOpen)
+  );
+  const [financeInitialTab, setFinanceInitialTab] = useState(() =>
+    initialNavState?.isLoansOpen ? 'loans' : 'overview'
+  );
   const [isDocumentsOpen, setIsDocumentsOpen] = useState(() => Boolean(initialNavState?.isDocumentsOpen));
-  const [isLoansOpen, setIsLoansOpen] = useState(() => Boolean(initialNavState?.isLoansOpen));
+  const [isLoansOpen, setIsLoansOpen] = useState(false);
   const [isAssemblyOpen, setIsAssemblyOpen] = useState(() => Boolean(initialNavState?.isAssemblyOpen));
   const [isProfileOpen, setIsProfileOpen] = useState(() => Boolean(initialNavState?.isProfileOpen));
   const [isBuildingSelectorOpen, setIsBuildingSelectorOpen] = useState(false);
@@ -543,6 +548,7 @@ function MainLayout() {
         switchToKkMode();
         break;
       case 'finance':
+        setFinanceInitialTab('overview');
         setIsFinancialSituationOpen(true);
         break;
       case 'flats-data':
@@ -552,7 +558,8 @@ function MainLayout() {
         if (isAdmin) setIsAssemblyOpen(true);
         break;
       case 'loans':
-        setIsLoansOpen(true);
+        setFinanceInitialTab('loans');
+        setIsFinancialSituationOpen(true);
         break;
       case 'docs':
         setIsDocumentsOpen(true);
@@ -706,7 +713,10 @@ function MainLayout() {
               onOpenFullscreenTx={(type) => setFullscreenTxData({ type, fromFlatDetail: false })}
               onNavigateToCase={handleNavigateToCase}
               onOpenAssembly={() => setIsAssemblyOpen(true)}
-              onOpenLoans={() => setIsLoansOpen(true)}
+              onOpenLoans={() => {
+                setFinanceInitialTab('loans');
+                setIsFinancialSituationOpen(true);
+              }}
               onOpenCalendar={() => {
                 setCalendarBuildingId(state.currentBuildingId);
                 setIsCalendarOpen(true);
@@ -750,7 +760,11 @@ function MainLayout() {
 
       <FinancialSituationModal
         isOpen={Boolean(currentUser && isFinancialSituationOpen)}
-        onClose={() => setIsFinancialSituationOpen(false)}
+        initialTab={financeInitialTab}
+        onClose={() => {
+          setIsFinancialSituationOpen(false);
+          setFinanceInitialTab('overview');
+        }}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}
         onOpenEditTx={isAdmin ? (id, type, initialEditMode = true) => setEditTxData({ id, type, initialEditMode }) : undefined}

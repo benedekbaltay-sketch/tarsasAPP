@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   LineChart, 
@@ -6,7 +6,8 @@ import {
   Menu,
   ChevronRight,
   FileSpreadsheet,
-  ShieldCheck
+  ShieldCheck,
+  Landmark
 } from 'lucide-react';
 import { 
   formatCurrency, 
@@ -21,23 +22,70 @@ import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
 import { MonthlyDetailModal } from './MonthlyDetailModal';
 import { BankImportModal } from './BankImportModal';
+import { LoansModal } from './LoansModal';
 
-export function FinancialSituationModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelector, onOpenEditTx }) {
+export function FinancialSituationModal({
+  isOpen,
+  onClose,
+  onOpenDrawer,
+  onOpenProfileSelector,
+  onOpenEditTx,
+  initialTab = 'overview',
+}) {
   const { state, t } = useApp();
   const { flats, buildings, currentBuildingId, currentLang, currentUser } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const canViewUnitBreakdown = isAdmin || currentUser?.role === 'szvb';
+  const canViewLoans = isAdmin || currentUser?.role === 'szvb';
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const [selectedMonthData, setSelectedMonthData] = useState(null);
-  const [isBankImportOpen, setIsBankImportOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  // Extensible Finance Hub tabs (easily expandable with future financial modules)
+  const financeTabs = useMemo(() => {
+    const tabs = [
+      {
+        id: 'overview',
+        label: t.finance_tab_overview || (isEn ? 'Overview' : 'Áttekintés'),
+        icon: LineChart,
+      },
+    ];
+
+    if (isAdmin) {
+      tabs.push({
+        id: 'bank-import',
+        label: t.finance_tab_bank_import || (isEn ? 'Bank File Import' : 'Banki fájl importálás'),
+        icon: FileSpreadsheet,
+      });
+    }
+
+    if (canViewLoans) {
+      tabs.push({
+        id: 'loans',
+        label: t.finance_tab_loans || t.menu_loans || (isEn ? 'Loans' : 'Hitelek'),
+        icon: Landmark,
+      });
+    }
+
+    return tabs;
+  }, [isAdmin, canViewLoans, isEn, t]);
 
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
       document.documentElement.style.overflow = 'hidden';
+      const allowedIds = new Set(financeTabs.map(tab => tab.id));
+      setActiveTab(allowedIds.has(initialTab) ? initialTab : 'overview');
     }
-  }, [isOpen]);
+  }, [isOpen, initialTab, financeTabs]);
+
+  // Keep activeTab valid if user role changes
+  useEffect(() => {
+    if (!financeTabs.some(tab => tab.id === activeTab)) {
+      setActiveTab('overview');
+    }
+  }, [financeTabs, activeTab]);
 
   if (!isOpen || !currentUser) return null;
 
@@ -104,60 +152,54 @@ export function FinancialSituationModal({ isOpen, onClose, onOpenDrawer, onOpenP
             </div>
           </div>
 
-          {/* Right side: Actions & Profile Selector */}
+          {/* Right side: Profile Selector */}
           <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 flex-1 flex-shrink-0">
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setIsBankImportOpen(true)}
-                className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] text-xs font-bold shadow-2xs transition-all cursor-pointer"
-                title={t.bank_import_btn}
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                <span>{t.bank_import_btn}</span>
-              </button>
-            )}
             <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />
           </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-0 overflow-y-auto w-full overscroll-contain">
-        <div className="p-4 md:p-8 space-y-6 max-w-5xl mx-auto w-full">
+      <div
+        className="flex-1 min-h-0 overflow-y-auto w-full overscroll-contain"
+        style={{ scrollbarGutter: 'stable' }}
+      >
+        <div className="p-4 md:p-8 space-y-6 max-w-6xl mx-auto w-full">
         
-        {/* Admin Action: Bank Import & Excel Upload Banner */}
-        {isAdmin && (
-          <div className="bg-gradient-to-r from-blue-900 via-[#1E3A8A] to-blue-800 rounded-2xl p-4 sm:p-5 text-white shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5 min-w-0">
-              <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur-xs border border-white/20 text-white flex items-center justify-center shrink-0 shadow-inner">
-                <FileSpreadsheet className="w-6 h-6 text-blue-200" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm sm:text-base font-bold text-white font-display">
-                    {t.bank_import_title}
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white uppercase tracking-wider">
-                    {isEn ? "Smart Match" : "Intelligens párosító"}
-                  </span>
-                </div>
-                <p className="text-xs text-blue-100/90 mt-0.5 max-w-xl">
-                  {t.bank_import_subtitle}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsBankImportOpen(true)}
-              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white hover:bg-blue-50 text-[#1E3A8A] text-xs font-bold shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-[#1E3A8A]" />
-              <span>{t.bank_import_btn}</span>
-            </button>
+        {/* Extensible Finance Hub Tab Bar (replaces the old Bank Import banner) */}
+        {financeTabs.length > 1 && (
+          <div
+            role="tablist"
+            aria-label={t.menu_finance || (isEn ? 'Building Finances' : 'A ház pénzügyi helyzete')}
+            className="bg-white rounded-2xl border border-gray-200 p-1.5 shadow-xs flex items-center gap-1.5 overflow-x-auto"
+          >
+            {financeTabs.map((tab) => {
+              const TabIcon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                    isActive
+                      ? 'bg-[#1E3A8A] text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
+                  }`}
+                >
+                  <TabIcon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-gray-500'}`} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
         )}
+
+        {/* TAB 1: Áttekintés (Reserves, Arrears Breakdown & Closed Monthly Balances) */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6 animate-fadeIn">
         
         {/* 1. Reserves Cards */}
         <div className="space-y-2">
@@ -443,6 +485,26 @@ export function FinancialSituationModal({ isOpen, onClose, onOpenDrawer, onOpenP
             </table>
           </div>
         </div>
+          </div>
+        )}
+
+        {/* TAB 2: Banki fájl importálás (Admin only, inline embedded) */}
+        {activeTab === 'bank-import' && isAdmin && (
+          <BankImportModal
+            isOpen={true}
+            embedded={true}
+            onClose={() => setActiveTab('overview')}
+          />
+        )}
+
+        {/* TAB 3: Hitelek (Admin & SZVB, inline embedded) */}
+        {activeTab === 'loans' && canViewLoans && (
+          <LoansModal
+            isOpen={true}
+            embedded={true}
+            onClose={() => setActiveTab('overview')}
+          />
+        )}
 
       </div>
     </div>
@@ -453,12 +515,6 @@ export function FinancialSituationModal({ isOpen, onClose, onOpenDrawer, onOpenP
       monthData={selectedMonthData}
       onClose={() => setSelectedMonthData(null)}
       onOpenEditTx={onOpenEditTx}
-    />
-
-    {/* Bank Import & Smart Matching Review Modal */}
-    <BankImportModal
-      isOpen={isBankImportOpen}
-      onClose={() => setIsBankImportOpen(false)}
     />
   </div>
 );

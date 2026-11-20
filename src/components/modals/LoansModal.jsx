@@ -42,7 +42,7 @@ import {
 import { NewLoanModal } from './LoanModals/NewLoanModal';
 import { RecordPaymentModal } from './LoanModals/RecordPaymentModal';
 
-export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelector }) {
+export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelector, embedded = false }) {
   const { state, t, deleteLoan, deleteLoanPayment } = useApp();
   const { currentUser, currentLang, loans = [] } = state;
   const isEn = currentLang === 'en';
@@ -65,8 +65,10 @@ export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelecto
 
   useEffect(() => {
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      document.documentElement.style.overflow = 'hidden';
+      if (!embedded) {
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+      }
     } else {
       setActiveTab('active');
       setSelectedLoanId(null);
@@ -76,7 +78,7 @@ export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelecto
       setSearchQuery('');
       setMethodFilter('all');
     }
-  }, [isOpen]);
+  }, [isOpen, embedded]);
 
   // Active vs Archived loans
   const activeLoans = useMemo(() => {
@@ -123,71 +125,42 @@ export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelecto
 
   if (!isOpen || !currentUser) return null;
 
-  return (
-    <div className="fixed inset-0 z-40 bg-[#F3F4F6] flex flex-col overflow-hidden animate-fadeIn">
-      {/* Sticky Top Header Container */}
-      <div className="sticky top-0 z-20 w-full shadow-xs">
-        <ImpersonationBanner onExit={onClose} />
-        <div className="bg-white border-b border-gray-200 px-3 sm:px-4 md:px-8 py-3 flex items-center justify-between gap-2 sm:gap-4">
-          
-          {/* Left: Menu & Website Logo -> Back to Home */}
-          <div className="flex items-center justify-start gap-2 sm:gap-2.5 flex-1 min-w-0">
-            {onOpenDrawer && (
-              <button
-                type="button"
-                onClick={onOpenDrawer}
-                className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-700 shadow-2xs transition-all cursor-pointer flex-shrink-0 hover:border-gray-300"
-                title={isEn ? "Open Menu" : "Menü megnyitása"}
-                aria-label={isEn ? "Open Menu" : "Menü megnyitása"}
-              >
-                <Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-gray-700" />
-              </button>
-            )}
-            <NavLogoButton onClick={onClose} />
-          </div>
-
-          {/* Center: Current Interface Name */}
-          <div className="flex items-center justify-center text-center px-1 sm:px-2 flex-shrink-0 max-w-[60%] sm:max-w-[50%]">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0 shadow-2xs">
-                <Landmark className="w-4 h-4" />
-              </div>
-              <div className="min-w-0 text-left sm:text-center">
-                <h2 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 font-display truncate">
-                  {isEn ? "Condominium Loans & Renovation Funds" : "Társasházi hitelek és célbefizetések"}
-                </h2>
-                <span className="text-[10px] sm:text-xs text-gray-500 truncate block">
-                  {stats.activeLoansCount} {isEn ? "active loans" : "aktív hitel"} • {formatCurrency(stats.totalRemainingDebt)} {isEn ? "debt" : "fennmaradó tőke"}
-                </span>
-              </div>
+  const loansBodyContent = (
+    <div className={embedded ? "space-y-6 animate-fadeIn" : "max-w-6xl mx-auto p-4 sm:p-6 md:p-8 space-y-6"}>
+      {/* Compact Embedded Section Header with "+ Új hitel rögzítése" button */}
+      {embedded && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 shadow-2xs">
+              <Landmark className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-bold text-gray-900 font-display truncate">
+                {isEn ? "Condominium Loans & Renovation Funds" : "Társasházi hitelek és célbefizetések"}
+              </h3>
+              <span className="text-xs text-gray-500 block truncate">
+                {stats.activeLoansCount} {isEn ? "active loans" : "aktív hitel"} • {formatCurrency(stats.totalRemainingDebt)} {isEn ? "debt" : "fennmaradó tőke"}
+              </span>
             </div>
           </div>
 
-          {/* Right side: New Loan Button, Profile Switcher & Menu */}
-          <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 flex-1 flex-shrink-0">
-            {isAdmin && (
-              <button
-                onClick={() => {
-                  setEditingLoanData(null);
-                  setIsNewLoanOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs shadow-purple-200 cursor-pointer transition-all active:scale-[0.98]"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden md:inline">{isEn ? "New Loan" : "Új hitel rögzítése"}</span>
-              </button>
-            )}
-
-            <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />
-          </div>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingLoanData(null);
+                setIsNewLoanOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs shadow-purple-200 cursor-pointer transition-all active:scale-[0.98]"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{isEn ? "New Loan" : "Új hitel rögzítése"}</span>
+            </button>
+          )}
         </div>
-      </div>
+      )}
 
-      {/* Main Content Area (Scrollable) */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-        <div className="max-w-6xl mx-auto p-4 sm:p-6 md:p-8 space-y-6">
-          
-          {/* A) ÖSSZESÍTŐ KÁRTYÁK (Dashboard KPI Header) */}
+      {/* A) ÖSSZESÍTŐ KÁRTYÁK (Dashboard KPI Header) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
             
             {/* KPI 1: Összes fennmaradó hiteltartozás */}
@@ -932,8 +905,10 @@ export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelecto
             </div>
           )}
         </div>
-      </div>
+  );
 
+  const loanActionModals = (
+    <>
       {/* Modal 1: New / Edit Loan Modal */}
       <NewLoanModal
         isOpen={isNewLoanOpen}
@@ -950,6 +925,79 @@ export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelecto
         onClose={() => setPaymentModalLoan(null)}
         loan={paymentModalLoan}
       />
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <>
+        {loansBodyContent}
+        {loanActionModals}
+      </>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 bg-[#F3F4F6] flex flex-col overflow-hidden animate-fadeIn">
+      {/* Sticky Top Header Container */}
+      <div className="sticky top-0 z-20 w-full shadow-xs">
+        <ImpersonationBanner onExit={onClose} />
+        <div className="bg-white border-b border-gray-200 px-3 sm:px-4 md:px-8 py-3 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center justify-start gap-2 sm:gap-2.5 flex-1 min-w-0">
+            {onOpenDrawer && (
+              <button
+                type="button"
+                onClick={onOpenDrawer}
+                className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-700 shadow-2xs transition-all cursor-pointer flex-shrink-0 hover:border-gray-300"
+                title={isEn ? "Open Menu" : "Menü megnyitása"}
+                aria-label={isEn ? "Open Menu" : "Menü megnyitása"}
+              >
+                <Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-gray-700" />
+              </button>
+            )}
+            <NavLogoButton onClick={onClose} />
+          </div>
+
+          <div className="flex items-center justify-center text-center px-1 sm:px-2 flex-shrink-0 max-w-[60%] sm:max-w-[50%]">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0 shadow-2xs">
+                <Landmark className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 text-left sm:text-center">
+                <h2 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 font-display truncate">
+                  {isEn ? "Condominium Loans & Renovation Funds" : "Társasházi hitelek és célbefizetések"}
+                </h2>
+                <span className="text-[10px] sm:text-xs text-gray-500 truncate block">
+                  {stats.activeLoansCount} {isEn ? "active loans" : "aktív hitel"} • {formatCurrency(stats.totalRemainingDebt)} {isEn ? "debt" : "fennmaradó tőke"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 flex-1 flex-shrink-0">
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setEditingLoanData(null);
+                  setIsNewLoanOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs shadow-purple-200 cursor-pointer transition-all active:scale-[0.98]"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="hidden md:inline">{isEn ? "New Loan" : "Új hitel rögzítése"}</span>
+              </button>
+            )}
+            <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area (Scrollable) */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        {loansBodyContent}
+      </div>
+
+      {loanActionModals}
     </div>
   );
 }

@@ -5,7 +5,6 @@ import {
   Building2, 
   LayoutDashboard, 
   LineChart, 
-  Landmark, 
   FolderOpen, 
   User, 
   LogOut, 
@@ -267,20 +266,6 @@ export function IosSideDrawer({
                       <span className="text-sm font-semibold text-gray-800">
                         {t.menu_assembly || (isHu ? "Közgyűlés" : "General Assembly")}
                       </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
-                  </button>
-
-                  {/* 🏛️ Hitelek */}
-                  <button
-                    onClick={() => handleAction('loans')}
-                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-purple-500 text-white flex items-center justify-center shadow-xs">
-                        <Landmark className="w-4 h-4" />
-                      </div>
-                      <span className="text-sm font-semibold text-gray-800">{t.menu_loans}</span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
