@@ -127,3 +127,25 @@ Available from `ProfileModal` for authenticated users:
 > - **Phase 0 (Completed in Repo)**: Eliminated hardcoded PII/passwords/secrets from `defaultData.js` and client bundle; enforced strict Firebase Auth login, current-password re-auth, >=10 char passwords, anti-enumeration, role guards across all action modules and UI bypasses, and server-side banking API secret isolation.
 > - **Phase 1 (Implemented Locally — Emulator Verified Before Live Cutover)**: Built multi-tenant **Cloud Firestore** (`firestore.rules`, `firestore.indexes.json`), **Cloud Storage** (`storage.rules`), **Option A Atomic Cloud Functions** (`functions/src/`), per-building `members/{uid}` RBAC + `accessFromDate` ownership-transfer privacy, immutable `auditLogs` (`allow update, delete: if false;`), GDPR UI isolation (`FinancialSituationModal`, `MonthlyDetailModal`, `TenantView`), and 0-Ft migration/parity scripts (`scripts/`).
 > - Detailed security specification: [docs/SECURITY_AND_DATA_PROTECTION.md](file:///c:/Users/bened/Documents/tarsasAPP/docs/SECURITY_AND_DATA_PROTECTION.md).
+
+---
+
+## 6. Multi-Company Organizations & Self-Service Delegation
+
+### 6.1 Team Permissions & Visual Indicators
+In `TeamManagementModal`, four distinct permissions are managed per staff member:
+1. **Create Condominiums (`canCreateBuildings`)**: Staff can add new buildings under the organization. Active: green badge with check icon; Inactive: subtle gray badge with lock icon (`Create locked`).
+2. **Team Management (`canManageTeam`)**: Staff can invite colleagues and assign buildings. Active: green badge with check icon; Inactive: subtle gray badge with lock icon (`Team locked`).
+3. **IBAN Modification (`canEditBankAccounts`)**: Disabled by default for fraud prevention. Active: green badge with check icon (alerts Owner); Inactive: subtle gray badge with lock icon (`IBAN locked`).
+4. **Delete Condominiums (`canDeleteBuildings`)**: Strictly Owner/SuperAdmin-only safeguard. Always locked gray with lock icon (`Delete locked`) for all staff.
+
+On the Owner card, all four permissions are permanently active with green indicators.
+
+### 6.2 Modals UX & Safeguards
+1. **Keyboard Escape Close**: All non-fullscreen modals and `useBackdropClose` listen for `Escape` to close cleanly. In nested flows (e.g. colleague deletion confirmation inside `TeamManagementModal`), `Escape` dismisses the innermost popup first.
+2. **Dedicated Confirmation Popups**: Removing a colleague opens a centered modal dialog (`fixed inset-0 z-[70]`) with explicit confirmation, preventing accidental deletion.
+3. **Portfolio View UX**:
+   - Table view omits bank columns to prioritize high-level portfolio KPIs.
+   - Removed distracting row-end shortcuts (calendar/settings).
+   - Single-click row selection; double-click or subtle "Megnyitás" button to enter.
+   - Full mouse text selection and copying enabled across all cells (no `select-none`).

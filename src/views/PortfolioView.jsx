@@ -53,6 +53,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
   // View mode: 'list' (DEFAULT) or 'grid'
   const [viewMode, setViewMode] = useState('list');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedBuildingId, setSelectedBuildingId] = useState(null);
 
   // Filtered buildings list (strictly scoped to buildings accessible by the logged-in user)
   const filteredBuildings = useMemo(() => {
@@ -277,7 +278,6 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                   <th className="py-3 px-4">{t.portfolio_col_building || (isEn ? "Condominium / Address" : "Társasház / Cím")}</th>
                   <th className="py-3 px-3">{t.portfolio_col_tax || (isEn ? "Tax ID" : "Adószám")}</th>
                   <th className="py-3 px-3 text-center">{t.portfolio_col_flats || (isEn ? "Flats" : "Lakások")}</th>
-                  <th className="py-3 px-3">{t.portfolio_col_bank || (isEn ? "Bank" : "Számlavezető")}</th>
                   <th className="py-3 px-4">{t.portfolio_col_reserves || (isEn ? "Reserves" : "Tartalékok")}</th>
                   <th className="py-3 px-4">{t.portfolio_col_arrears || (isEn ? "Arrears Status" : "Hátralék státusz")}</th>
                   <th className="py-3 px-4 text-right">{t.portfolio_col_actions || (isEn ? "Actions" : "Műveletek")}</th>
@@ -301,15 +301,24 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                     }
                   });
 
-                  // Bank name or defaultBank
-                  const bankName = (b.defaultBank ? b.defaultBank.toUpperCase() : (b.bankKK?.bank || 'OTP'));
+                  const isSelected = selectedBuildingId === b.id;
 
                   return (
                     <tr
                       key={b.id}
                       tabIndex={0}
                       role="button"
-                      onClick={() => onSelectBuilding(b.id)}
+                      onClick={() => {
+                        // Allow text selection and copying with mouse without triggering navigation
+                        const sel = window.getSelection();
+                        if (sel && sel.toString().length > 0) return;
+                        if (isSelected) {
+                          onSelectBuilding(b.id);
+                        } else {
+                          setSelectedBuildingId(b.id);
+                        }
+                      }}
+                      onDoubleClick={() => onSelectBuilding(b.id)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           if (e.target.tagName !== 'BUTTON') {
@@ -318,8 +327,16 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                           }
                         }
                       }}
-                      className="hover:bg-blue-50/60 focus:bg-blue-50 focus:outline-none transition-colors cursor-pointer group select-none"
-                      title={isHu ? "Kattintson a társasház megnyitásához" : "Click to open condominium"}
+                      className={`transition-colors cursor-pointer group ${
+                        isSelected
+                          ? 'bg-blue-50/90 border-l-4 border-l-[#1E3A8A]'
+                          : 'hover:bg-blue-50/40 border-l-4 border-l-transparent'
+                      }`}
+                      title={
+                        isSelected
+                          ? (isHu ? "Kattintson még egyszer vagy a Megnyitás gombra a belépéshez" : "Click again or press Open to enter")
+                          : (isHu ? "Kattintson a kiválasztáshoz (második kattintás megnyitja)" : "Click to select (second click opens)")
+                      }
                     >
                       {/* 1. Building Name & Address */}
                       <td className="py-3 px-4">
@@ -356,15 +373,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                         </span>
                       </td>
 
-                      {/* 4. Bank */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-gray-50 px-2 py-0.5 rounded border border-gray-200">
-                          <Wallet className="w-3 h-3 text-gray-500" />
-                          <span>{bankName}</span>
-                        </span>
-                      </td>
-
-                      {/* 5. Reserves */}
+                      {/* 4. Reserves */}
                       <td className="py-3 px-4 whitespace-nowrap">
                         <div className="font-bold text-emerald-600 font-display text-xs">
                           {formatCurrency(totalReserves)}
@@ -374,7 +383,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                         </div>
                       </td>
 
-                      {/* 6. Arrears Status */}
+                      {/* 5. Arrears Status */}
                       <td className="py-3 px-4 whitespace-nowrap">
                         {buildingArrears > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
@@ -390,37 +399,22 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                         )}
                       </td>
 
-                      {/* 7. Actions */}
+                      {/* 6. Actions */}
                       <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end">
                           <button
                             type="button"
                             onClick={() => onSelectBuilding(b.id)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-xs font-bold shadow-2xs transition-all cursor-pointer active:scale-95"
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-medium transition-all cursor-pointer active:scale-95 ${
+                              isSelected
+                                ? 'bg-blue-50/90 text-[#1E3A8A] border-blue-300 font-semibold shadow-2xs'
+                                : 'bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900 border-gray-200 hover:border-gray-300 shadow-2xs'
+                            }`}
+                            title={isEn ? "Open condominium" : "Társasház megnyitása"}
                           >
                             <span>{t.portfolio_open_btn || (isEn ? "Open" : "Megnyitás")}</span>
-                            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                            <ArrowRight className="w-3 h-3 text-gray-400 group-hover:text-gray-600 group-hover:translate-x-0.5 transition-transform" />
                           </button>
-
-                          <button
-                            type="button"
-                            onClick={() => onOpenCalendar(b.id)}
-                            className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-all cursor-pointer shadow-2xs hover:border-gray-300"
-                            title={isEn ? "Building Calendar & Tasks" : "Ház eseményei és naptár"}
-                          >
-                            <Calendar className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                          </button>
-
-                          {onOpenBuildingSettings && (
-                            <button
-                              type="button"
-                              onClick={() => onOpenBuildingSettings(b.id)}
-                              className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-all cursor-pointer shadow-2xs hover:border-gray-300"
-                              title={t.bld_settings_portfolio_btn || (isEn ? "Building Settings & Banking" : "Ház beállításai & Bank")}
-                            >
-                              <Settings className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                            </button>
-                          )}
                         </div>
                       </td>
 
@@ -470,7 +464,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                     }
                   }
                 }}
-                className="group bg-white rounded-3xl border border-gray-200/90 hover:border-[#1E3A8A] focus:border-[#1E3A8A] focus:ring-2 focus:ring-[#1E3A8A]/30 focus:outline-none p-5 sm:p-6 shadow-xs hover:shadow-xl transition-all duration-200 flex flex-col justify-between cursor-pointer select-none"
+                className="group bg-white rounded-3xl border border-gray-200/90 hover:border-[#1E3A8A] focus:border-[#1E3A8A] focus:ring-2 focus:ring-[#1E3A8A]/30 focus:outline-none p-5 sm:p-6 shadow-xs hover:shadow-xl transition-all duration-200 flex flex-col justify-between cursor-pointer"
               >
                 <div>
                   
@@ -559,44 +553,18 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                 </div>
 
                 {/* Card Actions */}
-                <div className="mt-6 pt-4 border-t border-gray-100 flex items-center gap-2">
+                <div className="mt-6 pt-4 border-t border-gray-100 flex items-center">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelectBuilding(b.id);
                     }}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                    className="w-full py-2.5 px-3 rounded-xl border border-gray-200 bg-white hover:bg-blue-50/70 hover:border-blue-300 text-[#1E3A8A] font-bold text-xs shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
                   >
                     <span>{t.portfolio_manage_building || (isEn ? "Manage Building" : "Társasház kezelése")}</span>
                     <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenCalendar(b.id);
-                    }}
-                    className="p-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-all cursor-pointer shadow-2xs hover:border-gray-300 active:scale-95"
-                    title={isEn ? "Building Calendar & Tasks" : "Ház eseményei és naptár"}
-                  >
-                    <Calendar className="w-4 h-4 text-[#1E3A8A]" />
-                  </button>
-
-                  {onOpenBuildingSettings && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenBuildingSettings(b.id);
-                      }}
-                      className="p-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-all cursor-pointer shadow-2xs hover:border-gray-300 active:scale-95"
-                      title={t.bld_settings_portfolio_btn || (isEn ? "Building Settings & Banking" : "Ház beállításai & Bank")}
-                    >
-                      <Settings className="w-4 h-4 text-[#1E3A8A]" />
-                    </button>
-                  )}
                 </div>
 
               </div>

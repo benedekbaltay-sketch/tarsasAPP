@@ -58,7 +58,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const isEn = currentLang === 'en';
   const isHu = !isEn;
 
-  const backdropProps = useBackdropClose(onClose);
+  const backdropProps = useBackdropClose(onClose, { enableEscape: !removeTargetMember && !handoverFromMember });
 
   const orgCtx = useMemo(
     () => resolveUserOrgContext(currentUser, organizations, buildings),
@@ -126,6 +126,26 @@ export function TeamManagementModal({ isOpen, onClose }) {
       setCentralHours(org?.centralContact?.officeHours || repProfile?.officeHours || '');
     }
   }, [isOpen, orgCtx.org?.id]);
+
+  // Keyboard Escape listener: close sub-modals first, then main modal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (removeTargetMember) {
+          e.stopPropagation();
+          setRemoveTargetMember(null);
+        } else if (handoverFromMember) {
+          e.stopPropagation();
+          setHandoverFromMember(null);
+        } else {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isOpen, onClose, removeTargetMember, handoverFromMember]);
 
   if (!isOpen || !currentUser || !canManage) return null;
 
@@ -556,11 +576,25 @@ export function TeamManagementModal({ isOpen, onClose }) {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="px-2 py-0.5 rounded-lg bg-white border border-blue-200 text-[#1E3A8A] text-[10px] font-bold">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-[#1E3A8A] border border-blue-200 text-[10px] font-bold">
+                      <Building2 className="w-3 h-3" />
                       {isEn ? `All buildings (${orgBuildings.length})` : `Összes ház (${orgBuildings.length})`}
                     </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-white border border-blue-200 text-emerald-700 text-[10px] font-bold">
-                      {isEn ? 'Full control & Delete' : 'Teljes jogkör & Törlés'}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      {t.team_perm_delete_short || (isEn ? 'Delete buildings' : 'Ház törlése')}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      {t.team_perm_create_short || (isEn ? '+ Create buildings' : '+ Új ház létrehozás')}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      {t.team_perm_manage_short || (isEn ? 'Manage team' : 'Csapat kezelés')}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      {isEn ? 'IBAN edit' : 'Bankszámla módosítás'}
                     </span>
                   </div>
                 </div>
@@ -712,8 +746,8 @@ export function TeamManagementModal({ isOpen, onClose }) {
                             )}
                           </div>
 
-                          {/* Assigned Buildings & Permissions Pills */}
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-gray-100">
+                          {/* Assigned Buildings & Explicit Permissions Indicator Bar */}
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-gray-100">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-[#1E3A8A] border border-blue-100 text-[10px] font-bold">
                               <Building2 className="w-3 h-3" />
                               {m.buildingScope === 'all'
@@ -721,27 +755,56 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                 : (isEn ? `${assignedBuildings.length} building(s)` : `${assignedBuildings.length} társasház`)}
                             </span>
 
-                            {m.permissions?.canCreateBuildings && (
-                              <span className="px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-bold">
+                            {/* 1. Create Buildings Permission */}
+                            {m.permissions?.canCreateBuildings ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                <Check className="w-3 h-3 text-emerald-600" />
                                 {t.team_perm_create_short || (isEn ? '+ Create buildings' : '+ Új ház létrehozás')}
                               </span>
-                            )}
-                            {m.permissions?.canManageTeam && (
-                              <span className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-100 text-[10px] font-bold">
-                                {t.team_perm_manage_short || (isEn ? 'Manage team' : 'Csapat kezelés')}
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold">
+                                <Lock className="w-2.5 h-2.5" />
+                                {t.team_perm_create_locked_short || (isEn ? 'Create locked' : 'Új ház zárolt')}
                               </span>
                             )}
+
+                            {/* 2. Manage Team Permission */}
+                            {m.permissions?.canManageTeam ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                {t.team_perm_manage_short || (isEn ? 'Manage team' : 'Csapat kezelés')}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold">
+                                <Lock className="w-2.5 h-2.5" />
+                                {t.team_perm_manage_locked_short || (isEn ? 'Team locked' : 'Csapat zárolt')}
+                              </span>
+                            )}
+
+                            {/* 3. Edit Bank Accounts Permission */}
                             {m.permissions?.canEditBankAccounts ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold">
-                                <Landmark className="w-3 h-3" />
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold"
+                                title={isEn ? 'Can modify bank account numbers (alerted)' : 'Bankszámlaszámok módosítása (értesítéssel)'}
+                              >
+                                <Check className="w-3 h-3 text-emerald-600" />
                                 {t.team_perm_bank_short || (isEn ? 'Edit IBAN (alerts Owner)' : 'Bankszámla módosítás (értesítéssel)')}
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 text-[10px] font-semibold">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold">
                                 <Lock className="w-2.5 h-2.5" />
                                 {t.team_perm_bank_locked_short || (isEn ? 'IBAN locked' : 'Bankszámla zárolt')}
                               </span>
                             )}
+
+                            {/* 4. Delete Buildings (Always Locked for Staff) */}
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold"
+                              title={t.team_perm_delete_locked_desc || (isEn ? 'Colleagues can never delete condominium buildings.' : 'Munkatársak semmilyen körülmények között nem törölhetnek társasházat.')}
+                            >
+                              <Lock className="w-2.5 h-2.5" />
+                              {t.team_perm_delete_locked_short || (isEn ? 'Delete locked' : 'Ház törlés zárolt')}
+                            </span>
                           </div>
 
                           {/* Preview assigned building names when selected */}
@@ -872,58 +935,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
                       className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer"
                     >
                       {t.team_handover_confirm || (isEn ? 'Transfer Buildings' : 'Házak átadása')}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Inline Remove Confirmation (with Personal Contact Reset check!) */}
-              {removeTargetMember && (
-                <div className="p-4 rounded-xl bg-red-50 border border-red-200 space-y-3">
-                  <div className="flex items-start gap-2.5">
-                    <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 space-y-1">
-                      <h4 className="font-bold text-red-950 text-xs">
-                        {isEn
-                          ? `Remove ${removeTargetMember.name} (${removeTargetMember.email})?`
-                          : `Eltávolítod ${removeTargetMember.name} (${removeTargetMember.email}) munkatársat?`}
-                      </h4>
-                      <p className="text-[11px] text-red-800">
-                        {isEn
-                          ? 'They will immediately lose access to all company condominiums.'
-                          : 'Azonnal elveszíti a hozzáférést az összes céges társasházhoz.'}
-                      </p>
-                      {getPersonalContactBuildingsForEmail(removeTargetMember.email).length > 0 && (
-                        <label className="flex items-start gap-2 pt-1.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={resetPersonalContactsOnRemove}
-                            onChange={(e) => setResetPersonalContactsOnRemove(e.target.checked)}
-                            className="mt-0.5 rounded text-red-600"
-                          />
-                          <span className="text-[11px] font-semibold text-red-950">
-                            {isEn
-                              ? `Reset resident contact back to central company details on ${getPersonalContactBuildingsForEmail(removeTargetMember.email).length} building(s) showing their personal contact.`
-                              : `Állítsa vissza a központi céges elérhetőséget azon a(z) ${getPersonalContactBuildingsForEmail(removeTargetMember.email).length} társasháznál, ahol az ő személyes elérhetősége volt megjelenítve.`}
-                          </span>
-                        </label>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setRemoveTargetMember(null)}
-                      className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 font-semibold text-xs cursor-pointer"
-                    >
-                      {t.cancel || (isEn ? 'Cancel' : 'Mégse')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleConfirmRemove}
-                      className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-xs cursor-pointer"
-                    >
-                      {t.team_confirm_remove_btn || (isEn ? 'Remove Colleague' : 'Végleges eltávolítás')}
                     </button>
                   </div>
                 </div>
@@ -1313,6 +1324,71 @@ export function TeamManagementModal({ isOpen, onClose }) {
           )}
         </div>
       </div>
+
+      {/* Dedicated Remove Colleague Confirmation Modal Popup */}
+      {removeTargetMember && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setRemoveTargetMember(null)}
+        >
+          <div
+            className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-sm p-6 text-center space-y-4 animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-14 h-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto shadow-2xs">
+              <Trash2 className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-base font-bold text-gray-900">
+                {t.team_remove_modal_title || (isEn ? 'Remove Colleague' : 'Munkatárs eltávolítása')}
+              </h3>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                {isEn ? (
+                  <>Are you sure you want to remove <b>{removeTargetMember.name}</b> ({removeTargetMember.email})? They will immediately lose access to all company condominiums.</>
+                ) : (
+                  <>Biztosan el szeretnéd távolítani <b>{removeTargetMember.name}</b> ({removeTargetMember.email}) munkatársat? Azonnal elveszíti a hozzáférést az összes céges társasházhoz.</>
+                )}
+              </p>
+            </div>
+
+            {getPersonalContactBuildingsForEmail(removeTargetMember.email).length > 0 && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-left">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={resetPersonalContactsOnRemove}
+                    onChange={(e) => setResetPersonalContactsOnRemove(e.target.checked)}
+                    className="mt-0.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                  />
+                  <span className="text-[11px] font-semibold text-amber-950 leading-snug">
+                    {isEn
+                      ? `Reset resident contact back to central company details on ${getPersonalContactBuildingsForEmail(removeTargetMember.email).length} condominium(s) showing their personal contact.`
+                      : `Állítsa vissza a központi céges elérhetőséget azon a(z) ${getPersonalContactBuildingsForEmail(removeTargetMember.email).length} társasháznál, ahol az ő személyes elérhetősége volt megjelenítve.`}
+                  </span>
+                </label>
+              </div>
+            )}
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setRemoveTargetMember(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                {t.cancel || (isEn ? 'Cancel' : 'Mégse')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRemove}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-98"
+              >
+                {t.team_confirm_remove_btn || (isEn ? 'Remove Colleague' : 'Végleges eltávolítás')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
