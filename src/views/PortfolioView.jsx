@@ -61,6 +61,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
     if (!q) return accessibleBuildings;
     return accessibleBuildings.filter(b => 
       (b.name || '').toLowerCase().includes(q) || 
+      (b.officialName || '').toLowerCase().includes(q) || 
       (b.address || '').toLowerCase().includes(q) ||
       (b.taxNumber || '').toLowerCase().includes(q)
     );
@@ -349,7 +350,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                               {b.name}
                             </span>
                             <span className="text-[11px] text-gray-500 block truncate">
-                              {b.address || t.building_address}
+                              {b.officialName && b.officialName !== b.name ? `${b.officialName} • ${b.address || t.building_address}` : (b.address || t.building_address)}
                             </span>
                           </div>
                         </div>

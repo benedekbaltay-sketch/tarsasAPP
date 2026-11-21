@@ -8,6 +8,7 @@ export function AddBuildingModal({ isOpen, onClose }) {
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
 
   const [name, setName] = useState('');
+  const [officialName, setOfficialName] = useState('');
   const [address, setAddress] = useState('');
   const [taxNumber, setTaxNumber] = useState('');
   const [bankKKName, setBankKKName] = useState('');
@@ -31,15 +32,16 @@ export function AddBuildingModal({ isOpen, onClose }) {
     addBuilding({
       id: buildingId,
       name: name.trim(),
+      officialName: officialName.trim(),
       address: address.trim(),
       taxNumber: taxNumber.trim(),
       bankKK: {
-        name: bankKKName.trim() || name.trim(),
+        name: bankKKName.trim() || officialName.trim() || name.trim(),
         bank: bankKKBank.trim() || 'OTP',
         account: bankKKAccount.trim()
       },
       bankFA: {
-        name: bankFAName.trim() || name.trim(),
+        name: bankFAName.trim() || officialName.trim() || name.trim(),
         bank: bankFABank.trim() || 'OTP',
         account: bankFAAccount.trim()
       },
@@ -78,37 +80,48 @@ export function AddBuildingModal({ isOpen, onClose }) {
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-5 space-y-3.5 overflow-y-auto text-xs">
           <div>
-            <label className="block font-semibold text-gray-700 mb-1">{t.building_name}</label>
+            <label className="block font-semibold text-gray-700 mb-1">{t.bld_settings_name || "Elnevezés"} *</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="pl. Kossuth Lajos utca 12. Társasház"
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg"
+              placeholder="pl. Batyu u. 21."
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
               required
             />
           </div>
 
           <div>
-            <label className="block font-semibold text-gray-700 mb-1">{t.building_address_label}</label>
+            <label className="block font-semibold text-gray-700 mb-1">{t.bld_settings_official_name || "Hivatalos név"}</label>
+            <input
+              type="text"
+              value={officialName}
+              onChange={(e) => setOfficialName(e.target.value)}
+              placeholder="pl. Batyu utca 21. Társasház"
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+            />
+          </div>
+
+          <div>
+            <label className="block font-semibold text-gray-700 mb-1">{t.bld_settings_address || "Cím"} *</label>
             <input
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="pl. 1053 Budapest, Kossuth Lajos utca 12."
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg"
+              placeholder="pl. 1015 Budapest, Batyu utca 21."
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
               required
             />
           </div>
 
           <div>
-            <label className="block font-semibold text-gray-700 mb-1">{t.portfolio_tax_number || "Társasház adószáma"}</label>
+            <label className="block font-semibold text-gray-700 mb-1">{t.bld_settings_tax_number || "Adószám"}</label>
             <input
               type="text"
               value={taxNumber}
               onChange={(e) => setTaxNumber(e.target.value)}
               placeholder="pl. 12345678-1-42"
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
             />
           </div>
 

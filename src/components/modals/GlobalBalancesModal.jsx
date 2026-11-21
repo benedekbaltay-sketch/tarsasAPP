@@ -57,6 +57,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
 
   // 1. Building Master Data
   const [buildingName, setBuildingName] = useState('');
+  const [buildingOfficialName, setBuildingOfficialName] = useState('');
   const [buildingAddress, setBuildingAddress] = useState('');
   const [buildingTaxNumber, setBuildingTaxNumber] = useState('');
 
@@ -108,6 +109,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
     if (isOpen && targetBuilding) {
       setActiveTab('general');
       setBuildingName(targetBuilding.name || '');
+      setBuildingOfficialName(targetBuilding.officialName || '');
       setBuildingAddress(targetBuilding.address || '');
       setBuildingTaxNumber(targetBuilding.taxNumber || '');
 
@@ -362,6 +364,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
             return {
               ...b,
               name: buildingName.trim() || b.name,
+              officialName: buildingOfficialName.trim(),
               address: buildingAddress.trim() || b.address,
               taxNumber: buildingTaxNumber.trim(),
               contactDisplayMode: contactDisplayMode === 'manager' ? 'manager' : 'company',
@@ -489,15 +492,16 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                       <span>{isEn ? "Condominium Master Data" : "Társasház alapadatok"}</span>
                     </h4>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="sm:col-span-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
                         <label className="block font-semibold text-gray-700 mb-1">
-                          {t.bld_settings_name || "Társasház megnevezése"}
+                          {t.bld_settings_name || (isEn ? "Condominium Name" : "Elnevezés")} *
                         </label>
                         <input
                           type="text"
                           value={buildingName}
                           onChange={(e) => setBuildingName(e.target.value)}
+                          placeholder={isEn ? "e.g. Batyu 21" : "pl. Batyu u. 21."}
                           className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-[#1E3A8A]"
                           required
                         />
@@ -505,20 +509,20 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
 
                       <div>
                         <label className="block font-semibold text-gray-700 mb-1">
-                          {t.bld_settings_tax_number || "Adószám"}
+                          {t.bld_settings_official_name || (isEn ? "Official Legal Name" : "Hivatalos név")}
                         </label>
                         <input
                           type="text"
-                          value={buildingTaxNumber}
-                          onChange={(e) => setBuildingTaxNumber(e.target.value)}
-                          placeholder="12345678-1-42"
-                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A]"
+                          value={buildingOfficialName}
+                          onChange={(e) => setBuildingOfficialName(e.target.value)}
+                          placeholder={isEn ? "e.g. Batyu utca 21. Társasház" : "pl. Batyu utca 21. Társasház"}
+                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A]"
                         />
                       </div>
 
-                      <div className="sm:col-span-3">
+                      <div>
                         <label className="block font-semibold text-gray-700 mb-1">
-                          {t.bld_settings_address || "Épület címe / Levelezési cím"}
+                          {t.bld_settings_address || (isEn ? "Building Address" : "Cím")} *
                         </label>
                         <input
                           type="text"
@@ -527,6 +531,19 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                           placeholder={isEn ? "1051 Budapest, Example St. 1." : "1051 Budapest, Példa utca 1."}
                           className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A]"
                           required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-gray-700 mb-1">
+                          {t.bld_settings_tax_number || (isEn ? "Tax Number" : "Adószám")}
+                        </label>
+                        <input
+                          type="text"
+                          value={buildingTaxNumber}
+                          onChange={(e) => setBuildingTaxNumber(e.target.value)}
+                          placeholder="12345678-1-42"
+                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A]"
                         />
                       </div>
                     </div>
