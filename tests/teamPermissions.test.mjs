@@ -18,6 +18,11 @@ import {
   countUnreadNotifications,
   generateInviteToken,
   findPendingInviteByToken,
+  generateTemporaryInvitePassword,
+  buildInviteContinueUrl,
+  extractInviteContextFromUrl,
+  buildInviteWelcomeEmailContent,
+  buildInviteMailtoUrl,
 } from '../src/utils/teamPermissions.js';
 
 const BUILDINGS = [
@@ -383,4 +388,62 @@ test('7. Universal notification filtering, sorting, unread count, and invite tok
   const expiredMatch = findPendingInviteByToken(ORGANIZATIONS, '99999999999999999999999999999999');
   assert.equal(expiredMatch?.isValid, false);
   assert.equal(expiredMatch?.isExpired, true);
+});
+
+test('8. Colleague invite password-setup URL, nested continueUrl extraction, strong throwaway password & welcome email content', () => {
+  // Strong throwaway password satisfies uppercase, lowercase, digit, symbol & >= 20 chars
+  const tempPass = generateTemporaryInvitePassword(28);
+  assert.equal(tempPass.length, 28);
+  assert.match(tempPass, /[A-Z]/);
+  assert.match(tempPass, /[a-z]/);
+  assert.match(tempPass, /[0-9]/);
+  assert.match(tempPass, /[!@#$%^&*\-_=+]/);
+
+  // Build continueUrl back to LoginView with invite token, email, and passwordSet=1
+  const token = 'abcdef0123456789abcdef0123456789';
+  const continueUrl = buildInviteContinueUrl({
+    origin: 'https://tarsashaz-cfe5d.web.app',
+    token,
+    email: 'Kollega@Alfa.HU',
+    passwordSet: true,
+  });
+  assert.equal(
+    continueUrl,
+    `https://tarsashaz-cfe5d.web.app/?invite=${token}&email=kollega%40alfa.hu&passwordSet=1`
+  );
+
+  // Extract invite context from Firebase password-reset URL carrying nested continueUrl
+  const resetSearch = `?mode=resetPassword&oobCode=FAKE_OOB_123&continueUrl=${encodeURIComponent(continueUrl)}`;
+  const extracted = extractInviteContextFromUrl(resetSearch, '');
+  assert.equal(extracted.mode, 'resetPassword');
+  assert.equal(extracted.oobCode, 'FAKE_OOB_123');
+  assert.equal(extracted.inviteToken, token);
+  assert.equal(extracted.email, 'kollega@alfa.hu');
+  assert.equal(extracted.passwordSet, true);
+  assert.equal(extracted.isInvitePasswordReset, true);
+
+  // Welcome email content (HU + EN) escapes HTML and includes building names & action URL
+  const huEmail = buildInviteWelcomeEmailContent({
+    recipientName: 'Kovács <Anna>',
+    recipientEmail: 'anna@alfa.hu',
+    orgName: 'Alfa Kft.',
+    inviterName: 'Főnök Péter',
+    buildingNames: ['Batyu u. 21.'],
+    actionUrl: continueUrl,
+    isEn: false,
+  });
+  assert.match(huEmail.subject, /TarsasApp meghívó/);
+  assert.match(huEmail.textBody, /Batyu u\. 21\./);
+  assert.match(huEmail.htmlBody, /Kovács &lt;Anna&gt;/);
+  assert.ok(!huEmail.htmlBody.includes('<Anna>'));
+
+  const mailto = buildInviteMailtoUrl({
+    recipientName: 'Anna',
+    recipientEmail: 'anna@alfa.hu',
+    orgName: 'Alfa Kft.',
+    buildingNames: ['Batyu u. 21.'],
+    actionUrl: continueUrl,
+    isEn: true,
+  });
+  assert.ok(mailto.startsWith('mailto:anna%40alfa.hu?subject='));
 });

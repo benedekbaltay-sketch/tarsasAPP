@@ -25,9 +25,9 @@ export function ForgotPasswordModal({ isOpen, onClose }) {
     try {
       const { auth } = getFirebaseInstance();
       if (auth) {
+        try { auth.languageCode = isEn ? 'en' : 'hu'; } catch {}
         const actionCodeSettings = {
-          url: `${window.location.origin}/`,
-          handleCodeInApp: true
+          url: `${window.location.origin}/?email=${encodeURIComponent(trimmed)}&passwordSet=1`,
         };
         try {
           await sendPasswordResetEmail(auth, trimmed, actionCodeSettings);
@@ -157,8 +157,16 @@ export function ForgotPasswordModal({ isOpen, onClose }) {
   );
 }
 
-// 2. Reset Password Modal (opened strictly via the secure email link action code)
-export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClose }) {
+// 2. Reset / Initial Account Setup Password Modal (opened strictly via the secure email link action code)
+export function ResetPasswordModal({
+  isOpen,
+  email,
+  oobCode,
+  initialError,
+  isInviteSetup = false,
+  onSuccessRedirectToLogin = null,
+  onClose,
+}) {
   const { state, t, showToast } = useApp();
   const isEn = state?.currentLang === 'en';
   const [newPassword, setNewPassword] = useState('');
@@ -202,26 +210,37 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
         return;
       }
 
-      // Reset password strictly in Firebase Authentication (never persist plaintext passwords in DB/localStorage)
+      // Reset / set password strictly in Firebase Authentication (never persist plaintext passwords in DB/localStorage)
       await confirmPasswordReset(auth, oobCode, newPassword);
 
+      const cleanEmail = (email || '').trim().toLowerCase();
       try {
-        if (email) localStorage.setItem("tarsashaz_last_email", email.trim().toLowerCase());
+        if (cleanEmail) localStorage.setItem("tarsashaz_last_email", cleanEmail);
       } catch (e) {}
 
       showToast(
-        isEn
-          ? "Password successfully updated! You can now sign in with your new password."
-          : "Jelszó sikeresen megváltoztatva! Most már bejelentkezhetsz az új jelszavaddal."
+        isInviteSetup
+          ? (t.team_password_set_success_toast || (
+              isEn
+                ? "Password set! You can now sign in on the login page."
+                : "Jelszavad sikeresen beállítva! Most már bejelentkezhetsz."
+            ))
+          : (isEn
+              ? "Password successfully updated! You can now sign in with your new password."
+              : "Jelszó sikeresen megváltoztatva! Most már bejelentkezhetsz az új jelszavaddal.")
       );
+
+      if (typeof onSuccessRedirectToLogin === 'function') {
+        onSuccessRedirectToLogin(cleanEmail);
+      }
       onClose();
     } catch (err) {
       console.warn("confirmPasswordReset error:", err.code);
       if (err.code === 'auth/expired-action-code') {
         setErrorMsg(
           isEn
-            ? "The password reset link has expired. Please request a new link on the login page."
-            : "A jelszó-visszaállító hivatkozás lejárt. Kérjük, igényelj új hivatkozást a bejelentkezés oldalon!"
+            ? "The password link has expired. Please request a new link."
+            : "A jelszóbeállító hivatkozás lejárt. Kérjük, igényelj új hivatkozást!"
         );
       } else if (err.code === 'auth/invalid-action-code') {
         setErrorMsg(
@@ -253,7 +272,11 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
         <div className="flex items-center justify-between pb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <Lock className="w-5 h-5 text-[#1E3A8A]" />
-            <h3 className="text-base font-bold text-gray-900">{t.reset_password_title}</h3>
+            <h3 className="text-base font-bold text-gray-900">
+              {isInviteSetup
+                ? (t.team_activate_password_title || (isEn ? "Activate Account & Set Password" : "Fiók aktiválása és jelszó beállítása"))
+                : t.reset_password_title}
+            </h3>
           </div>
           <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-700 cursor-pointer">
             <X className="w-4 h-4" />
@@ -283,11 +306,25 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
           </div>
         ) : (
           <>
-            <p className="text-xs text-gray-500">
-              {isEn
-                ? <>Set a new password for <strong>{email}</strong>:</>
-                : <>Új jelszó megadása a(z) <strong>{email}</strong> fiókhoz:</>}
-            </p>
+            {isInviteSetup ? (
+              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-xs text-blue-950 leading-relaxed">
+                {isEn ? (
+                  <>
+                    Welcome! Choose a secure password for <strong>{email}</strong>. Once you click save, you will be taken straight to the login page.
+                  </>
+                ) : (
+                  <>
+                    Üdvözlünk! Kérjük, adj meg egy biztonságos jelszót a(z) <strong>{email}</strong> fiókodhoz. A mentés után a rendszer azonnal a bejelentkezési felületre irányít.
+                  </>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">
+                {isEn
+                  ? <>Set a new password for <strong>{email}</strong>:</>
+                  : <>Új jelszó megadása a(z) <strong>{email}</strong> fiókhoz:</>}
+              </p>
+            )}
 
             {errorMsg && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
@@ -336,7 +373,11 @@ export function ResetPasswordModal({ isOpen, email, oobCode, initialError, onClo
                   disabled={loading}
                   className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold hover:bg-[#1e40af] disabled:opacity-50 cursor-pointer shadow-xs transition-all"
                 >
-                  {loading ? (isEn ? "Saving..." : "Mentés folyamatban...") : t.save_new_password}
+                  {loading
+                    ? (isEn ? "Saving..." : "Mentés folyamatban...")
+                    : isInviteSetup
+                    ? (t.team_activate_password_btn || (isEn ? "Save Password & Go to Login" : "Jelszó mentése és bejelentkezés"))
+                    : t.save_new_password}
                 </button>
               </div>
             </form>

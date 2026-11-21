@@ -9,6 +9,7 @@ import { SuperAdminView } from './views/SuperAdminView';
 import { PortfolioView } from './views/PortfolioView';
 import { getFirebaseInstance } from './constants/firebaseConfig';
 import { verifyPasswordResetCode } from 'firebase/auth';
+import { extractInviteContextFromUrl, normalizeEmail } from './utils/teamPermissions';
 
 // Modals
 import { CalendarModal } from './components/modals/CalendarModal';
@@ -193,15 +194,12 @@ function MainLayout() {
   const [isBuildingSelectorOpen, setIsBuildingSelectorOpen] = useState(false);
   const [isAddBuildingOpen, setIsAddBuildingOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
-  const [pendingInviteToken, setPendingInviteToken] = useState(() => {
-    try {
-      const p = new URLSearchParams(window.location.search);
-      const raw = (p.get('invite') || '').trim();
-      return /^[a-fA-F0-9]{16,64}$/.test(raw) ? raw : '';
-    } catch {
-      return '';
-    }
-  });
+  const [initialInviteUrlCtx] = useState(() =>
+    extractInviteContextFromUrl(window.location.search, window.location.hash)
+  );
+  const [pendingInviteToken, setPendingInviteToken] = useState(() => initialInviteUrlCtx.inviteToken || '');
+  const [prefilledLoginEmail, setPrefilledLoginEmail] = useState(() => initialInviteUrlCtx.email || '');
+  const [passwordJustSet, setPasswordJustSet] = useState(() => Boolean(initialInviteUrlCtx.passwordSet && !initialInviteUrlCtx.oobCode));
   const [fullscreenTxData, setFullscreenTxData] = useState(() => initialNavState?.fullscreenTxData || null); // { type, flatNum }
   const [profileNavigation, setProfileNavigation] = useState(null); // { tileId, caseId, timestamp }
 
@@ -245,44 +243,50 @@ function MainLayout() {
     }
   }, []);
 
-  // Parse URL on mount for Firebase Auth password reset action link
+  // Parse URL on mount for Firebase Auth password reset / colleague activation link
   useEffect(() => {
-    let params = new URLSearchParams(window.location.search);
-    let mode = params.get('mode');
-    let oobCode = params.get('oobCode');
+    const urlCtx = extractInviteContextFromUrl(window.location.search, window.location.hash);
 
-    // Also check hash fragment in case of client routing/hash redirection
-    if (!oobCode && window.location.hash) {
-      const hashContent = window.location.hash.includes('?') 
-        ? window.location.hash.split('?')[1] 
-        : window.location.hash.replace(/^#/, '');
-      const hashParams = new URLSearchParams(hashContent);
-      if (hashParams.get('oobCode')) {
-        mode = hashParams.get('mode') || mode;
-        oobCode = hashParams.get('oobCode');
-      }
-    }
-
-    if (mode === 'resetPassword' && oobCode) {
+    if (urlCtx.mode === 'resetPassword' && urlCtx.oobCode) {
       const { auth } = getFirebaseInstance();
       if (auth) {
-        verifyPasswordResetCode(auth, oobCode)
+        verifyPasswordResetCode(auth, urlCtx.oobCode)
           .then((verifiedEmail) => {
-            setResetPassData({ email: verifiedEmail, oobCode });
+            setResetPassData({
+              email: verifiedEmail,
+              oobCode: urlCtx.oobCode,
+              isInviteSetup: Boolean(urlCtx.isInvitePasswordReset || urlCtx.inviteToken),
+            });
           })
           .catch((err) => {
             console.warn("verifyPasswordResetCode error:", err);
             setResetPassData({
+              isInviteSetup: Boolean(urlCtx.isInvitePasswordReset || urlCtx.inviteToken),
               error: "A jelszó-visszaállító hivatkozás érvénytelen vagy már lejárt. Kérjük, igényelj új hivatkozást a bejelentkezési oldalon!"
             });
           });
       }
+      return;
+    }
+
+    // If colleague just returned from Firebase's hosted password-setup page (?passwordSet=1&email=...)
+    // while another session was still open in this browser, switch cleanly to LoginView!
+    if (urlCtx.passwordSet && urlCtx.email) {
+      try {
+        localStorage.setItem('tarsashaz_last_email', urlCtx.email);
+      } catch {}
+      if (currentUser && normalizeEmail(currentUser.email) !== normalizeEmail(urlCtx.email)) {
+        logout();
+      }
     }
   }, []);
 
-  // Automatically process ?invite=<token> once authenticated and cloud state has synced
+  // Automatically process ?invite=<token> once the invited user is authenticated and cloud state has synced
   useEffect(() => {
-    if (!pendingInviteToken || !currentUser || !isInitialSyncDone) return;
+    if (!pendingInviteToken || !currentUser || !isInitialSyncDone || resetPassData) return;
+    if (prefilledLoginEmail && normalizeEmail(currentUser.email) !== normalizeEmail(prefilledLoginEmail)) {
+      return;
+    }
     const res = acceptTeamInvite(pendingInviteToken);
     if (!res?.success && res?.reason) {
       const isEn = state.currentLang === 'en';
@@ -295,12 +299,15 @@ function MainLayout() {
       showToast(errMsg, 'error');
     }
     setPendingInviteToken('');
+    setPasswordJustSet(false);
     try {
       const url = new URL(window.location.href);
       url.searchParams.delete('invite');
+      url.searchParams.delete('email');
+      url.searchParams.delete('passwordSet');
       window.history.replaceState(null, '', url.pathname + url.search + url.hash);
     } catch {}
-  }, [pendingInviteToken, currentUser?.email, isInitialSyncDone]);
+  }, [pendingInviteToken, currentUser?.email, isInitialSyncDone, resetPassData]);
 
   // Global protection: Prevent mouse wheel from changing input[type=number] values anywhere
   useEffect(() => {
@@ -713,6 +720,8 @@ function MainLayout() {
             onOpenForgotPassword={() => setIsForgotPassOpen(true)}
             onOpenHelp={() => setIsHelpOpen(true)}
             pendingInviteToken={pendingInviteToken}
+            prefilledEmail={prefilledLoginEmail}
+            passwordJustSet={passwordJustSet}
           />
         ) : currentUser.role === 'superadmin' ? (
           <SuperAdminView
@@ -1015,6 +1024,20 @@ function MainLayout() {
         email={resetPassData?.email}
         oobCode={resetPassData?.oobCode}
         initialError={resetPassData?.error}
+        isInviteSetup={Boolean(resetPassData?.isInviteSetup)}
+        onSuccessRedirectToLogin={(verifiedEmail) => {
+          const clean = normalizeEmail(verifiedEmail);
+          if (clean) {
+            setPrefilledLoginEmail(clean);
+            try {
+              localStorage.setItem('tarsashaz_last_email', clean);
+            } catch {}
+          }
+          setPasswordJustSet(true);
+          if (currentUser) {
+            logout();
+          }
+        }}
         onClose={() => {
           setResetPassData(null);
           try {

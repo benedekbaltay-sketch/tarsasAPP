@@ -10,7 +10,12 @@ import {
   findPendingInviteByToken,
   buildNotification,
   getNotificationsForUser,
+  buildInviteMailtoUrl,
 } from '../utils/teamPermissions';
+import {
+  provisionAndSendColleagueInviteEmail,
+  sendColleaguePasswordSetupEmail,
+} from '../services/inviteAuthService';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -68,8 +73,8 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     return { orgs: existingOrgs, orgIndex: existingOrgs.length - 1, org: newOrg };
   };
 
-  // Invite or attach a colleague by email with assigned buildings & owner-controlled permissions
-  const inviteOrAttachTeamMember = ({
+  // Invite or attach a colleague by email with assigned buildings, automatic Auth provisioning & password-setup email
+  const inviteOrAttachTeamMember = async ({
     email,
     name = '',
     buildingScope = 'selected',
@@ -177,7 +182,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       messageEn: `${actor.name || actor.email} granted you access (${assignedCountLabelEn}).`,
     });
 
-    persistState((s) => {
+    await persistState((s) => {
       const { orgs, orgIndex, org } = ensureOrgInDraftState(s, actor);
       const nextMembers = existingMember
         ? (org.members || []).map((m) => (m.id === memberId ? memberRecord : m))
@@ -234,15 +239,123 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     }, true);
 
     const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://tarsashaz-cfe5d.web.app';
-    const inviteUrl = `${origin}/?invite=${encodeURIComponent(token)}`;
+    const inviteUrl = `${origin}/?invite=${encodeURIComponent(token)}&email=${encodeURIComponent(cleanEmail)}`;
 
-    showToast(
-      existingMember
-        ? (t.team_member_updated_toast || (isEn() ? 'Team member permissions updated!' : 'Munkatárs jogosultságai frissítve!'))
-        : (t.team_member_invited_toast || (isEn() ? 'Colleague attached & invite link generated!' : 'Munkatárs csatolva, meghívó link létrehozva!'))
-    );
+    // Automatically provision the colleague's Firebase Auth identity (in isolated memory) & send localized password-setup email!
+    const emailResult = await provisionAndSendColleagueInviteEmail({
+      email: cleanEmail,
+      token,
+      lang: state.currentLang || 'hu',
+      origin,
+    });
 
-    return { success: true, member: memberRecord, invite: inviteRecord, inviteUrl };
+    // Record email delivery status on the pending invite metadata
+    const emailSentAt = emailResult.sent ? new Date().toISOString() : null;
+    persistState((s) => ({
+      ...s,
+      organizations: (s.organizations || []).map((org) => ({
+        ...org,
+        invites: (org.invites || []).map((inv) =>
+          inv && inv.id === inviteId
+            ? {
+                ...inv,
+                emailDeliveryStatus: emailResult.sent ? 'sent' : 'failed',
+                emailSentAt,
+                emailError: emailResult.sent ? null : (emailResult.errorCode || 'send-failed'),
+              }
+            : inv
+        ),
+      })),
+    }), true);
+
+    const assignedBuildingNames = cleanScope === 'all'
+      ? []
+      : (state.buildings || []).filter((b) => cleanBuildingIds.includes(b.id)).map((b) => b.name).filter(Boolean);
+    const orgDisplayName =
+      actorCtx.org?.name ||
+      state.repProfile?.companyName ||
+      state.repProfile?.name ||
+      actor.name ||
+      (isEn() ? 'Property Management' : 'Közös Képviselet');
+
+    const mailtoUrl = buildInviteMailtoUrl({
+      recipientName: displayName,
+      recipientEmail: cleanEmail,
+      orgName: orgDisplayName,
+      inviterName: actor.name || actor.email,
+      buildingNames: assignedBuildingNames,
+      buildingScope: cleanScope,
+      actionUrl: inviteUrl,
+      isEn: isEn(),
+    });
+
+    if (emailResult.sent) {
+      showToast(
+        t.team_invite_email_sent_toast
+          ? t.team_invite_email_sent_toast.replace('{email}', cleanEmail)
+          : (isEn()
+              ? `Invitation & password setup email sent to ${cleanEmail}!`
+              : `Meghívó és jelszóbeállító e-mail elküldve ide: ${cleanEmail}!`)
+      );
+    } else {
+      showToast(
+        t.team_invite_email_failed_toast || (isEn()
+          ? 'Colleague attached, but the automatic password email could not be sent. You can retry or share the invite link.'
+          : 'Munkatárs csatolva, de az automatikus jelszóbeállító e-mail küldése sikertelen volt. Próbáld újra vagy küldd el a meghívó linket!'),
+        'error'
+      );
+    }
+
+    return {
+      success: true,
+      member: memberRecord,
+      invite: {
+        ...inviteRecord,
+        emailDeliveryStatus: emailResult.sent ? 'sent' : 'failed',
+        emailSentAt,
+      },
+      inviteUrl,
+      mailtoUrl,
+      emailSent: Boolean(emailResult.sent),
+      emailError: emailResult.errorCode || null,
+      accountCreated: Boolean(emailResult.accountCreated),
+      alreadyExists: Boolean(emailResult.alreadyExists),
+    };
+  };
+
+  // Resend localized password-setup email for an attached/invited colleague
+  const resendTeamInviteEmail = async (email, token = '') => {
+    const cleanEmail = normalizeEmail(email);
+    if (!EMAIL_RE.test(cleanEmail)) {
+      showToast(t.team_invalid_email || (isEn() ? 'Please enter a valid email address.' : 'Kérjük, adj meg egy érvényes e-mail címet!'), 'error');
+      return { sent: false, errorCode: 'invalid-email' };
+    }
+
+    const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://tarsashaz-cfe5d.web.app';
+    const result = await sendColleaguePasswordSetupEmail({
+      email: cleanEmail,
+      token,
+      lang: state.currentLang || 'hu',
+      origin,
+    });
+
+    if (result.sent) {
+      showToast(
+        t.team_invite_email_sent_toast
+          ? t.team_invite_email_sent_toast.replace('{email}', cleanEmail)
+          : (isEn()
+              ? `Password setup email sent to ${cleanEmail}!`
+              : `Jelszóbeállító e-mail elküldve ide: ${cleanEmail}!`)
+      );
+    } else {
+      showToast(
+        t.team_invite_email_failed_toast || (isEn()
+          ? 'Could not send the password setup email right now. Please try again shortly.'
+          : 'Nem sikerült elküldeni a jelszóbeállító e-mailt. Kérjük, próbáld újra kicsit később!'),
+        'error'
+      );
+    }
+    return result;
   };
 
   // Update an existing staff member's building scope & permissions
@@ -645,6 +758,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
 
   return {
     inviteOrAttachTeamMember,
+    resendTeamInviteEmail,
     updateTeamMember,
     toggleTeamMemberActive,
     removeTeamMember,

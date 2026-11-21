@@ -180,31 +180,78 @@ export const manageOrganizationMember = onCall({ region: REGION }, async (reques
 
     await inviteRef.set(invitePayload);
 
-    // If the user already exists in Firebase Auth, also send a notification immediately
+    // Ensure Auth identity exists, generate official password-setup link, and optionally send custom HTML welcome email
+    let authUser = null;
     try {
-      const authUser = await getAuth().getUserByEmail(cleanEmail);
-      if (authUser?.uid) {
-        await db.collection(`users/${authUser.uid}/notifications`).add({
-          type: 'team_assigned',
-          severity: 'info',
-          orgId,
-          titleHu: 'Meghívást kaptál társasház-kezelésre',
-          titleEn: 'You Were Invited to Manage Condominiums',
-          messageHu: `${actor.email} meghívott a(z) ${actor.orgData.name || 'cég'} csapatába.`,
-          messageEn: `${actor.email} invited you to join ${actor.orgData.name || 'the organization'}.`,
-          read: false,
-          dismissed: false,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-      }
+      authUser = await getAuth().getUserByEmail(cleanEmail);
     } catch {
-      // User may not have registered yet — invite link handles onboarding
+      try {
+        authUser = await getAuth().createUser({
+          email: cleanEmail,
+          displayName: invitePayload.name,
+          emailVerified: false,
+        });
+      } catch {
+        authUser = null;
+      }
+    }
+
+    if (authUser?.uid) {
+      await db.collection(`users/${authUser.uid}/notifications`).add({
+        type: 'team_assigned',
+        severity: 'info',
+        orgId,
+        titleHu: 'Meghívást kaptál társasház-kezelésre',
+        titleEn: 'You Were Invited to Manage Condominiums',
+        messageHu: `${actor.email} meghívott a(z) ${actor.orgData.name || 'cég'} csapatába.`,
+        messageEn: `${actor.email} invited you to join ${actor.orgData.name || 'the organization'}.`,
+        read: false,
+        dismissed: false,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    const appOrigin = (process.env.APP_PUBLIC_ORIGIN || 'https://tarsashaz-cfe5d.web.app').replace(/\/+$/, '');
+    const continueUrl = `${appOrigin}/?invite=${encodeURIComponent(token)}&email=${encodeURIComponent(cleanEmail)}&passwordSet=1`;
+    let passwordSetupLink = null;
+    try {
+      passwordSetupLink = await getAuth().generatePasswordResetLink(cleanEmail, { url: continueUrl });
+    } catch {
+      passwordSetupLink = null;
+    }
+
+    let emailDispatched = false;
+    const resendKey = (process.env.RESEND_API_KEY || '').trim();
+    const mailFrom = (process.env.INVITE_EMAIL_FROM || 'TarsasApp <noreply@tarsasapp.hu>').trim();
+    if (resendKey && passwordSetupLink) {
+      const orgTitle = String(actor.orgData.name || 'Közös Képviselet').replace(/[<>&"]/g, '');
+      const recName = String(invitePayload.name || cleanEmail).replace(/[<>&"]/g, '');
+      const safeLink = passwordSetupLink.replace(/"/g, '&quot;');
+      try {
+        const resp = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: mailFrom,
+            to: [cleanEmail],
+            subject: `TarsasApp meghívó – ${orgTitle}`,
+            html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111827;border:1px solid #e5e7eb;border-radius:16px;"><h2 style="color:#1E3A8A;margin-top:0;">Meghívó a TarsasApp rendszerbe</h2><p>Kedves <strong>${recName}</strong>!</p><p><strong>${orgTitle}</strong> társasházkezelői hozzáférést adott számodra a TarsasApp portálon.</p><p>Az alábbi gombra kattintva megadhatod a saját jelszavadat, majd a mentés után a rendszer azonnal a bejelentkezési felületre irányít:</p><p style="margin:24px 0;"><a href="${safeLink}" style="display:inline-block;background:#1E3A8A;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;">Jelszó beállítása és aktiválás</a></p></div>`,
+          }),
+        });
+        emailDispatched = resp.ok;
+      } catch {
+        emailDispatched = false;
+      }
     }
 
     return {
       success: true,
       inviteId: inviteRef.id,
       token,
+      emailDispatched,
     };
   }
 

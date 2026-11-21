@@ -1,17 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Mail, Lock, Eye, AlertCircle, KeyRound, HelpCircle, LogIn, Building2, RefreshCw, Users } from 'lucide-react';
+import { Mail, Lock, Eye, AlertCircle, KeyRound, HelpCircle, LogIn, Building2, RefreshCw, Users, CheckCircle2, Send } from 'lucide-react';
 import { FlagIcon } from '../components/FlagIcon';
 
-export function LoginView({ onOpenForgotPassword, onOpenHelp, pendingInviteToken = '' }) {
-  const { state, t, login, toggleLanguage } = useApp();
+export function LoginView({
+  onOpenForgotPassword,
+  onOpenHelp,
+  pendingInviteToken = '',
+  prefilledEmail = '',
+  passwordJustSet = false,
+}) {
+  const { state, t, login, toggleLanguage, resendTeamInviteEmail } = useApp();
   const [email, setEmail] = useState(() => {
+    if (prefilledEmail) return prefilledEmail;
     try {
       return localStorage.getItem("tarsashaz_last_email") || '';
     } catch (e) {
       return '';
     }
   });
+  const [resendingInviteEmail, setResendingInviteEmail] = useState(false);
+
+  useEffect(() => {
+    if (prefilledEmail) {
+      setEmail(prefilledEmail);
+      try {
+        localStorage.setItem("tarsashaz_last_email", prefilledEmail.trim().toLowerCase());
+      } catch {}
+    }
+  }, [prefilledEmail]);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -116,17 +133,54 @@ export function LoginView({ onOpenForgotPassword, onOpenHelp, pendingInviteToken
           </p>
         </div>
 
+        {/* Password Successfully Set Banner (redirected after colleague sets password!) */}
+        {passwordJustSet && (
+          <div className="mb-5 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl text-xs font-medium flex items-start gap-2.5 animate-fadeIn">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-600 mt-0.5" />
+            <div>
+              <div className="font-bold">
+                {t.team_password_set_login_title || (isHu ? "Jelszavad sikeresen beállítva!" : "Your password has been set!")}
+              </div>
+              <p className="text-[11px] text-emerald-800 mt-0.5">
+                {t.team_password_set_login_desc || (isHu ? "Most már bejelentkezhetsz az e-mail címeddel és az imént megadott jelszóval." : "You can now sign in below using your email address and your newly created password.")}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Team Invitation Welcome Banner */}
-        {pendingInviteToken && (
+        {pendingInviteToken && !passwordJustSet && (
           <div className="mb-5 p-3.5 bg-blue-50 border border-blue-200 text-[#1E3A8A] rounded-xl text-xs font-medium flex items-start gap-2.5 animate-fadeIn">
             <Users className="w-4 h-4 flex-shrink-0 text-[#1E3A8A] mt-0.5" />
-            <div>
+            <div className="space-y-1.5 flex-1">
               <div className="font-bold">
                 {t.team_invite_login_title || (isHu ? "Meghívót kaptál társasház-kezelői csapatba!" : "You've been invited to a property management team!")}
               </div>
-              <p className="text-[11px] text-blue-900/80 mt-0.5">
+              <p className="text-[11px] text-blue-900/80">
                 {t.team_invite_login_desc || (isHu ? "Jelentkezz be a meghívott e-mail címeddel, és a hozzád rendelt társasházak automatikusan aktiválódnak." : "Sign in with your invited email address to automatically activate access to your assigned condominiums.")}
               </p>
+              {resendTeamInviteEmail && (
+                <button
+                  type="button"
+                  disabled={resendingInviteEmail || !email.trim()}
+                  onClick={async () => {
+                    setResendingInviteEmail(true);
+                    try {
+                      await resendTeamInviteEmail(email, pendingInviteToken);
+                    } finally {
+                      setResendingInviteEmail(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white hover:bg-blue-100/70 border border-blue-200 text-[#1E3A8A] font-bold text-[11px] cursor-pointer disabled:opacity-50 transition-colors"
+                >
+                  <Send className="w-3 h-3" />
+                  <span>
+                    {resendingInviteEmail
+                      ? (isHu ? "Küldés..." : "Sending...")
+                      : (t.team_invite_need_password_btn || (isHu ? "Még nincs jelszavad? Jelszóbeállító e-mail küldése" : "Need a password? Send password setup email"))}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         )}

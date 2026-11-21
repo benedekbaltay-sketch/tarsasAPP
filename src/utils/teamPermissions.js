@@ -642,3 +642,245 @@ export function findOrganizationForBuilding(building, organizations = []) {
   }
   return list.find((o) => o && o.includeLegacyBuildings !== false) || list[0] || null;
 }
+
+/**
+ * Generates a cryptographically strong throwaway password (never stored or logged)
+ * used solely to provision a new colleague's Firebase Auth identity before immediately
+ * dispatching the official password-setup email link.
+ */
+export function generateTemporaryInvitePassword(length = 28) {
+  const safeLen = Math.max(20, Math.min(64, Number(length) || 28));
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%^&*-_=+';
+  const all = upper + lower + digits + symbols;
+
+  const bytes = new Uint8Array(safeLen);
+  if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  // Guarantee at least one character from each class for strict password policies
+  const chars = [
+    upper[bytes[0] % upper.length],
+    lower[bytes[1] % lower.length],
+    digits[bytes[2] % digits.length],
+    symbols[bytes[3] % symbols.length],
+  ];
+  for (let i = 4; i < safeLen; i += 1) {
+    chars.push(all[bytes[i] % all.length]);
+  }
+  return chars.join('');
+}
+
+/**
+ * Builds the post-password-setup return URL back to the TarsasApp Login page
+ * with the invite token and invited email pre-attached.
+ */
+export function buildInviteContinueUrl({ origin = 'https://tarsashaz-cfe5d.web.app', token = '', email = '', passwordSet = true } = {}) {
+  const cleanOrigin = String(origin || 'https://tarsashaz-cfe5d.web.app').replace(/\/+$/, '');
+  const params = new URLSearchParams();
+  if (token) params.set('invite', String(token).trim());
+  const cleanEmail = normalizeEmail(email);
+  if (cleanEmail) params.set('email', cleanEmail);
+  if (passwordSet) params.set('passwordSet', '1');
+  const qs = params.toString();
+  return qs ? `${cleanOrigin}/?${qs}` : `${cleanOrigin}/`;
+}
+
+/**
+ * Extracts invite token, email, passwordSet flag, and Firebase password-reset oobCode
+ * from window.location.search / hash AND any nested Firebase `continueUrl` parameter.
+ */
+export function extractInviteContextFromUrl(searchStr = '', hashStr = '') {
+  const mergeParams = (raw) => {
+    try {
+      const cleaned = String(raw || '').replace(/^[?#]/, '');
+      const queryPart = cleaned.includes('?') ? cleaned.split('?')[1] : cleaned;
+      return new URLSearchParams(queryPart);
+    } catch {
+      return new URLSearchParams();
+    }
+  };
+
+  const searchParams = mergeParams(searchStr);
+  const hashParams = mergeParams(hashStr);
+  const pick = (key) => searchParams.get(key) || hashParams.get(key) || '';
+
+  const mode = pick('mode').trim();
+  const oobCode = pick('oobCode').trim();
+  let rawInvite = pick('invite').trim();
+  let rawEmail = normalizeEmail(pick('email'));
+  let passwordSet = pick('passwordSet') === '1';
+
+  const continueUrlRaw = pick('continueUrl').trim();
+  if (continueUrlRaw) {
+    try {
+      const parsed = new URL(continueUrlRaw);
+      if (!rawInvite && parsed.searchParams.get('invite')) {
+        rawInvite = parsed.searchParams.get('invite').trim();
+      }
+      if (!rawEmail && parsed.searchParams.get('email')) {
+        rawEmail = normalizeEmail(parsed.searchParams.get('email'));
+      }
+      if (!passwordSet && parsed.searchParams.get('passwordSet') === '1') {
+        passwordSet = true;
+      }
+    } catch {
+      // Ignore malformed continueUrl
+    }
+  }
+
+  const inviteToken = /^[a-fA-F0-9]{16,64}$/.test(rawInvite) ? rawInvite : '';
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : '';
+
+  return {
+    mode,
+    oobCode,
+    inviteToken,
+    email,
+    passwordSet,
+    isInvitePasswordReset: Boolean(mode === 'resetPassword' && oobCode && (inviteToken || passwordSet)),
+  };
+}
+
+/**
+ * Escapes HTML special characters for safe transactional HTML email rendering.
+ */
+function escapeHtmlForEmail(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Builds concise, polite Hungarian or English welcome invitation copy (subject, plain text, HTML)
+ * containing a short introduction, assigned building(s), and password-setup / login link.
+ */
+export function buildInviteWelcomeEmailContent({
+  recipientName = '',
+  recipientEmail = '',
+  orgName = '',
+  inviterName = '',
+  buildingNames = [],
+  buildingScope = 'selected',
+  actionUrl = 'https://tarsashaz-cfe5d.web.app/',
+  isEn = false,
+} = {}) {
+  const cleanRecipient = String(recipientName || recipientEmail || '').trim();
+  const cleanOrg = String(orgName || (isEn ? 'Property Management' : 'Közös Képviselet')).trim();
+  const cleanInviter = String(inviterName || cleanOrg).trim();
+  const bList = Array.isArray(buildingNames) ? buildingNames.filter(Boolean) : [];
+  const buildingsTextHu =
+    buildingScope === 'all'
+      ? 'az összes céges társasház'
+      : bList.length > 0
+      ? bList.join(', ')
+      : 'a hozzád rendelt társasház(ak)';
+  const buildingsTextEn =
+    buildingScope === 'all'
+      ? 'all company condominiums'
+      : bList.length > 0
+      ? bList.join(', ')
+      : 'your assigned condominium(s)';
+
+  if (isEn) {
+    const subject = `TarsasApp Invitation – ${cleanOrg}`;
+    const textBody = [
+      `Hello ${cleanRecipient},`,
+      '',
+      `${cleanInviter} (${cleanOrg}) has granted you property management access in TarsasApp for: ${buildingsTextEn}.`,
+      '',
+      'Please open the link below to set your own password. Once saved, you will be redirected to the login page where you can sign in immediately with your email address:',
+      actionUrl,
+      '',
+      'Best regards,',
+      cleanOrg,
+    ].join('\n');
+
+    const htmlBody = `
+      <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111827;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;">
+        <h2 style="margin:0 0 12px;color:#1E3A8A;font-size:20px;">Welcome to TarsasApp!</h2>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">
+          Hello <strong>${escapeHtmlForEmail(cleanRecipient)}</strong>,
+        </p>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">
+          <strong>${escapeHtmlForEmail(cleanInviter)}</strong> (${escapeHtmlForEmail(cleanOrg)}) has granted you condominium management access for:
+          <strong>${escapeHtmlForEmail(buildingsTextEn)}</strong>.
+        </p>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 20px;">
+          Click the button below to set your own password. Once confirmed, you will be redirected straight to the login page where you can sign in immediately.
+        </p>
+        <p style="margin:0 0 20px;">
+          <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;font-size:14px;">
+            Set Password &amp; Activate Account
+          </a>
+        </p>
+        <p style="font-size:12px;color:#6b7280;line-height:1.5;margin:0;">
+          If the button does not work, copy this link into your browser:<br/>
+          <a href="${escapeHtmlForEmail(actionUrl)}" style="color:#1E3A8A;word-break:break-all;">${escapeHtmlForEmail(actionUrl)}</a>
+        </p>
+      </div>
+    `.trim();
+
+    return { subject, textBody, htmlBody };
+  }
+
+  const subject = `TarsasApp meghívó – ${cleanOrg}`;
+  const textBody = [
+    `Kedves ${cleanRecipient}!`,
+    '',
+    `${cleanInviter} (${cleanOrg}) hozzáférést adott számodra a TarsasApp társasházkezelő rendszerhez a következő társasház(ak) kezelésére: ${buildingsTextHu}.`,
+    '',
+    'Az alábbi linkre kattintva tudsz magadnak saját jelszót beállítani. A jelszó mentése után a rendszer automatikusan a bejelentkezési felületre irányít, ahol az e-mail címeddel azonnal beléphetsz:',
+    actionUrl,
+    '',
+    'Üdvözlettel,',
+    cleanOrg,
+  ].join('\n');
+
+  const htmlBody = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111827;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;">
+      <h2 style="margin:0 0 12px;color:#1E3A8A;font-size:20px;">Meghívó a TarsasApp rendszerbe</h2>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">
+        Kedves <strong>${escapeHtmlForEmail(cleanRecipient)}</strong>!
+      </p>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">
+        <strong>${escapeHtmlForEmail(cleanInviter)}</strong> (${escapeHtmlForEmail(cleanOrg)}) társasházkezelői hozzáférést adott számodra:
+        <strong>${escapeHtmlForEmail(buildingsTextHu)}</strong>.
+      </p>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 20px;">
+        Kattints az alábbi gombra a saját jelszavad beállításához. A mentés után a rendszer automatikusan a bejelentkezési felületre irányít, ahol azonnal be tudsz lépni.
+      </p>
+      <p style="margin:0 0 20px;">
+        <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;font-size:14px;">
+          Jelszó beállítása és aktiválás
+        </a>
+      </p>
+      <p style="font-size:12px;color:#6b7280;line-height:1.5;margin:0;">
+        Ha a gomb nem működik, másold be ezt a hivatkozást a böngésződbe:<br/>
+        <a href="${escapeHtmlForEmail(actionUrl)}" style="color:#1E3A8A;word-break:break-all;">${escapeHtmlForEmail(actionUrl)}</a>
+      </p>
+    </div>
+  `.trim();
+
+  return { subject, textBody, htmlBody };
+}
+
+/**
+ * Builds a pre-filled `mailto:` URL so an Owner can optionally send a personal welcome
+ * email directly from their own mail client alongside the automatic password-setup email.
+ */
+export function buildInviteMailtoUrl(options = {}) {
+  const recipientEmail = normalizeEmail(options.recipientEmail);
+  const { subject, textBody } = buildInviteWelcomeEmailContent(options);
+  return `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
+}
