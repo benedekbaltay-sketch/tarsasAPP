@@ -1,0 +1,386 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  normalizeStaffPermissions,
+  resolveUserOrgContext,
+  getAccessibleBuildings,
+  canUserAccessBuilding,
+  canUserCreateBuilding,
+  canUserDeleteBuilding,
+  canUserManageTeam,
+  canUserEditBankAccountNumbers,
+  canActorManageTargetMember,
+  detectBankAccountChanges,
+  buildBankChangeNotification,
+  resolveBuildingResidentContact,
+  getNotificationsForUser,
+  countUnreadNotifications,
+  generateInviteToken,
+  findPendingInviteByToken,
+} from '../src/utils/teamPermissions.js';
+
+const BUILDINGS = [
+  {
+    id: 'b-1',
+    name: 'Batyu u. 21.',
+    organizationId: 'org-a',
+    repName: 'Alfa Kezelő Kft.',
+    phone: '+36 1 222 3333',
+    email: 'iroda@alfa.hu',
+    bankKK: { name: 'KK', bank: 'OTP', account: '11700001-11111111' },
+    bankFA: { name: 'FA', bank: 'OTP', account: '11700001-22222222' },
+    customBankAccounts: [
+      { id: 'acc-lift', name: 'Lift Alap', bank: 'OTP', account: '11700001-33333333' },
+    ],
+  },
+  {
+    id: 'b-2',
+    name: 'Kossuth u. 10.',
+    organizationId: 'org-a',
+    contactDisplayMode: 'manager',
+    managerContact: {
+      name: 'Kovács Anna',
+      phone: '+36 30 987 6543',
+      email: 'anna@alfa.hu',
+      officeHours: 'H–Cs 9:00–16:00',
+    },
+    repName: 'Alfa Kezelő Kft.',
+    phone: '+36 1 222 3333',
+    email: 'iroda@alfa.hu',
+  },
+  {
+    id: 'b-other',
+    name: 'Másik Cég Ház',
+    organizationId: 'org-b',
+    repName: 'Béta Kft.',
+    phone: '+36 1 999 8888',
+    email: 'info@beta.hu',
+  },
+  {
+    id: 'b-legacy',
+    name: 'Régi RTDB Ház',
+    repName: 'Régi Képviselő',
+    phone: '+36 20 111 2222',
+    email: 'regi@pelda.hu',
+  },
+];
+
+const ORGANIZATIONS = [
+  {
+    id: 'org-a',
+    name: 'Alfa Társasházkezelő Kft.',
+    ownerEmail: 'tulaj@alfa.hu',
+    ownerName: 'Főnök Péter',
+    includeLegacyBuildings: true,
+    centralContact: {
+      name: 'Alfa Központi Iroda',
+      phone: '+36 1 222 3333',
+      email: 'iroda@alfa.hu',
+      officeHours: 'H–P 8:00–17:00',
+    },
+    members: [
+      {
+        id: 'm-owner',
+        email: 'tulaj@alfa.hu',
+        name: 'Főnök Péter',
+        orgRole: 'owner',
+        active: true,
+        buildingScope: 'all',
+        buildingIds: [],
+      },
+      {
+        id: 'm-anna',
+        email: 'anna@alfa.hu',
+        name: 'Kovács Anna',
+        orgRole: 'staff',
+        active: true,
+        buildingScope: 'selected',
+        buildingIds: ['b-2'],
+        permissions: {
+          canCreateBuildings: false,
+          canManageTeam: false,
+          canEditBankAccounts: false,
+          canDeleteBuildings: true, // Tampered flag — MUST be forced false!
+        },
+      },
+      {
+        id: 'm-iroda',
+        email: 'irodavezeto@alfa.hu',
+        name: 'Nagy Béla',
+        orgRole: 'staff',
+        active: true,
+        buildingScope: 'all',
+        buildingIds: [],
+        permissions: {
+          canCreateBuildings: true,
+          canManageTeam: true,
+          canEditBankAccounts: true,
+        },
+      },
+      {
+        id: 'm-suspended',
+        email: 'volt@alfa.hu',
+        name: 'Volt Dolgozó',
+        orgRole: 'staff',
+        active: false,
+        buildingScope: 'all',
+        buildingIds: [],
+        permissions: {
+          canCreateBuildings: true,
+          canManageTeam: true,
+          canEditBankAccounts: true,
+        },
+      },
+    ],
+    invites: [
+      {
+        id: 'inv-valid',
+        token: 'abcdef0123456789abcdef0123456789',
+        email: 'ujkollega@alfa.hu',
+        status: 'pending',
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      },
+      {
+        id: 'inv-expired',
+        token: '99999999999999999999999999999999',
+        email: 'lejart@alfa.hu',
+        status: 'pending',
+        expiresAt: new Date(Date.now() - 3600_000).toISOString(),
+      },
+    ],
+  },
+];
+
+test('1. Legacy backwards compatibility: admin without org resolves as implicit owner', () => {
+  const legacyAdmin = { email: 'legacy@admin.hu', role: 'admin', name: 'Legacy Admin' };
+  const ctx = resolveUserOrgContext(legacyAdmin, [], BUILDINGS);
+
+  assert.equal(ctx.isOwner, true);
+  assert.equal(ctx.isStaff, false);
+  assert.equal(ctx.permissions.canDeleteBuildings, true);
+  assert.equal(ctx.permissions.canCreateBuildings, true);
+  assert.equal(ctx.permissions.canManageTeam, true);
+  assert.equal(ctx.permissions.canEditBankAccounts, true);
+
+  const visible = getAccessibleBuildings(legacyAdmin, BUILDINGS, []);
+  assert.deepEqual(visible.map((b) => b.id), ['b-legacy']);
+});
+
+test('2. Multi-company isolation & staff building scoping + instant offboarding', () => {
+  const owner = { email: 'tulaj@alfa.hu', role: 'admin' };
+  const anna = { email: 'anna@alfa.hu', role: 'admin' };
+  const officeMgr = { email: 'irodavezeto@alfa.hu', role: 'admin' };
+  const suspended = { email: 'volt@alfa.hu', role: 'admin' };
+  const superAdmin = { email: 'root@tarsasapp.hu', role: 'superadmin' };
+
+  // Owner sees org-a + legacy, NEVER org-b
+  assert.deepEqual(
+    getAccessibleBuildings(owner, BUILDINGS, ORGANIZATIONS).map((b) => b.id),
+    ['b-1', 'b-2', 'b-legacy']
+  );
+
+  // Anna (selected scope) sees ONLY b-2
+  assert.deepEqual(
+    getAccessibleBuildings(anna, BUILDINGS, ORGANIZATIONS).map((b) => b.id),
+    ['b-2']
+  );
+  assert.equal(canUserAccessBuilding(anna, BUILDINGS[1], ORGANIZATIONS, BUILDINGS), true);
+  assert.equal(canUserAccessBuilding(anna, BUILDINGS[0], ORGANIZATIONS, BUILDINGS), false);
+
+  // Office Manager (all scope) sees org-a + legacy, NEVER org-b
+  assert.deepEqual(
+    getAccessibleBuildings(officeMgr, BUILDINGS, ORGANIZATIONS).map((b) => b.id),
+    ['b-1', 'b-2', 'b-legacy']
+  );
+
+  // Suspended staff immediately sees ZERO buildings and loses ALL permissions
+  assert.deepEqual(getAccessibleBuildings(suspended, BUILDINGS, ORGANIZATIONS), []);
+  assert.equal(canUserCreateBuilding(suspended, ORGANIZATIONS, BUILDINGS), false);
+  assert.equal(canUserManageTeam(suspended, ORGANIZATIONS, BUILDINGS), false);
+  assert.equal(canUserEditBankAccountNumbers(suspended, BUILDINGS[0], ORGANIZATIONS, BUILDINGS), false);
+
+  // SuperAdmin sees everything
+  assert.equal(getAccessibleBuildings(superAdmin, BUILDINGS, ORGANIZATIONS).length, BUILDINGS.length);
+});
+
+test('3. Strictly Owner-only building deletion (tampered staff permissions forced false)', () => {
+  const normalized = normalizeStaffPermissions({
+    canCreateBuildings: true,
+    canManageTeam: true,
+    canEditBankAccounts: true,
+    canDeleteBuildings: true,
+  });
+  assert.equal(normalized.canDeleteBuildings, false);
+
+  const owner = { email: 'tulaj@alfa.hu', role: 'admin' };
+  const anna = { email: 'anna@alfa.hu', role: 'admin' };
+  const officeMgr = { email: 'irodavezeto@alfa.hu', role: 'admin' };
+  const superAdmin = { email: 'root@tarsasapp.hu', role: 'superadmin' };
+
+  assert.equal(canUserDeleteBuilding(owner, BUILDINGS[0], ORGANIZATIONS, BUILDINGS), true);
+  assert.equal(canUserDeleteBuilding(owner, BUILDINGS[2], ORGANIZATIONS, BUILDINGS), false); // org-b!
+  assert.equal(canUserDeleteBuilding(anna, BUILDINGS[1], ORGANIZATIONS, BUILDINGS), false);
+  assert.equal(canUserDeleteBuilding(officeMgr, BUILDINGS[0], ORGANIZATIONS, BUILDINGS), false);
+  assert.equal(canUserDeleteBuilding(superAdmin, BUILDINGS[2], ORGANIZATIONS, BUILDINGS), true);
+});
+
+test('4. Anti-privilege-escalation guard for team delegation', () => {
+  const ownerCtx = resolveUserOrgContext({ email: 'tulaj@alfa.hu', role: 'admin' }, ORGANIZATIONS, BUILDINGS);
+  const annaCtx = resolveUserOrgContext({ email: 'anna@alfa.hu', role: 'admin' }, ORGANIZATIONS, BUILDINGS);
+  const limitedManagerOrgs = [
+    {
+      ...ORGANIZATIONS[0],
+      members: [
+        ...ORGANIZATIONS[0].members,
+        {
+          id: 'm-hr',
+          email: 'hr@alfa.hu',
+          orgRole: 'staff',
+          active: true,
+          buildingScope: 'all',
+          permissions: { canManageTeam: true, canCreateBuildings: false, canEditBankAccounts: false },
+        },
+      ],
+    },
+  ];
+  const hrCtx = resolveUserOrgContext({ email: 'hr@alfa.hu', role: 'admin' }, limitedManagerOrgs, BUILDINGS);
+
+  // Regular staff without canManageTeam cannot manage anyone
+  assert.equal(
+    canActorManageTargetMember(annaCtx, ORGANIZATIONS[0].members[2], null, 'anna@alfa.hu').allowed,
+    false
+  );
+
+  // Staff manager CANNOT modify Owner
+  const editOwner = canActorManageTargetMember(hrCtx, ORGANIZATIONS[0].members[0], null, 'hr@alfa.hu');
+  assert.equal(editOwner.allowed, false);
+  assert.equal(editOwner.reason, 'cannot_modify_owner');
+
+  // Staff manager CANNOT modify themselves
+  const editSelf = canActorManageTargetMember(hrCtx, limitedManagerOrgs[0].members[4], null, 'hr@alfa.hu');
+  assert.equal(editSelf.allowed, false);
+  assert.equal(editSelf.reason, 'cannot_modify_self');
+
+  // Staff manager without canEditBankAccounts CANNOT grant it to others
+  const escalateBank = canActorManageTargetMember(
+    hrCtx,
+    ORGANIZATIONS[0].members[1],
+    { canEditBankAccounts: true },
+    'hr@alfa.hu'
+  );
+  assert.equal(escalateBank.allowed, false);
+  assert.equal(escalateBank.reason, 'privilege_escalation');
+
+  // Nobody can grant canDeleteBuildings to staff
+  const grantDelete = canActorManageTargetMember(
+    ownerCtx,
+    ORGANIZATIONS[0].members[1],
+    { canDeleteBuildings: true },
+    'tulaj@alfa.hu'
+  );
+  assert.equal(grantDelete.allowed, false);
+  assert.equal(grantDelete.reason, 'delete_is_owner_only');
+
+  // Owner CAN grant canEditBankAccounts & canCreateBuildings to staff
+  const validGrant = canActorManageTargetMember(
+    ownerCtx,
+    ORGANIZATIONS[0].members[1],
+    { canCreateBuildings: true, canEditBankAccounts: true, canDeleteBuildings: false },
+    'tulaj@alfa.hu'
+  );
+  assert.equal(validGrant.allowed, true);
+});
+
+test('5. Bank account change detection & critical pale-red Owner notification', () => {
+  const prevB = BUILDINGS[0];
+
+  // Whitespace-only formatting differences should NOT trigger false alerts
+  const noRealChanges = detectBankAccountChanges(
+    prevB,
+    { account: '11700001 - 11111111' },
+    { account: '11700001-22222222' },
+    prevB.customBankAccounts
+  );
+  assert.equal(noRealChanges.length, 0);
+
+  // Modifying KK, adding a new sub-account, and removing Lift Alap must all be caught
+  const changes = detectBankAccountChanges(
+    prevB,
+    { account: '11799999-88888888' },
+    { account: '11700001-22222222' },
+    [{ id: 'acc-new', name: 'Tető Alap', account: '11700001-44444444' }]
+  );
+  assert.equal(changes.length, 3);
+  assert.equal(changes[0].accountKey, 'KK');
+  assert.equal(changes[0].changeType, 'modified');
+  assert.equal(changes[1].changeType, 'added');
+  assert.equal(changes[2].changeType, 'removed');
+
+  const notif = buildBankChangeNotification({
+    actorUser: { name: 'Nagy Béla', email: 'irodavezeto@alfa.hu' },
+    ownerEmail: 'tulaj@alfa.hu',
+    building: prevB,
+    changes,
+  });
+
+  assert.equal(notif.severity, 'critical');
+  assert.equal(notif.type, 'bank_account_changed');
+  assert.equal(notif.recipientEmail, 'tulaj@alfa.hu');
+  assert.equal(notif.read, false);
+  assert.match(notif.titleHu, /Bankszámlaszám módosítva/);
+  assert.match(notif.titleEn, /Bank Account Changed/);
+  assert.match(notif.messageHu, /11799999-88888888/);
+  assert.equal(notif.changes.length, 3);
+});
+
+test('6. Per-building resident contact switcher (company vs building manager personal contact)', () => {
+  // Default / company mode
+  const companyRes = resolveBuildingResidentContact(BUILDINGS[0], {}, ORGANIZATIONS);
+  assert.equal(companyRes.mode, 'company');
+  assert.equal(companyRes.isPersonalManager, false);
+  assert.equal(companyRes.name, 'Alfa Kezelő Kft.');
+  assert.equal(companyRes.phone, '+36 1 222 3333');
+
+  // Personal manager mode (set by the building's actual manager)
+  const managerRes = resolveBuildingResidentContact(BUILDINGS[1], {}, ORGANIZATIONS);
+  assert.equal(managerRes.mode, 'manager');
+  assert.equal(managerRes.isPersonalManager, true);
+  assert.equal(managerRes.name, 'Kovács Anna');
+  assert.equal(managerRes.phone, '+36 30 987 6543');
+  assert.equal(managerRes.email, 'anna@alfa.hu');
+  assert.equal(managerRes.officeHours, 'H–Cs 9:00–16:00');
+});
+
+test('7. Universal notification filtering, sorting, unread count, and invite tokens', () => {
+  const ownerUser = { email: 'tulaj@alfa.hu', uid: 'uid-owner', buildingId: 'b-1' };
+  const residentUser = { email: 'lako@pelda.hu', uid: 'uid-res', buildingId: 'b-1' };
+
+  const notifs = [
+    { id: 'n1', recipientEmail: 'tulaj@alfa.hu', severity: 'critical', read: false, dismissed: false, createdAt: '2026-11-21T10:00:00Z' },
+    { id: 'n2', recipientEmail: 'tulaj@alfa.hu', severity: 'info', read: true, dismissed: false, createdAt: '2026-11-21T11:00:00Z' },
+    { id: 'n3', recipientEmail: 'tulaj@alfa.hu', severity: 'info', read: false, dismissed: true, createdAt: '2026-11-21T12:00:00Z' },
+    { id: 'n4', recipientScope: 'building', buildingId: 'b-1', severity: 'info', read: false, dismissed: false, createdAt: '2026-11-21T12:30:00Z' },
+    { id: 'n5', recipientEmail: 'other@alfa.hu', severity: 'info', read: false, dismissed: false, createdAt: '2026-11-21T12:45:00Z' },
+  ];
+
+  const ownerList = getNotificationsForUser(notifs, ownerUser);
+  assert.deepEqual(ownerList.map((n) => n.id), ['n4', 'n2', 'n1']); // newest first, dismissed excluded
+  assert.equal(countUnreadNotifications(notifs, ownerUser), 2);
+
+  const resList = getNotificationsForUser(notifs, residentUser);
+  assert.deepEqual(resList.map((n) => n.id), ['n4']);
+  assert.equal(countUnreadNotifications(notifs, residentUser), 1);
+
+  // Invite token generation & lookup
+  const token = generateInviteToken();
+  assert.match(token, /^[0-9a-f]{32}$/);
+
+  const validMatch = findPendingInviteByToken(ORGANIZATIONS, 'abcdef0123456789abcdef0123456789');
+  assert.equal(validMatch?.isValid, true);
+  assert.equal(validMatch?.invite.email, 'ujkollega@alfa.hu');
+
+  const expiredMatch = findPendingInviteByToken(ORGANIZATIONS, '99999999999999999999999999999999');
+  assert.equal(expiredMatch?.isValid, false);
+  assert.equal(expiredMatch?.isExpired, true);
+});

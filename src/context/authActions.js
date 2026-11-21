@@ -19,6 +19,7 @@ import {
   hydrateFirestoreSession,
   purgeSensitiveLocalStorage
 } from '../services/firestoreAdapter';
+import { normalizeEmail } from '../utils/teamPermissions';
 
 const MIN_PASSWORD_LENGTH = 10;
 
@@ -98,6 +99,7 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     // (Required because production client bundle contains zero hardcoded users/buildings/PII)
     let effectiveUsers = (state.users || []).map(stripSensitiveUserFields);
     let effectiveBuildings = stripSensitiveBuildingFields(state.buildings || []);
+    let effectiveOrganizations = Array.isArray(state.organizations) ? state.organizations : [];
     let fetchedCloudData = null;
 
     if (rtdb) {
@@ -108,6 +110,9 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
           fetchedCloudData = cloudData;
           effectiveUsers = (cloudData.users || []).map(stripSensitiveUserFields);
           effectiveBuildings = stripSensitiveBuildingFields(cloudData.buildings || []);
+          effectiveOrganizations = Array.isArray(cloudData.organizations)
+            ? cloudData.organizations
+            : (cloudData.organizations ? Object.values(cloudData.organizations) : effectiveOrganizations);
         }
       } catch (fetchErr) {
         console.warn("Immediate post-login cloud fetch warning:", fetchErr.message);
@@ -123,6 +128,20 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
 
     // 4. Resolve user profile strictly by exact authenticated email (no alias or prefix matching)
     const verifiedEmail = (firebaseUser.email || trimmedEmail).toLowerCase().trim();
+
+    // Check organization membership (suspended staff check + active staff auto-recognition)
+    let matchedOrgRecord = null;
+    let matchedOrgMember = null;
+    for (const org of effectiveOrganizations) {
+      if (!org || !Array.isArray(org.members)) continue;
+      const m = org.members.find(item => item && normalizeEmail(item.email) === verifiedEmail);
+      if (m) {
+        matchedOrgRecord = org;
+        matchedOrgMember = m;
+        break;
+      }
+    }
+
     const matchingUsers = effectiveUsers.filter(u => {
       const uEmail = (u?.email || "").toLowerCase().trim();
       return uEmail === verifiedEmail;
@@ -131,6 +150,39 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     let foundUser = null;
     if (matchingUsers.length > 0) {
       foundUser = matchingUsers.find(u => u.role === 'superadmin' || u.role === 'admin' || u.role === 'szvb') || matchingUsers[0];
+    }
+
+    // If user is a suspended staff member (and not a superadmin or resident owner), block admin login immediately!
+    if (matchedOrgMember && matchedOrgMember.orgRole !== 'owner' && matchedOrgMember.active === false) {
+      if (!foundUser || foundUser.role === 'admin') {
+        try { await signOut(auth); } catch (e) {}
+        return {
+          success: false,
+          error: isEn
+            ? "Your colleague access has been suspended by the company owner. Please contact your administrator."
+            : "A munkatársi hozzáférésedet a cég tulajdonosa felfüggesztette. Kérjük, keresd a cégvezetőt!"
+        };
+      }
+    }
+
+    // Active organization owner/staff member not yet listed in legacy top-level users array
+    if (!foundUser && matchedOrgMember && matchedOrgMember.active !== false) {
+      foundUser = {
+        id: matchedOrgMember.id || firebaseUser.uid,
+        uid: firebaseUser.uid,
+        name: matchedOrgMember.name || firebaseUser.displayName || verifiedEmail,
+        email: verifiedEmail,
+        role: 'admin',
+        flatNum: '0',
+        orgId: matchedOrgRecord?.id || null,
+        orgRole: matchedOrgMember.orgRole || 'staff',
+      };
+    } else if (foundUser && matchedOrgMember && matchedOrgMember.active !== false && foundUser.role === 'admin') {
+      foundUser = {
+        ...foundUser,
+        orgId: matchedOrgRecord?.id || foundUser.orgId || null,
+        orgRole: matchedOrgMember.orgRole || foundUser.orgRole || 'staff',
+      };
     }
 
     // Fallback lookup in building flat owner emails if not listed in top-level users array

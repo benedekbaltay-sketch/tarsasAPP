@@ -26,6 +26,7 @@ import { AssemblyModal } from './components/modals/AssemblyModal';
 import { ProfileModal } from './components/modals/ProfileModal';
 import { BuildingSelectorModal } from './components/modals/BuildingSelectorModal';
 import { AddBuildingModal } from './components/modals/AddBuildingModal';
+import { TeamManagementModal } from './components/modals/TeamManagementModal';
 import { FullscreenTxModal } from './components/modals/FullscreenTxModal';
 import { 
   DeleteFlatConfirmModal, 
@@ -131,7 +132,9 @@ function MainLayout() {
     switchToKkMode,
     switchToTenantMode,
     openPortfolio,
-    openBuildingAdmin
+    openBuildingAdmin,
+    acceptTeamInvite,
+    showToast
   } = useApp();
   const { currentUser } = state;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
@@ -189,6 +192,16 @@ function MainLayout() {
   const [isProfileOpen, setIsProfileOpen] = useState(() => Boolean(initialNavState?.isProfileOpen));
   const [isBuildingSelectorOpen, setIsBuildingSelectorOpen] = useState(false);
   const [isAddBuildingOpen, setIsAddBuildingOpen] = useState(false);
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+  const [pendingInviteToken, setPendingInviteToken] = useState(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const raw = (p.get('invite') || '').trim();
+      return /^[a-fA-F0-9]{16,64}$/.test(raw) ? raw : '';
+    } catch {
+      return '';
+    }
+  });
   const [fullscreenTxData, setFullscreenTxData] = useState(() => initialNavState?.fullscreenTxData || null); // { type, flatNum }
   const [profileNavigation, setProfileNavigation] = useState(null); // { tileId, caseId, timestamp }
 
@@ -267,6 +280,28 @@ function MainLayout() {
     }
   }, []);
 
+  // Automatically process ?invite=<token> once authenticated and cloud state has synced
+  useEffect(() => {
+    if (!pendingInviteToken || !currentUser || !isInitialSyncDone) return;
+    const res = acceptTeamInvite(pendingInviteToken);
+    if (!res?.success && res?.reason) {
+      const isEn = state.currentLang === 'en';
+      const errMsg =
+        res.reason === 'email_mismatch'
+          ? (isEn ? 'This invite link belongs to a different email address.' : 'Ez a meghívó link egy másik e-mail címhez tartozik.')
+          : res.reason === 'expired'
+          ? (isEn ? 'This invite link has expired. Ask the owner for a new link.' : 'Ez a meghívó link lejárt. Kérj új meghívót a tulajdonostól!')
+          : (isEn ? 'Invite link is invalid or already used.' : 'A meghívó link érvénytelen vagy már fel lett használva.');
+      showToast(errMsg, 'error');
+    }
+    setPendingInviteToken('');
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('invite');
+      window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+    } catch {}
+  }, [pendingInviteToken, currentUser?.email, isInitialSyncDone]);
+
   // Global protection: Prevent mouse wheel from changing input[type=number] values anywhere
   useEffect(() => {
     const handleWheel = (e) => {
@@ -294,6 +329,7 @@ function MainLayout() {
     isAddFlatOpen ||
     isBuildingSelectorOpen ||
     isAddBuildingOpen ||
+    isTeamModalOpen ||
     isFlatsDataOpen ||
     isFinancialSituationOpen ||
     isDocumentsOpen ||
@@ -358,6 +394,7 @@ function MainLayout() {
     setIsAddFlatOpen(false);
     setIsBuildingSelectorOpen(false);
     setIsAddBuildingOpen(false);
+    setIsTeamModalOpen(false);
     setIsDrawerOpen(false);
     setDeleteFlatNum(null);
     setDeleteTxData(null);
@@ -537,6 +574,9 @@ function MainLayout() {
       case 'portfolio':
         openPortfolio();
         break;
+      case 'team':
+        if (isAdmin) setIsTeamModalOpen(true);
+        break;
       case 'calendar':
         setCalendarBuildingId(isAdmin && (state.isPortfolioView || !state.currentBuildingId) ? 'all' : state.currentBuildingId);
         setIsCalendarOpen(true);
@@ -672,6 +712,7 @@ function MainLayout() {
           <LoginView
             onOpenForgotPassword={() => setIsForgotPassOpen(true)}
             onOpenHelp={() => setIsHelpOpen(true)}
+            pendingInviteToken={pendingInviteToken}
           />
         ) : currentUser.role === 'superadmin' ? (
           <SuperAdminView
@@ -682,6 +723,7 @@ function MainLayout() {
             <PortfolioView
               onSelectBuilding={(bId) => openBuildingAdmin(bId)}
               onOpenAddBuilding={() => setIsAddBuildingOpen(true)}
+              onOpenTeamManagement={() => setIsTeamModalOpen(true)}
               onOpenCalendar={(bId) => {
                 const targetId = typeof bId === 'string' ? bId : 'all';
                 setCalendarBuildingId(targetId);
@@ -908,6 +950,11 @@ function MainLayout() {
       <AddBuildingModal
         isOpen={Boolean(isAdmin && isAddBuildingOpen)}
         onClose={() => setIsAddBuildingOpen(false)}
+      />
+
+      <TeamManagementModal
+        isOpen={Boolean(isAdmin && isTeamModalOpen)}
+        onClose={() => setIsTeamModalOpen(false)}
       />
 
       {/* Confirm & Alert Dialogs (z-60) */}

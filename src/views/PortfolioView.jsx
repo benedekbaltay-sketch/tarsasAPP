@@ -20,29 +20,52 @@ import {
   List
 } from 'lucide-react';
 import { formatCurrency, getBuildingReserve, getBuildingRenovationFund } from '../utils/finances';
+import {
+  getAccessibleBuildings,
+  canUserCreateBuilding,
+  canUserManageTeam,
+  resolveUserOrgContext,
+} from '../utils/teamPermissions';
 
-export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalendar, onOpenBuildingSettings }) {
+export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalendar, onOpenBuildingSettings, onOpenTeamManagement }) {
   const { state, t } = useApp();
-  const { buildings, currentLang } = state;
+  const { buildings, currentLang, currentUser, organizations } = state;
   const isEn = currentLang === 'en';
   const isHu = !isEn;
+
+  const accessibleBuildings = useMemo(
+    () => getAccessibleBuildings(currentUser, buildings || [], organizations || []),
+    [currentUser, buildings, organizations]
+  );
+  const canCreateBuilding = useMemo(
+    () => canUserCreateBuilding(currentUser, organizations, buildings),
+    [currentUser, organizations, buildings]
+  );
+  const canManageTeam = useMemo(
+    () => canUserManageTeam(currentUser, organizations, buildings),
+    [currentUser, organizations, buildings]
+  );
+  const orgCtx = useMemo(
+    () => resolveUserOrgContext(currentUser, organizations, buildings),
+    [currentUser, organizations, buildings]
+  );
 
   // View mode: 'list' (DEFAULT) or 'grid'
   const [viewMode, setViewMode] = useState('list');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Filtered buildings list
+  // Filtered buildings list (strictly scoped to buildings accessible by the logged-in user)
   const filteredBuildings = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return buildings || [];
-    return (buildings || []).filter(b => 
+    if (!q) return accessibleBuildings;
+    return accessibleBuildings.filter(b => 
       (b.name || '').toLowerCase().includes(q) || 
       (b.address || '').toLowerCase().includes(q) ||
       (b.taxNumber || '').toLowerCase().includes(q)
     );
-  }, [buildings, searchQuery]);
+  }, [accessibleBuildings, searchQuery]);
 
-  // Aggregate statistics across all buildings
+  // Aggregate statistics across accessible buildings
   const aggregateStats = useMemo(() => {
     let totalFlats = 0;
     let totalResidents = 0;
@@ -51,7 +74,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
     let totalArrears = 0;
     let totalFlatsInArrears = 0;
 
-    (buildings || []).forEach(b => {
+    accessibleBuildings.forEach(b => {
       const flats = b.flats || [];
       totalFlats += flats.length;
       totalResidents += flats.reduce((acc, f) => acc + (f.tenantCount || 1), 0);
@@ -71,7 +94,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
     });
 
     return {
-      totalBuildings: (buildings || []).length,
+      totalBuildings: accessibleBuildings.length,
       totalFlats,
       totalResidents,
       totalCommonReserve,
@@ -80,7 +103,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
       totalArrears,
       totalFlatsInArrears
     };
-  }, [buildings]);
+  }, [accessibleBuildings]);
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-5 animate-fadeIn">
@@ -88,10 +111,15 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
       {/* Top Banner / Welcome & Mode Info */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-gray-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-[#1E3A8A] border border-blue-200">
               {isEn ? "Property Portfolio" : "Közös Képviseleti Portfólió"}
             </span>
+            {orgCtx.isStaff && (
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                {t.team_staff_badge || (isEn ? "Assigned Property Manager" : "Kijelölt házkezelő")}
+              </span>
+            )}
           </div>
 
           {/* Title + Compact KPI Badges in ONE unified row! */}
@@ -121,8 +149,20 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
           </p>
         </div>
 
-        {/* Top Actions: Calendar, Add Building */}
+        {/* Top Actions: Team, Calendar, Add Building */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto shrink-0">
+          {canManageTeam && onOpenTeamManagement && (
+            <button
+              type="button"
+              onClick={onOpenTeamManagement}
+              className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-blue-50/70 text-[#1E3A8A] font-bold text-xs border border-blue-200 shadow-2xs transition-all cursor-pointer hover:border-blue-300 active:scale-95"
+              title={t.team_modal_title || (isEn ? "Team & Access Permissions" : "Csapat & Jogosultságok")}
+            >
+              <Users className="w-4 h-4 text-[#1E3A8A]" />
+              <span>{t.team_btn_label || (isEn ? "Team & Permissions" : "Csapat & Jogosultságok")}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => onOpenCalendar && onOpenCalendar('all')}
@@ -133,14 +173,16 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
             <span>{t.portfolio_switch_to_calendar || (isEn ? "Calendar" : "Naptár")}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={onOpenAddBuilding}
-            className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-xs shadow-xs transition-all cursor-pointer active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t.portfolio_add_building || (isEn ? "Add New Condominium" : "Új társasház hozzáadása")}</span>
-          </button>
+          {canCreateBuilding && (
+            <button
+              type="button"
+              onClick={onOpenAddBuilding}
+              className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-xs shadow-xs transition-all cursor-pointer active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{t.portfolio_add_building || (isEn ? "Add New Condominium" : "Új társasház hozzáadása")}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -213,7 +255,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
               ? (isEn ? "No building matches your search query." : "Nincs a keresési feltételnek megfelelő társasház.")
               : (isEn ? "Start by adding your first condominium building to the portfolio." : "Kezdésként rögzítsd az első társasházadat a portfólióba.")}
           </p>
-          {!searchQuery && (
+          {!searchQuery && canCreateBuilding && (
             <button
               type="button"
               onClick={onOpenAddBuilding}

@@ -16,6 +16,7 @@ import {
   Settings,
   Users
 } from 'lucide-react';
+import { canUserManageTeam } from '../utils/teamPermissions';
 
 export function IosSideDrawer({ 
   isOpen, 
@@ -23,10 +24,11 @@ export function IosSideDrawer({
   onSelectOption 
 }) {
   const { state, t, logout, getUserFlats, exitImpersonation } = useApp();
-  const { currentUser, buildings, currentBuildingId, currentLang, impersonatedFrom } = state;
+  const { currentUser, buildings, currentBuildingId, currentLang, impersonatedFrom, organizations } = state;
 
   const isHu = currentLang === 'hu' || !currentLang;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const canManageTeam = canUserManageTeam(currentUser, organizations, buildings);
 
   // Determine dynamic mode: Portfolio Mode (All buildings aggregated) vs. Building-Specific Mode
   const isPortfolioMode = isAdmin && (Boolean(state.isPortfolioView) || !currentBuildingId);
@@ -181,6 +183,29 @@ export function IosSideDrawer({
                     </div>
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
+
+                  {/* 2b. Csapat & Jogosultságok (Tulajdonos & jogosult munkatárs) */}
+                  {canManageTeam && (
+                    <button
+                      onClick={() => handleAction('team')}
+                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                          <Users className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="text-sm font-semibold text-gray-800 block leading-tight">
+                            {t.team_btn_label || (isHu ? "Csapat & Jogosultságok" : "Team & Permissions")}
+                          </span>
+                          <span className="text-[11px] text-gray-500 font-medium block">
+                            {isHu ? "Munkatársak és házak kiosztása" : "Assign colleagues & buildings"}
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  )}
 
                   {/* 3. Fiók / Rendszerbeállítások */}
                   <button

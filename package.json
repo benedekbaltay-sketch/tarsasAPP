@@ -13,6 +13,7 @@
     "test:security": "node --test tests/securityControls.test.mjs",
     "test:adapter": "node --test tests/firestoreAdapter.test.mjs",
     "test:explorer": "node --test tests/docExplorer.test.mjs",
+    "test:team": "node --test tests/teamPermissions.test.mjs",
     "migrate:emulator": "node scripts/migrateRtdbToFirestore.mjs --target=emulator",
     "verify:emulator": "node scripts/verifyMigrationParity.mjs --target=emulator"
   },

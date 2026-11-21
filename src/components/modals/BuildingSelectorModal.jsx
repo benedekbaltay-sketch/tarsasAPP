@@ -2,15 +2,19 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, Users, Plus, Check, Building2, Shield, Home, LayoutGrid } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
+import { getAccessibleBuildings, canUserCreateBuilding } from '../../utils/teamPermissions';
 
 export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGoPortfolio, onProfileSwitched }) {
   const { state, t, switchBuilding, openBuildingAdmin, quickLogin, switchActiveFlat, getUserFlats, showToast } = useApp();
-  const { buildings, currentBuildingId, users, currentUser, currentLang, isPortfolioView } = state;
+  const { buildings, currentBuildingId, users, currentUser, currentLang, isPortfolioView, organizations } = state;
   const isEn = currentLang === 'en';
 
   const backdropProps = useBackdropClose(onClose);
 
   if (!isOpen || !currentUser) return null;
+
+  const accessibleBuildings = getAccessibleBuildings(currentUser, buildings || [], organizations || []);
+  const canCreateBuilding = canUserCreateBuilding(currentUser, organizations, buildings);
 
   const userEmail = (currentUser.email || "").toLowerCase().trim();
   const isAdminAuthorized = (
@@ -154,13 +158,13 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
           )}
           
           {/* Condominiums List (if admin) */}
-          {isAdminAuthorized && (buildings || []).length > 0 && (
+          {isAdminAuthorized && (accessibleBuildings || []).length > 0 && (
             <div>
               <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
                 {t.select_building}
               </span>
               <div className="space-y-1.5">
-                {(buildings || []).map((b) => {
+                {(accessibleBuildings || []).map((b) => {
                   const isActive = b.id === currentBuildingId;
                   return (
                     <button
@@ -238,8 +242,8 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
             </div>
           )}
 
-          {/* Admin Add Building Action */}
-          {isAdminAuthorized && (
+          {/* Admin Add Building Action (Owner or Staff with canCreateBuildings) */}
+          {isAdminAuthorized && canCreateBuilding && (
             <div className="pt-2 border-t border-gray-100">
               <button
                 onClick={() => {

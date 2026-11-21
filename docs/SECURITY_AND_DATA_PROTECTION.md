@@ -103,6 +103,13 @@ All code-level security controls from the full 21-finding cybersecurity audit (`
    - Authoritative server-computed unit balances, building KK/FA reserves, and GDPR-safe `monthlySummaries` drive UI calculations in `src/utils/finances.js` so Regular Owners see 0-Ft exact building metrics without accessing other units' payments.
    - Upgraded `functions/` (`firebase-admin@^14.5.1`, `firebase-functions@^7.4.0`) -> **both root (`npm audit`) and `functions/` (`npm --prefix functions audit`) report 0 vulnerabilities**.
    - Verified with `npm run test:adapter` (4/4 passing), `npm run test:security` (5/5), `npm run test:atomic` (6/6), and `npm run test:rules` (5/5).
+9. **Multi-Company Self-Service Team Delegation & Financial Fraud Safeguards (`src/utils/teamPermissions.js`, `src/context/teamActions.js`, `GlobalBalancesModal.jsx`, `NotificationBell.jsx`, `firestore.rules`, `functions/src/organizations.js`)**:
+   - **Strict Owner-Only Building Deletion**: `canDeleteBuildings` is permanently forced `false` for all staff members both in client logic (`normalizeStaffPermissions`, `canUserDeleteBuilding`) and server-side Cloud Functions (`functions/src/organizations.js`); only the Organization Owner or SuperAdmin can delete a condominium.
+   - **Anti-Privilege-Escalation Guard**: Staff with `canManageTeam` can NEVER edit/remove the Organization Owner, modify their own permissions, delegate building deletion, or grant permissions (`canCreateBuildings`, `canEditBankAccounts`, `canManageTeam`) they do not hold themselves.
+   - **Default-Locked Bank Account Numbers (IBAN) + Mandatory Critical Owner Alert**: Bank account numbers (`bankKK.account`, `bankFA.account`, `customBankAccounts[].account`) and custom account add/delete actions are locked by default for staff (`canEditBankAccounts: false`, enforced in UI, `GlobalBalancesModal`, `buildingActions.js`, and `firestore.rules`). Even when explicitly enabled by the Owner, **every bank account number modification by a colleague triggers an automatic `severity: 'critical'` pale-red high-priority notification** delivered directly to the Owner's `NotificationBell` (and logged in immutable `auditLogs` in Firestore mode).
+   - **Instant Offboarding & Contact Handover Hygiene**: Suspending or removing a colleague immediately revokes access across all buildings (`authActions.js`, `AppContext.jsx`, `firestore.rules`) and warns/offers 1-click reset of buildings that displayed the departing colleague's personal contact (`contactDisplayMode: 'company'`).
+   - **Cryptographic Email-Bound Invites**: 128-bit random hex tokens (`?invite=<token>`) with 7-day expiry, strictly verified against the signed-in user's exact email address.
+   - Verified with `npm run test:team` (7/7 passing).
 
 ---
 

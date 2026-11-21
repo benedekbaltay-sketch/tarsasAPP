@@ -59,6 +59,35 @@ service cloud.firestore {
       return isSuperAdmin() || hasActiveMembership(buildingId);
     }
 
+    function orgMemberPath(orgId) {
+      return /databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid);
+    }
+
+    function isActiveOrgMember(orgId) {
+      return isSignedIn()
+        && exists(orgMemberPath(orgId))
+        && get(orgMemberPath(orgId)).data.active == true;
+    }
+
+    function isOrgOwner(orgId) {
+      return isSuperAdmin()
+        || (isActiveOrgMember(orgId) && get(orgMemberPath(orgId)).data.orgRole == 'owner');
+    }
+
+    function isOrgTeamManager(orgId) {
+      return isOrgOwner(orgId)
+        || (isActiveOrgMember(orgId) && get(orgMemberPath(orgId)).data.canManageTeam == true);
+    }
+
+    // Enforce Owner-controlled lock on bank account number edits for delegated staff
+    function canEditBuildingBankAccounts(buildingId) {
+      let data = memberData(buildingId);
+      return isSuperAdmin()
+        || !('orgRole' in data)
+        || data.orgRole == 'owner'
+        || ('canEditBankAccounts' in data && data.canEditBankAccounts == true);
+    }
+
     // Strict check that an Owner is modifying ONLY personal contact fields on their own unit
     function isValidOwnerContactUpdate() {
       let allowed = ['phone', 'emergencyContact', 'notes', 'updatedAt'];
@@ -127,6 +156,44 @@ service cloud.firestore {
              .hasOnly(['preferredLang', 'globalSettings', 'repProfile', 'phone', 'updatedAt']);
 
       allow create, delete: if false; // Provisioned strictly via Cloud Functions / Admin SDK
+
+      // -----------------------------------------------------------------------
+      // USER NOTIFICATIONS (Universal Notification Bell — Server-written ONLY)
+      // Users may ONLY mark their own notifications as read or dismissed.
+      // -----------------------------------------------------------------------
+      match /notifications/{notifId} {
+        allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+        allow update: if isSignedIn()
+          && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['read', 'readAt', 'dismissed']);
+        allow create, delete: if false; // Written exclusively server-side by Cloud Functions
+      }
+    }
+
+    // =========================================================================
+    // MULTI-COMPANY ORGANIZATIONS & SELF-SERVICE TEAM DELEGATION
+    // =========================================================================
+    match /organizations/{orgId} {
+      allow read: if isSuperAdmin() || isActiveOrgMember(orgId);
+
+      // Only the Organization Owner may update company name & central contact info
+      allow update: if isOrgOwner(orgId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['name', 'centralContact', 'updatedAt']);
+
+      allow create, delete: if false; // Managed strictly via Cloud Functions
+
+      match /members/{uid} {
+        allow read: if isOrgTeamManager(orgId)
+          || (isSignedIn() && request.auth.uid == uid);
+        allow write: if false; // Exclusively managed via manageOrganizationMember / acceptOrganizationInvite
+      }
+
+      match /invites/{inviteId} {
+        allow read: if isOrgTeamManager(orgId);
+        allow write: if false; // Exclusively managed via Cloud Functions
+      }
     }
 
     // =========================================================================
@@ -138,10 +205,13 @@ service cloud.firestore {
       allow read: if isBuildingMember(buildingId);
 
       // Admin updates non-financial metadata only; balances/aggregates/initialReserves
-      // are mutated strictly via atomic Cloud Functions (Option A)
+      // are mutated strictly via atomic Cloud Functions (Option A).
+      // Modifying `bankAccounts` requires Owner or explicit `canEditBankAccounts` permission.
       allow update: if isBuildingAdmin(buildingId)
         && buildingFinancialsUnchanged()
-        && hasNoBankApiSecrets(request.resource.data);
+        && hasNoBankApiSecrets(request.resource.data)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['bankAccounts'])
+            || canEditBuildingBankAccounts(buildingId));
 
       allow create, delete: if false; // Provisioned via Cloud Function for atomic member + auditLog creation
 

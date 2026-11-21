@@ -99,6 +99,8 @@ export function mergeStateWithCloud(local, cloud) {
     res.calendarEvents = ensureArray(cloud.calendarEvents).length > 0
       ? ensureArray(cloud.calendarEvents)
       : JSON.parse(JSON.stringify(DEFAULT_CALENDAR_EVENTS || []));
+    res.organizations = ensureArray(cloud.organizations);
+    res.notifications = ensureArray(cloud.notifications);
     res.currentLang = local?.currentLang || 'hu';
     res.currentUser = local?.currentUser ? stripSensitiveUserFields(local.currentUser) : null;
     res.isGridEditMode = local?.isGridEditMode || false;
@@ -257,11 +259,21 @@ export function mergeStateWithCloud(local, cloud) {
           if (cb.buildingInitialReserveRenovation !== undefined) {
             mb.buildingInitialReserveRenovation = cb.buildingInitialReserveRenovation;
           }
+          if (cb.name !== undefined) mb.name = cb.name;
+          if (cb.address !== undefined) mb.address = cb.address;
+          if (cb.taxNumber !== undefined) mb.taxNumber = cb.taxNumber;
           if (cb.repName !== undefined) mb.repName = cb.repName;
           if (cb.phone !== undefined) mb.phone = cb.phone;
           if (cb.email !== undefined) mb.email = cb.email;
           if (cb.repOfficeHours !== undefined) mb.repOfficeHours = cb.repOfficeHours;
           if (cb.repAddress !== undefined) mb.repAddress = cb.repAddress;
+          if (cb.organizationId !== undefined) mb.organizationId = cb.organizationId;
+          if (cb.contactDisplayMode !== undefined) mb.contactDisplayMode = cb.contactDisplayMode;
+          if (cb.managerContact !== undefined) mb.managerContact = cb.managerContact;
+          if (cb.bankKK !== undefined) mb.bankKK = cb.bankKK;
+          if (cb.bankFA !== undefined) mb.bankFA = cb.bankFA;
+          if (cb.customBankAccounts !== undefined) mb.customBankAccounts = cb.customBankAccounts;
+          if (cb.bankApi !== undefined) mb.bankApi = cb.bankApi;
           if (cb.infoSections !== undefined) mb.infoSections = cb.infoSections;
           mb.lastUpdated = cb.lastUpdated || cloudTime;
         } else {
@@ -308,6 +320,29 @@ export function mergeStateWithCloud(local, cloud) {
     cloudCalEvents
   );
 
+  // 6. Merge organizations (authoritative version wins per org to prevent resurrecting offboarded staff)
+  merged.organizations = mergeItemArray(
+    ensureArray(local.organizations),
+    ensureArray(cloud.organizations)
+  );
+
+  // 7. Merge notifications (monotonic read/dismissed flags so read alerts never flicker back)
+  const rawMergedNotifs = mergeItemArray(
+    ensureArray(local.notifications),
+    ensureArray(cloud.notifications)
+  );
+  const localNotifMap = new Map(ensureArray(local.notifications).filter(n => n?.id).map(n => [String(n.id), n]));
+  const cloudNotifMap = new Map(ensureArray(cloud.notifications).filter(n => n?.id).map(n => [String(n.id), n]));
+  merged.notifications = rawMergedNotifs.map(n => {
+    const ln = localNotifMap.get(String(n.id));
+    const cn = cloudNotifMap.get(String(n.id));
+    return {
+      ...n,
+      read: Boolean(n.read || ln?.read || cn?.read),
+      dismissed: Boolean(n.dismissed || ln?.dismissed || cn?.dismissed),
+    };
+  });
+
   merged.buildings = stripSensitiveBuildingFields(merged.buildings || []);
   merged.users = (merged.users || []).map(stripSensitiveUserFields);
 
@@ -348,6 +383,8 @@ export function loadInitialState() {
     buildingInitialReserveCommon: 0,
     buildingInitialReserveRenovation: 0,
     calendarEvents: JSON.parse(JSON.stringify(DEFAULT_CALENDAR_EVENTS || [])),
+    organizations: [],
+    notifications: [],
     repProfile: JSON.parse(JSON.stringify(DEFAULT_REP_PROFILE)),
     globalSettings: JSON.parse(JSON.stringify(DEFAULT_GLOBAL_SETTINGS)),
     activeRoleMode: null,
@@ -391,6 +428,12 @@ export function loadInitialState() {
           if (parsedCal.length > 0) {
             defaultState.calendarEvents = parsedCal;
           }
+        }
+        if (parsed.organizations) {
+          defaultState.organizations = ensureArray(parsed.organizations);
+        }
+        if (parsed.notifications) {
+          defaultState.notifications = ensureArray(parsed.notifications);
         }
         defaultState.activeRoleMode = parsed.activeRoleMode || localStorage.getItem("tarsashaz_role_mode") || null;
         defaultState.isPortfolioView = parsed.isPortfolioView !== undefined ? parsed.isPortfolioView : (localStorage.getItem("tarsashaz_is_portfolio") === "true");
@@ -566,6 +609,8 @@ export function createCloudPayload(targetState) {
     buildings: cleanBuildings,
     users: safeUsers,
     calendarEvents: targetState.calendarEvents || [],
+    organizations: targetState.organizations || [],
+    notifications: (targetState.notifications || []).slice(0, 300),
     repProfile: targetState.repProfile || DEFAULT_REP_PROFILE,
     globalSettings: targetState.globalSettings || DEFAULT_GLOBAL_SETTINGS,
     vault: getPermanentVault(),

@@ -22,6 +22,17 @@ import {
 } from '../services/firestoreAdapter';
 import { sanitizeFileName, readFileAsDataUrl } from '../utils/fileSecurity';
 import { planExplorerMove, planExplorerDelete, planFolderTreeCopy } from '../utils/docExplorer';
+import {
+  resolveUserOrgContext,
+  canUserAccessBuilding,
+  canUserCreateBuilding,
+  canUserDeleteBuilding,
+  canUserEditBankAccountNumbers,
+  detectBankAccountChanges,
+  buildBankChangeNotification,
+  findOrganizationForBuilding,
+  normalizeEmail,
+} from '../utils/teamPermissions';
 
 export function createBuildingActions({ state, setState, persistState, showToast, t, reloadCurrentBuilding, hydrateAndSwitchBuilding }) {
   const isAdmin = () => Boolean(
@@ -41,6 +52,15 @@ export function createBuildingActions({ state, setState, persistState, showToast
   const switchBuilding = (buildingId) => {
     const curB = (state.buildings || []).find(b => b.id === buildingId);
     if (!curB) return;
+    if (isAdmin()) {
+      if (!canUserAccessBuilding(state.currentUser, curB, state.organizations, state.buildings)) {
+        showToast(
+          t.error_unauthorized || (state.currentLang === 'en' ? "You do not have access to this condominium." : "Nincs jogosultságod ehhez a társasházhoz."),
+          "error"
+        );
+        return;
+      }
+    }
     if (!isAdmin() && state.currentUser?.role !== 'szvb') {
       const userEmail = (state.currentUser?.email || "").toLowerCase().trim();
       const ownsFlatInBuilding = (curB.flats || []).some(f => {
@@ -1061,23 +1081,42 @@ export function createBuildingActions({ state, setState, persistState, showToast
     return null;
   };
 
-  // Add Building
+  // Add Building (respects Owner-controlled `canCreateBuildings` permission & org ownership)
   const addBuilding = (newBuilding) => {
     if (!requireAdmin()) return;
+    if (!canUserCreateBuilding(state.currentUser, state.organizations, state.buildings)) {
+      showToast(
+        t.team_no_create_building_perm || (state.currentLang === 'en'
+          ? "Only the owner or an authorized colleague can add new condominiums."
+          : "Új társasház létrehozásához tulajdonosi engedély szükséges."),
+        "error"
+      );
+      return;
+    }
+
+    const orgCtx = resolveUserOrgContext(state.currentUser, state.organizations, state.buildings);
+    const enrichedBuilding = {
+      ...newBuilding,
+      ...(orgCtx.org ? { organizationId: orgCtx.org.id } : {}),
+      createdByEmail: normalizeEmail(state.currentUser?.email),
+      createdAt: newBuilding?.createdAt || new Date().toISOString(),
+    };
+
     if (IS_FIRESTORE_MODE) {
       callProvisionBuilding({
-        id: newBuilding?.id,
-        name: newBuilding?.name,
-        address: newBuilding?.address,
-        taxNumber: newBuilding?.taxNumber,
-        defaultBank: newBuilding?.defaultBank,
-        repName: newBuilding?.repName,
-        phone: newBuilding?.phone,
-        email: newBuilding?.email,
-        bankKK: newBuilding?.bankKK,
-        bankFA: newBuilding?.bankFA,
-        initialReserveKK: newBuilding?.buildingInitialReserveCommon || 0,
-        initialReserveFA: newBuilding?.buildingInitialReserveRenovation || 0,
+        id: enrichedBuilding?.id,
+        name: enrichedBuilding?.name,
+        address: enrichedBuilding?.address,
+        taxNumber: enrichedBuilding?.taxNumber,
+        defaultBank: enrichedBuilding?.defaultBank,
+        repName: enrichedBuilding?.repName,
+        phone: enrichedBuilding?.phone,
+        email: enrichedBuilding?.email,
+        bankKK: enrichedBuilding?.bankKK,
+        bankFA: enrichedBuilding?.bankFA,
+        organizationId: enrichedBuilding?.organizationId || null,
+        initialReserveKK: enrichedBuilding?.buildingInitialReserveCommon || 0,
+        initialReserveFA: enrichedBuilding?.buildingInitialReserveRenovation || 0,
       })
         .then(async (res) => {
           if (typeof hydrateAndSwitchBuilding === 'function' && res?.buildingId) {
@@ -1092,19 +1131,79 @@ export function createBuildingActions({ state, setState, persistState, showToast
       return;
     }
 
-    persistState(s => ({
-      ...s,
-      buildings: [...(s.buildings || []), newBuilding],
-      currentBuildingId: newBuilding.id,
-      flats: newBuilding.flats || [],
-      transactions: newBuilding.transactions || [],
-      expenses: newBuilding.expenses || [],
-      manualDebits: newBuilding.manualDebits || [],
-      documents: newBuilding.documents || [],
-      buildingInitialReserveCommon: newBuilding.buildingInitialReserveCommon || 0,
-      buildingInitialReserveRenovation: newBuilding.buildingInitialReserveRenovation || 0
-    }), true);
+    persistState(s => {
+      // If a staff member with `selected` building scope creates a building,
+      // auto-assign it to them while keeping ownership strictly under the company organization!
+      let nextOrganizations = s.organizations || [];
+      if (orgCtx.isStaff && orgCtx.org && orgCtx.member && orgCtx.member.buildingScope === 'selected') {
+        nextOrganizations = nextOrganizations.map((org) => {
+          if (org.id !== orgCtx.org.id) return org;
+          return {
+            ...org,
+            members: (org.members || []).map((m) => {
+              if (m.id !== orgCtx.member.id) return m;
+              const updatedIds = Array.from(new Set([...(m.buildingIds || []), enrichedBuilding.id]));
+              return { ...m, buildingIds: updatedIds, updatedAt: new Date().toISOString() };
+            }),
+            updatedAt: new Date().toISOString(),
+          };
+        });
+      }
+
+      return {
+        ...s,
+        organizations: nextOrganizations,
+        buildings: [...(s.buildings || []), enrichedBuilding],
+        currentBuildingId: enrichedBuilding.id,
+        flats: enrichedBuilding.flats || [],
+        transactions: enrichedBuilding.transactions || [],
+        expenses: enrichedBuilding.expenses || [],
+        manualDebits: enrichedBuilding.manualDebits || [],
+        documents: enrichedBuilding.documents || [],
+        docFolders: enrichedBuilding.docFolders || [],
+        loans: enrichedBuilding.loans || [],
+        buildingInitialReserveCommon: enrichedBuilding.buildingInitialReserveCommon || 0,
+        buildingInitialReserveRenovation: enrichedBuilding.buildingInitialReserveRenovation || 0
+      };
+    }, true);
     showToast(state.currentLang === 'en' ? "Condominium created!" : "Új társasház sikeresen létrehozva!");
+  };
+
+  // Delete Building — STRICTLY Organization Owner or SuperAdmin ONLY (NEVER staff!)
+  const deleteBuilding = (buildingId) => {
+    const targetB = (state.buildings || []).find(b => b.id === buildingId);
+    if (!targetB) return false;
+    if (!canUserDeleteBuilding(state.currentUser, targetB, state.organizations, state.buildings)) {
+      showToast(
+        t.team_delete_owner_only_error || (state.currentLang === 'en'
+          ? "Only the company owner can delete a condominium."
+          : "Társasházat kizárólag a fiók tulajdonosa törölhet!"),
+        "error"
+      );
+      return false;
+    }
+
+    persistState(s => {
+      const remaining = (s.buildings || []).filter(b => b.id !== buildingId);
+      const nextOrgs = (s.organizations || []).map(org => ({
+        ...org,
+        members: (org.members || []).map(m => ({
+          ...m,
+          buildingIds: Array.isArray(m.buildingIds) ? m.buildingIds.filter(id => id !== buildingId) : []
+        }))
+      }));
+      const nextActive = s.currentBuildingId === buildingId ? (remaining[0]?.id || null) : s.currentBuildingId;
+      return {
+        ...s,
+        buildings: remaining,
+        organizations: nextOrgs,
+        currentBuildingId: nextActive,
+        isPortfolioView: s.currentBuildingId === buildingId ? true : s.isPortfolioView,
+      };
+    }, true);
+
+    showToast(state.currentLang === 'en' ? "Condominium deleted." : "Társasház törölve.");
+    return true;
   };
 
   // Toggle Grid Edit Mode
@@ -1291,12 +1390,42 @@ export function createBuildingActions({ state, setState, persistState, showToast
     });
   };
 
+  // Helper: build critical Owner notification if a staff colleague modifies bank account numbers
+  const buildStaffBankChangeNotifIfNeeded = (prevBuilding, nextBankKK, nextBankFA, nextCustomAccounts) => {
+    const orgCtx = resolveUserOrgContext(state.currentUser, state.organizations, state.buildings);
+    if (!orgCtx.isStaff) return null;
+    const changes = detectBankAccountChanges(prevBuilding, nextBankKK, nextBankFA, nextCustomAccounts);
+    if (!changes.length) return null;
+    const ownerOrg = orgCtx.org || findOrganizationForBuilding(prevBuilding, state.organizations);
+    const ownerEmail = orgCtx.ownerEmail || ownerOrg?.ownerEmail || '';
+    if (!ownerEmail) return null;
+    return buildBankChangeNotification({
+      actorUser: state.currentUser,
+      ownerEmail,
+      building: prevBuilding,
+      changes,
+    });
+  };
+
   // Update building bank accounts (bankKK, bankFA, and customBankAccounts)
   const updateBuildingBankAccounts = (buildingId, { bankKK, bankFA, customBankAccounts }) => {
     if (!requireAdmin()) return;
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    const curB = (state.buildings || []).find(b => b.id === targetId);
+    const bankChanges = curB ? detectBankAccountChanges(curB, bankKK, bankFA, customBankAccounts) : [];
+    if (bankChanges.length > 0 && !canUserEditBankAccountNumbers(state.currentUser, curB, state.organizations, state.buildings)) {
+      showToast(
+        t.team_bank_account_locked_error || (state.currentLang === 'en'
+          ? "You do not have permission to change bank account numbers. Ask the owner to enable this permission."
+          : "Nincs jogosultságod a bankszámlaszám módosítására. Ehhez a tulajdonos jóváhagyása szükséges."),
+        "error"
+      );
+      return;
+    }
+
+    const criticalNotif = curB ? buildStaffBankChangeNotifIfNeeded(curB, bankKK, bankFA, customBankAccounts) : null;
+
     if (IS_FIRESTORE_MODE) {
-      const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
-      const curB = (state.buildings || []).find(b => b.id === targetId);
       if (targetId) {
         updateBuildingMetadata(targetId, {
           bankAccounts: {
@@ -1313,9 +1442,9 @@ export function createBuildingActions({ state, setState, persistState, showToast
     }
 
     persistState(s => {
-      const targetId = buildingId || s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
+      const resolvedId = buildingId || s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
       const updatedBuildings = (s.buildings || []).map(b => {
-        if (b.id === targetId) {
+        if (b.id === resolvedId) {
           return {
             ...b,
             bankKK: bankKK !== undefined ? bankKK : b.bankKK,
@@ -1328,7 +1457,8 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
       return {
         ...s,
-        buildings: updatedBuildings
+        buildings: updatedBuildings,
+        notifications: criticalNotif ? [criticalNotif, ...(s.notifications || [])].slice(0, 300) : (s.notifications || []),
       };
     });
     showToast(t.account_updated_success || (state.currentLang === 'en' ? "Bank accounts updated!" : "Bankszámlák sikeresen frissítve!"));
@@ -1337,6 +1467,18 @@ export function createBuildingActions({ state, setState, persistState, showToast
   // Add a new custom bank account to building
   const addCustomBankAccount = (buildingId, newAccount) => {
     if (!requireAdmin()) return null;
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    const curB = (state.buildings || []).find(b => b.id === targetId);
+    if (!canUserEditBankAccountNumbers(state.currentUser, curB, state.organizations, state.buildings)) {
+      showToast(
+        t.team_bank_account_locked_error || (state.currentLang === 'en'
+          ? "You do not have permission to change bank account numbers. Ask the owner to enable this permission."
+          : "Nincs jogosultságod a bankszámlaszám módosítására. Ehhez a tulajdonos jóváhagyása szükséges."),
+        "error"
+      );
+      return null;
+    }
+
     const accountWithId = {
       id: newAccount.id || `acc-${Date.now()}`,
       name: newAccount.name.trim(),
@@ -1349,16 +1491,16 @@ export function createBuildingActions({ state, setState, persistState, showToast
       color: newAccount.color || 'emerald'
     };
 
+    const nextCustomList = [...(curB?.customBankAccounts || []), accountWithId];
+    const criticalNotif = curB ? buildStaffBankChangeNotifIfNeeded(curB, curB.bankKK, curB.bankFA, nextCustomList) : null;
+
     if (IS_FIRESTORE_MODE) {
-      const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
-      const curB = (state.buildings || []).find(b => b.id === targetId);
-      const updatedCustom = [...(curB?.customBankAccounts || []), accountWithId];
       if (targetId) {
         updateBuildingMetadata(targetId, {
           bankAccounts: {
             KK: curB?.bankKK,
             FA: curB?.bankFA,
-            custom: updatedCustom,
+            custom: nextCustomList,
           }
         })
           .then(() => typeof reloadCurrentBuilding === 'function' && reloadCurrentBuilding(targetId))
@@ -1369,9 +1511,9 @@ export function createBuildingActions({ state, setState, persistState, showToast
     }
 
     persistState(s => {
-      const targetId = buildingId || s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
+      const resolvedId = buildingId || s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
       const updatedBuildings = (s.buildings || []).map(b => {
-        if (b.id === targetId) {
+        if (b.id === resolvedId) {
           const currentList = b.customBankAccounts || [];
           return {
             ...b,
@@ -1383,7 +1525,8 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
       return {
         ...s,
-        buildings: updatedBuildings
+        buildings: updatedBuildings,
+        notifications: criticalNotif ? [criticalNotif, ...(s.notifications || [])].slice(0, 300) : (s.notifications || []),
       };
     });
     showToast(t.account_added_success || (state.currentLang === 'en' ? "New account added!" : "Új számla sikeresen hozzáadva!"));
@@ -1393,10 +1536,22 @@ export function createBuildingActions({ state, setState, persistState, showToast
   // Delete a custom bank account from building
   const deleteCustomBankAccount = (buildingId, accountId) => {
     if (!requireAdmin()) return;
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    const curB = (state.buildings || []).find(b => b.id === targetId);
+    if (!canUserEditBankAccountNumbers(state.currentUser, curB, state.organizations, state.buildings)) {
+      showToast(
+        t.team_bank_account_locked_error || (state.currentLang === 'en'
+          ? "You do not have permission to change bank account numbers. Ask the owner to enable this permission."
+          : "Nincs jogosultságod a bankszámlaszám módosítására. Ehhez a tulajdonos jóváhagyása szükséges."),
+        "error"
+      );
+      return;
+    }
+
+    const updatedCustom = (curB?.customBankAccounts || []).filter(a => a.id !== accountId);
+    const criticalNotif = curB ? buildStaffBankChangeNotifIfNeeded(curB, curB.bankKK, curB.bankFA, updatedCustom) : null;
+
     if (IS_FIRESTORE_MODE) {
-      const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
-      const curB = (state.buildings || []).find(b => b.id === targetId);
-      const updatedCustom = (curB?.customBankAccounts || []).filter(a => a.id !== accountId);
       if (targetId) {
         updateBuildingMetadata(targetId, {
           bankAccounts: {
@@ -1413,9 +1568,9 @@ export function createBuildingActions({ state, setState, persistState, showToast
     }
 
     persistState(s => {
-      const targetId = buildingId || s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
+      const resolvedId = buildingId || s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
       const updatedBuildings = (s.buildings || []).map(b => {
-        if (b.id === targetId) {
+        if (b.id === resolvedId) {
           return {
             ...b,
             customBankAccounts: (b.customBankAccounts || []).filter(a => a.id !== accountId)
@@ -1426,7 +1581,8 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
       return {
         ...s,
-        buildings: updatedBuildings
+        buildings: updatedBuildings,
+        notifications: criticalNotif ? [criticalNotif, ...(s.notifications || [])].slice(0, 300) : (s.notifications || []),
       };
     });
     showToast(t.account_deleted_success || (state.currentLang === 'en' ? "Account deleted!" : "Számla törölve!"));
@@ -1450,6 +1606,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
     updateDocFolder,
     deleteDocFolder,
     addBuilding,
+    deleteBuilding,
     toggleGridEditMode,
     updateBuildingRepInfo,
     updateBuildingData,

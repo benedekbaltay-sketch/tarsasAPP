@@ -24,8 +24,10 @@ import {
   CheckCircle2,
   Settings,
   Key,
-  Building2
+  Building2,
+  Clock
 } from 'lucide-react';
+import { resolveBuildingResidentContact } from '../utils/teamPermissions';
 import { QRCodeSVG } from 'qrcode.react';
 import { 
   formatCurrency, 
@@ -83,9 +85,12 @@ export function TenantView({
   const allAccounts = getBuildingAccounts(currentBuilding);
   const buildingCode = getBuildingPaymentCode(currentBuilding);
 
-  const repName = currentBuilding?.repName || "";
-  const repPhone = currentBuilding?.phone || "";
-  const repEmail = currentBuilding?.email || "";
+  const resolvedContact = resolveBuildingResidentContact(currentBuilding, state.repProfile, state.organizations);
+  const repName = resolvedContact.name || "";
+  const repPhone = resolvedContact.phone || "";
+  const repEmail = resolvedContact.email || "";
+  const repOfficeHours = resolvedContact.officeHours || "";
+  const isPersonalManagerContact = Boolean(resolvedContact.isPersonalManager);
 
   const copyBankPackage = (accountKey, debtAmount, defaultAmount, iban, ben, comment) => {
     const text = formatBankTransferPackage({
@@ -138,14 +143,24 @@ export function TenantView({
           </div>
           <div>
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-0.5">
-              {t.rep_contact_title || (isEn ? "Representative Contact" : "Közös Képviselet elérhetősége")}
+              {isPersonalManagerContact
+                ? (t.rep_manager_contact_title || (isEn ? "Responsible Property Manager" : "Felelős házkezelő elérhetősége"))
+                : (t.rep_contact_title || (isEn ? "Representative Contact" : "Közös Képviselet elérhetősége"))}
             </span>
             <h4 className="text-base font-bold text-gray-900 leading-tight">
               {repName}
             </h4>
-            <span className="text-xs text-gray-500 font-medium">
-              {currentBuilding?.name || t.building_address}
-            </span>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <span className="text-xs text-gray-500 font-medium">
+                {currentBuilding?.name || t.building_address}
+              </span>
+              {repOfficeHours && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-semibold">
+                  <Clock className="w-3 h-3" />
+                  <span>{repOfficeHours}</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

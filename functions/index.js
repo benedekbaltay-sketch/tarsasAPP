@@ -15,3 +15,8 @@ export { mutateTransaction, calibrateBuildingBalances } from './src/transactions
 export { scheduledMonthlyAssessments, triggerMonthlyAssessments } from './src/assessments.js';
 export { provisionBuilding, manageBuildingMember, manageUnitLifecycle } from './src/members.js';
 export { mutateLoan } from './src/loans.js';
+export {
+  manageOrganizationMember,
+  acceptOrganizationInvite,
+  notifyBankAccountChange,
+} from './src/organizations.js';

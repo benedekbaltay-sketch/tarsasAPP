@@ -5,6 +5,8 @@ import { ProfileSwitcherButton } from './ProfileSwitcherButton';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { CloudSyncBadge } from './CloudSyncBadge';
 import { FlagIcon } from './FlagIcon';
+import { NotificationBell } from './NotificationBell';
+import { getAccessibleBuildings } from '../utils/teamPermissions';
 
 export function Header({ 
   onOpenDrawer, 
@@ -15,7 +17,7 @@ export function Header({
   onOpenCalendar
 }) {
   const { state, t, toggleLanguage } = useApp();
-  const { currentUser, currentLang, buildings, currentBuildingId, isPortfolioView } = state;
+  const { currentUser, currentLang, buildings, currentBuildingId, isPortfolioView, organizations } = state;
 
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
   const switcherRef = useRef(null);
@@ -49,7 +51,8 @@ export function Header({
 
   if (!currentUser) return null;
 
-  const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings[0];
+  const accessibleBuildings = getAccessibleBuildings(currentUser, buildings || [], organizations || []);
+  const currentBuilding = (accessibleBuildings || []).find(b => b.id === currentBuildingId) || (buildings || []).find(b => b.id === currentBuildingId) || accessibleBuildings[0] || buildings[0];
   const isHu = currentLang === 'hu' || !currentLang;
   const isEn = !isHu;
 
@@ -185,18 +188,18 @@ export function Header({
                   )}
 
                   {/* Managed Condominiums Direct Switcher */}
-                  {(buildings || []).length > 0 && (
+                  {(accessibleBuildings || []).length > 0 && (
                     <div className="p-2">
                       <div className="px-2 pt-0.5 pb-1.5 flex items-center justify-between">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                           {t.header_managed_buildings || (isHu ? "Kezelt társasházak" : "Managed Condominiums")}
                         </span>
                         <span className="text-[10px] font-bold text-gray-400">
-                          {(buildings || []).length}
+                          {(accessibleBuildings || []).length}
                         </span>
                       </div>
                       <div className="max-h-64 overflow-y-auto space-y-1">
-                        {(buildings || []).map((b) => {
+                        {(accessibleBuildings || []).map((b) => {
                           const isActive = b.id === currentBuildingId;
                           return (
                             <button
@@ -263,6 +266,9 @@ export function Header({
               <span className="hidden lg:inline">{isHu ? "Naptár" : "Calendar"}</span>
             </button>
           )}
+
+          {/* Universal Notification Bell (visible to all users, right next to Calendar) */}
+          <NotificationBell />
 
           {/* Profile Switcher (for multi-flat residents; admins use the unified building/portfolio switcher above) */}
           {!isCurrentlyAdminMode && (

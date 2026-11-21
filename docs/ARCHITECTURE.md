@@ -347,3 +347,20 @@ A vizsgálat két egymást erősítő hibát tárt fel:
    - Ha a kliens újabb vagy nem-nulla tartalékkal rendelkezik, mint a felhő, a figyelő beérkezésekor a revíziószámot növelve (`Math.max(localRevision, cloudRevision) + 1`) azonnal felküldi a friss adatot, megvédve a többi egyidejű admint és démont.
 4. **Golyóálló Számformátum Elemzés (`parseCleanNumber`)**:
    - A pénznem-jelzéseket (`Ft`, `HUF`), szóközöket (rendes és nem törő szóköz `\u00A0`), pontokat és vesszőket automatikusan megtisztítja, kizárólag a numerikus karaktereket és az előjelet megőrizve.
+
+---
+
+## 12. Önkiszolgáló Csapatkezelés, Jogosultság-Delegálás és Univerzális Értesítési Központ (2026.11.21)
+
+A több társasházat kezelő partnercégek számára önkiszolgáló szervezeti réteg (`organizations`) és globális értesítési központ (`notifications`) került kiépítésre, 100%-os visszafelé kompatibilitással a meglévő RTDB állapotokhoz és teljes Cloud Firestore + Cloud Functions paritással:
+
+1. **Tiszta Jogosultsági Motor (`src/utils/teamPermissions.js`)**:
+   - React- és Firebase-mentes ESM modul, amely egységesen számolja a szervezeti szerepköröket (`org_owner`, `staff`, `superadmin`), a visszafelé kompatibilis implicit tulajdonosi feloldást (meglévő `admin` fiókoknál zéró adatbázis-migrációval), a házakhoz való hozzáférést (`getAccessibleBuildings`, `canUserAccessBuilding`), a létrehozási/törlési/csapatkezelési/bankszámla-szerkesztési jogosultságokat és az eszkaláció-ellenes ellenőrzéseket (`canActorManageTargetMember`).
+   - Banki számlaszám változásdetektor (`detectBankAccountChanges`) és kétnyelvű kritikus biztonsági értesítés-generátor (`buildBankChangeNotification`).
+   - Épületenkénti kapcsolattartó-feloldó (`resolveBuildingResidentContact`): `'company'` (központi céges elérhetőség) vs `'manager'` (a ház tényleges kezelője által megadott saját név, telefonszám, e-mail, ügyfélfogadási idő).
+2. **Moduláris Állapotkezelés és Szinkronizáció (`src/context/teamActions.js`, `src/context/syncEngine.js`)**:
+   - A `syncEngine.js` kezeli az `organizations` és `notifications` kollekciók kétirányú összefésülését (a `notifications` olvasott/elrejtett állapota monoton módon egyesül, a szervezeti tagságoknál pedig a revízió-elsőbbség megakadályozza a törölt/felfüggesztett munkatársak visszaéledését), valamint megőrzi az épületek `organizationId`, `contactDisplayMode` és `managerContact` mezőit.
+   - A `teamActions.js` biztosítja a lusta szervezet-inicializálást (első csapatkezelési műveletnél, soha nem automatikusan oldalbetöltéskor), a 7 napos e-mailhez kötött meghívó linkeket (`?invite=<token>`), az egykattintásos házátadást (`handoverMemberBuildings`), az azonnali felfüggesztést és eltávolítást (opcionális kapcsolattartó-visszaállítással).
+3. **Szerveroldali Firestore & Cloud Functions Paritás (`firestore.rules`, `functions/src/organizations.js`)**:
+   - `organizations/{orgId}` (+ `members`, `invites`) és `users/{uid}/notifications/{notifId}` Firestore biztonsági szabályok, valamint `canEditBuildingBankAccounts` szerveroldali zár.
+   - `manageOrganizationMember`, `acceptOrganizationInvite`, és `notifyBankAccountChange` Cloud Functions v2 (`europe-west1`) hívások atomi tranzakciókkal és megváltoztathatatlan `auditLogs` bejegyzésekkel.

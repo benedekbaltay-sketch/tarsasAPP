@@ -17,7 +17,11 @@ import {
   CheckCircle2, 
   ShieldCheck, 
   SlidersHorizontal,
-  RefreshCw
+  RefreshCw,
+  UserCheck,
+  Phone,
+  Mail,
+  Clock
 } from 'lucide-react';
 import { 
   getBuildingReserve, 
@@ -27,6 +31,15 @@ import {
   formatCurrency 
 } from '../../utils/finances';
 import { useBackdropClose } from '../../utils/useBackdropClose';
+import { formatPhoneNumber } from '../../utils/phone';
+import {
+  resolveUserOrgContext,
+  canUserEditBankAccountNumbers,
+  detectBankAccountChanges,
+  buildBankChangeNotification,
+  findOrganizationForBuilding,
+  resolveBuildingResidentContact,
+} from '../../utils/teamPermissions';
 
 export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode = 'full' }) {
   const { state, t, setGlobalBalances, persistState, showToast } = useApp();
@@ -46,6 +59,13 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
   const [buildingName, setBuildingName] = useState('');
   const [buildingAddress, setBuildingAddress] = useState('');
   const [buildingTaxNumber, setBuildingTaxNumber] = useState('');
+
+  // 1b. Resident-Facing Contact Switcher ('company' | 'manager', editable by actual building manager)
+  const [contactDisplayMode, setContactDisplayMode] = useState('company');
+  const [managerName, setManagerName] = useState('');
+  const [managerPhone, setManagerPhone] = useState('');
+  const [managerEmail, setManagerEmail] = useState('');
+  const [managerOfficeHours, setManagerOfficeHours] = useState('');
 
   // 2. Primary Bank Accounts (KK & FA)
   const [bankKKName, setBankKKName] = useState('');
@@ -90,6 +110,12 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
       setBuildingName(targetBuilding.name || '');
       setBuildingAddress(targetBuilding.address || '');
       setBuildingTaxNumber(targetBuilding.taxNumber || '');
+
+      setContactDisplayMode(targetBuilding.contactDisplayMode === 'manager' ? 'manager' : 'company');
+      setManagerName(targetBuilding.managerContact?.name || '');
+      setManagerPhone(targetBuilding.managerContact?.phone || '');
+      setManagerEmail(targetBuilding.managerContact?.email || '');
+      setManagerOfficeHours(targetBuilding.managerContact?.officeHours || '');
 
       setBankKKName(targetBuilding.bankKK?.name || targetBuilding.name || '');
       setBankKKAccount(targetBuilding.bankKK?.account || '');
@@ -141,9 +167,24 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
   };
 
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
+  const orgCtx = resolveUserOrgContext(state.currentUser, state.organizations, buildings);
+  const canEditBankAcc = canUserEditBankAccountNumbers(state.currentUser, targetBuilding, state.organizations, buildings);
+  const companyPreviewContact = resolveBuildingResidentContact(
+    targetBuilding ? { ...targetBuilding, contactDisplayMode: 'company' } : null,
+    state.repProfile,
+    state.organizations
+  );
   const backdropProps = useBackdropClose(isSaving ? () => {} : onClose);
 
   if (!isOpen || !isAdmin) return null;
+
+  const handleFillMyContact = () => {
+    setManagerName(state.currentUser?.name || '');
+    setManagerEmail(state.currentUser?.email || '');
+    if (!managerPhone && state.repProfile?.phone) {
+      setManagerPhone(formatPhoneNumber(state.repProfile.phone));
+    }
+  };
 
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
 
@@ -184,7 +225,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
 
   const handleAddNewAccount = (e) => {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!canEditBankAcc || !newName.trim()) return;
 
     const newId = `acc-${Date.now()}`;
     const cleanBal = parseCleanNumber(newInitialBalance);
@@ -208,6 +249,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
   };
 
   const handleDeleteCustomAccount = (accId) => {
+    if (!canEditBankAcc) return;
     setCustomAccounts(prev => prev.filter(a => a.id !== accId));
     setCustomBalances(prev => {
       const copy = { ...prev };
@@ -235,32 +277,76 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
     setSaveError(null);
 
     try {
+      const prevCustomById = new Map((targetBuilding?.customBankAccounts || []).map(a => [a.id, a]));
+      const baseCustomList = canEditBankAcc
+        ? customAccounts
+        : (targetBuilding?.customBankAccounts || []).map(orig => {
+            const edited = customAccounts.find(c => c.id === orig.id);
+            return {
+              ...orig,
+              bank: edited?.bank !== undefined ? edited.bank : orig.bank,
+              // Strictly preserve locked account number when !canEditBankAcc
+              account: orig.account || '',
+            };
+          });
+
       const parsedCustomBalances = {};
-      const updatedCustomAccounts = customAccounts.map(acc => {
+      const updatedCustomAccounts = baseCustomList.map(acc => {
         const numVal = parseCleanNumber(customBalances[acc.id]);
         parsedCustomBalances[acc.id] = numVal;
         const txTotals = getCustomAccountTxTotals(acc);
         const newInit = Math.round(numVal - txTotals.payments + txTotals.expenses);
+        const origAcc = prevCustomById.get(acc.id);
         return {
           ...acc,
+          account: canEditBankAcc ? String(acc.account || '').trim() : String(origAcc?.account || acc.account || '').trim(),
           initialReserve: newInit
         };
       });
+
+      const nextBankKK = {
+        name: bankKKName.trim() || targetBuilding?.name || '',
+        account: canEditBankAcc ? bankKKAccount.trim() : String(targetBuilding?.bankKK?.account || '').trim(),
+        bank: bankKKBank.trim() || 'OTP'
+      };
+      const nextBankFA = {
+        name: bankFAName.trim() || targetBuilding?.name || '',
+        account: canEditBankAcc ? bankFAAccount.trim() : String(targetBuilding?.bankFA?.account || '').trim(),
+        bank: bankFABank.trim() || 'OTP'
+      };
+
+      // Detect any bank account number changes and emit pale-red critical alert to Owner if edited by staff!
+      const bankAccountChanges = targetBuilding
+        ? detectBankAccountChanges(targetBuilding, nextBankKK, nextBankFA, updatedCustomAccounts)
+        : [];
+
+      let criticalOwnerNotification = null;
+      if (bankAccountChanges.length > 0 && orgCtx.isStaff) {
+        const ownerOrg = orgCtx.org || findOrganizationForBuilding(targetBuilding, state.organizations);
+        const ownerEmail = orgCtx.ownerEmail || ownerOrg?.ownerEmail || '';
+        if (ownerEmail) {
+          criticalOwnerNotification = buildBankChangeNotification({
+            actorUser: state.currentUser,
+            ownerEmail,
+            building: targetBuilding,
+            changes: bankAccountChanges,
+          });
+        }
+      }
+
+      const nextManagerContact = {
+        name: managerName.trim(),
+        phone: formatPhoneNumber(managerPhone),
+        email: managerEmail.trim(),
+        officeHours: managerOfficeHours.trim(),
+      };
 
       await persistState(s => {
         const updatedBuildings = (s.buildings || []).map(b => {
           if (b.id === targetBuildingId) {
             const bankUpdates = {
-              bankKK: {
-                name: bankKKName.trim() || b.name,
-                account: bankKKAccount.trim(),
-                bank: bankKKBank.trim() || 'OTP'
-              },
-              bankFA: {
-                name: bankFAName.trim() || b.name,
-                account: bankFAAccount.trim(),
-                bank: bankFABank.trim() || 'OTP'
-              },
+              bankKK: nextBankKK,
+              bankFA: nextBankFA,
               buildingInitialReserveCommon: calculatedInitKK,
               buildingInitialReserveRenovation: calculatedInitFA,
               customBankAccounts: updatedCustomAccounts,
@@ -278,6 +364,8 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
               name: buildingName.trim() || b.name,
               address: buildingAddress.trim() || b.address,
               taxNumber: buildingTaxNumber.trim(),
+              contactDisplayMode: contactDisplayMode === 'manager' ? 'manager' : 'company',
+              managerContact: nextManagerContact,
               ...bankUpdates,
               bankApi: {
                 provider: apiProvider,
@@ -294,7 +382,10 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
 
         return {
           ...s,
-          buildings: updatedBuildings
+          buildings: updatedBuildings,
+          notifications: criticalOwnerNotification
+            ? [criticalOwnerNotification, ...(s.notifications || [])].slice(0, 300)
+            : (s.notifications || []),
         };
       });
 
@@ -442,13 +533,144 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                   </div>
                 )}
 
+                {/* Section A2: Per-Building Resident Contact Switcher (editable by actual building manager!) */}
+                {!isAccountsOnly && (
+                  <div className="bg-blue-50/40 p-4 rounded-xl border border-blue-200/80 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#1E3A8A]">
+                        <UserCheck className="w-4 h-4" />
+                        <span>{t.bld_contact_section_title || (isEn ? "Resident-Facing Representative Contact" : "Lakóknak megjelenő kapcsolattartó")}</span>
+                      </h4>
+                      <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-blue-200">
+                        <button
+                          type="button"
+                          onClick={() => setContactDisplayMode('company')}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
+                            contactDisplayMode === 'company'
+                              ? 'bg-[#1E3A8A] text-white'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          {t.bld_contact_mode_company || (isEn ? "Central Company" : "Központi céges")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setContactDisplayMode('manager')}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
+                            contactDisplayMode === 'manager'
+                              ? 'bg-[#1E3A8A] text-white'
+                              : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                        >
+                          {t.bld_contact_mode_manager || (isEn ? "Building Manager's Own" : "Kezelő saját elérhetősége")}
+                        </button>
+                      </div>
+                    </div>
+
+                    {contactDisplayMode === 'company' ? (
+                      <div className="p-3 rounded-xl bg-white border border-blue-100 text-[11px] text-gray-600 space-y-1">
+                        <div className="font-semibold text-gray-800">
+                          {t.bld_contact_company_preview || (isEn ? "Residents currently see the central company contact:" : "A lakók jelenleg a központi céges elérhetőséget látják:")}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-700">
+                          <span className="font-bold">{companyPreviewContact.name || '—'}</span>
+                          {companyPreviewContact.phone && <span>📞 {companyPreviewContact.phone}</span>}
+                          {companyPreviewContact.email && <span>✉️ {companyPreviewContact.email}</span>}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 bg-white p-3.5 rounded-xl border border-blue-200/70">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-[11px] text-gray-600">
+                            {t.bld_contact_manager_desc || (
+                              isEn
+                                ? "Enter the responsible building manager's contact details shown at the top of the residents' dashboard."
+                                : "Add meg a ház tényleges kezelőjének elérhetőségeit, amely a lakók felületének tetején jelenik meg."
+                            )}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleFillMyContact}
+                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] font-bold text-[11px] border border-blue-200 cursor-pointer transition-colors flex-shrink-0"
+                          >
+                            {t.bld_contact_fill_mine || (isEn ? "Fill my details" : "Saját adataim kitöltése")}
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">
+                              {t.bld_contact_manager_name || (isEn ? "Manager Name" : "Házkezelő neve")}
+                            </label>
+                            <input
+                              type="text"
+                              value={managerName}
+                              onChange={(e) => setManagerName(e.target.value)}
+                              placeholder={isEn ? "e.g. Anna Kovács" : "pl. Kovács Anna"}
+                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">
+                              {t.bld_contact_manager_phone || (isEn ? "Direct Phone" : "Közvetlen telefonszám")}
+                            </label>
+                            <input
+                              type="text"
+                              value={managerPhone}
+                              onChange={(e) => setManagerPhone(e.target.value)}
+                              onBlur={() => setManagerPhone(formatPhoneNumber(managerPhone))}
+                              placeholder="+36 30 123 4567"
+                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">
+                              {t.bld_contact_manager_email || (isEn ? "Direct Email" : "Közvetlen e-mail cím")}
+                            </label>
+                            <input
+                              type="email"
+                              value={managerEmail}
+                              onChange={(e) => setManagerEmail(e.target.value)}
+                              placeholder="anna@ceg.hu"
+                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">
+                              {t.bld_contact_manager_hours || (isEn ? "Office Hours (optional)" : "Fogadási / elérhetőségi idő (opcionális)")}
+                            </label>
+                            <input
+                              type="text"
+                              value={managerOfficeHours}
+                              onChange={(e) => setManagerOfficeHours(e.target.value)}
+                              placeholder={isEn ? "Mon–Thu 9:00–16:00" : "H–Cs 9:00–16:00"}
+                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Section B: Base Accounts (KK & FA) */}
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between pb-1 border-b border-gray-100">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-gray-100">
                     <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#1E3A8A]">
                       <Landmark className="w-4 h-4" />
                       <span>{isEn ? "Primary Condominium Bank Accounts" : "Alapértelmezett társasházi bankszámlák"}</span>
                     </h4>
+                    {!canEditBankAcc ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold">
+                        <Lock className="w-3 h-3" />
+                        <span>{t.team_bank_locked_badge || (isEn ? "Account numbers locked by Owner" : "Bankszámlaszám tulajdonos által zárolva")}</span>
+                      </span>
+                    ) : orgCtx.isStaff ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[10px] font-bold">
+                        <AlertTriangle className="w-3 h-3" />
+                        <span>{t.team_bank_alert_badge || (isEn ? "Owner is notified of account number changes" : "Számlaszám-módosításról a tulajdonos értesítést kap")}</span>
+                      </span>
+                    ) : null}
                   </div>
 
                   {/* 1. KK Account */}
@@ -487,15 +709,20 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-semibold text-gray-600 mb-0.5">
-                          {isEn ? "Bank Account Number" : "Bankszámlaszám"}
+                        <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                          <span>{isEn ? "Bank Account Number" : "Bankszámlaszám"}</span>
+                          {!canEditBankAcc && <Lock className="w-3 h-3 text-amber-600" />}
                         </label>
                         <input
                           type="text"
                           value={bankKKAccount}
+                          disabled={!canEditBankAcc}
                           onChange={(e) => setBankKKAccount(e.target.value)}
                           placeholder="11700000 00000000"
-                          className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A]"
+                          title={!canEditBankAcc ? (t.team_bank_account_locked_error || (isEn ? "Locked by Owner" : "Tulajdonos által zárolva")) : undefined}
+                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
+                            canEditBankAcc ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                          }`}
                         />
                       </div>
                       <div>
@@ -553,15 +780,20 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-semibold text-gray-600 mb-0.5">
-                          {isEn ? "Bank Account Number" : "Bankszámlaszám"}
+                        <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                          <span>{isEn ? "Bank Account Number" : "Bankszámlaszám"}</span>
+                          {!canEditBankAcc && <Lock className="w-3 h-3 text-amber-600" />}
                         </label>
                         <input
                           type="text"
                           value={bankFAAccount}
+                          disabled={!canEditBankAcc}
                           onChange={(e) => setBankFAAccount(e.target.value)}
                           placeholder="11700000 00000000"
-                          className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-emerald-600"
+                          title={!canEditBankAcc ? (t.team_bank_account_locked_error || (isEn ? "Locked by Owner" : "Tulajdonos által zárolva")) : undefined}
+                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-emerald-600 ${
+                            canEditBankAcc ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                          }`}
                         />
                       </div>
                       <div>
@@ -596,7 +828,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                       </p>
                     </div>
 
-                    {!isAddingNew && (
+                    {!isAddingNew && canEditBankAcc && (
                       <button
                         type="button"
                         onClick={() => setIsAddingNew(true)}
@@ -627,14 +859,16 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                               </span>
                             )}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteCustomAccount(acc.id)}
-                            className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                            title="Törlés"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canEditBankAcc && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCustomAccount(acc.id)}
+                              className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              title="Törlés"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
@@ -654,19 +888,23 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                             />
                           </div>
                           <div>
-                            <label className="text-[10px] text-gray-500 block font-bold mb-0.5">
-                              {isEn ? "Account Number" : "Számlaszám"}
+                            <label className="text-[10px] text-gray-500 flex items-center gap-1 font-bold mb-0.5">
+                              <span>{isEn ? "Account Number" : "Számlaszám"}</span>
+                              {!canEditBankAcc && <Lock className="w-2.5 h-2.5 text-amber-600" />}
                             </label>
                             <input
                               type="text"
                               value={acc.account || ''}
+                              disabled={!canEditBankAcc}
                               onChange={(e) =>
                                 setCustomAccounts(prev =>
                                   prev.map(item => (item.id === acc.id ? { ...item, account: e.target.value } : item))
                                 )
                               }
                               placeholder="11700000 00000000"
-                              className="w-full px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs font-mono text-gray-800 focus:outline-none focus:border-[#1E3A8A]"
+                              className={`w-full px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
+                                canEditBankAcc ? 'bg-white text-gray-800' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                              }`}
                             />
                           </div>
                           <div>

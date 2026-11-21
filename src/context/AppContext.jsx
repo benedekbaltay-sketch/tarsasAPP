@@ -35,6 +35,12 @@ import { createAccountingActions } from './accountingActions';
 import { createBuildingActions } from './buildingActions';
 import { createLoanActions } from './loanActions';
 import { createCalendarActions } from './calendarActions';
+import { createTeamActions } from './teamActions';
+import {
+  resolveUserOrgContext,
+  getAccessibleBuildings,
+  canUserAccessBuilding,
+} from '../utils/teamPermissions';
 
 const AppContext = createContext(null);
 
@@ -151,6 +157,8 @@ export function AppProvider({ children }) {
         loans: activeB?.loans || [],
         infoSections: activeB?.infoSections || [],
         calendarEvents: sessionData.calendarEvents || [],
+        organizations: sessionData.organizations || prev.organizations || [],
+        notifications: sessionData.notifications || prev.notifications || [],
         buildingInitialReserveCommon: activeB?.buildingInitialReserveCommon || 0,
         buildingInitialReserveRenovation: activeB?.buildingInitialReserveRenovation || 0,
         repProfile: sessionData.repProfile ? { ...prev.repProfile, ...sessionData.repProfile } : prev.repProfile,
@@ -1058,10 +1066,14 @@ export function AppProvider({ children }) {
     reloadCurrentBuilding,
   });
   const calendarActions = createCalendarActions({ state, persistState, showToast, t });
+  const teamActions = createTeamActions({ state, persistState, showToast, t });
 
-  // Helper to check if current user is admin/KK authorized
+  // Helper to check if current user is admin/KK authorized (respecting org suspension & staff delegation)
   const isCurrentUserAdmin = (user = state.currentUser, users = state.users) => {
     if (!user) return false;
+    const orgCtx = resolveUserOrgContext(user, state.organizations, state.buildings);
+    if (orgCtx.isSuspended) return false;
+    if (orgCtx.isSuperAdmin || orgCtx.isOwner || orgCtx.isStaff) return true;
     const userEmail = (user.email || "").toLowerCase().trim();
     return (
       user.isAdminUser === true ||
@@ -1233,8 +1245,16 @@ export function AppProvider({ children }) {
     }, 'localOnly');
   };
 
-  // Open specific building in Admin view
+  // Open specific building in Admin view (enforcing staff building assignment isolation)
   const openBuildingAdmin = (buildingId) => {
+    const targetObj = (state.buildings || []).find(b => b.id === buildingId);
+    if (targetObj && state.currentUser && !canUserAccessBuilding(state.currentUser, targetObj, state.organizations, state.buildings)) {
+      showToast(
+        t.error_unauthorized || (state.currentLang === 'en' ? "You do not have access to this condominium." : "Nincs jogosultságod ennek a társasháznak a megnyitásához."),
+        "error"
+      );
+      return;
+    }
     if (!IS_FIRESTORE_MODE) {
       try {
         localStorage.setItem("tarsashaz_is_portfolio", "false");
@@ -1317,6 +1337,10 @@ export function AppProvider({ children }) {
     ...buildingActions,
     ...loanActions,
     ...calendarActions,
+    ...teamActions,
+    orgContext: resolveUserOrgContext(state.currentUser, state.organizations, state.buildings),
+    getAccessibleBuildings: (u = state.currentUser, b = state.buildings, o = state.organizations) =>
+      getAccessibleBuildings(u, b, o),
     getUserFlats: (u = state.currentUser, b = state.buildings) => getUserFlats(u, b)
   };
 

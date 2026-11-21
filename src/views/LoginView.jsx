@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Mail, Lock, Eye, AlertCircle, KeyRound, HelpCircle, LogIn, Building2, RefreshCw } from 'lucide-react';
+import { Mail, Lock, Eye, AlertCircle, KeyRound, HelpCircle, LogIn, Building2, RefreshCw, Users } from 'lucide-react';
 import { FlagIcon } from '../components/FlagIcon';
 
-export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
+export function LoginView({ onOpenForgotPassword, onOpenHelp, pendingInviteToken = '' }) {
   const { state, t, login, toggleLanguage } = useApp();
   const [email, setEmail] = useState(() => {
     try {
@@ -115,6 +115,21 @@ export function LoginView({ onOpenForgotPassword, onOpenHelp }) {
             {t.login_subtitle}
           </p>
         </div>
+
+        {/* Team Invitation Welcome Banner */}
+        {pendingInviteToken && (
+          <div className="mb-5 p-3.5 bg-blue-50 border border-blue-200 text-[#1E3A8A] rounded-xl text-xs font-medium flex items-start gap-2.5 animate-fadeIn">
+            <Users className="w-4 h-4 flex-shrink-0 text-[#1E3A8A] mt-0.5" />
+            <div>
+              <div className="font-bold">
+                {t.team_invite_login_title || (isHu ? "Meghívót kaptál társasház-kezelői csapatba!" : "You've been invited to a property management team!")}
+              </div>
+              <p className="text-[11px] text-blue-900/80 mt-0.5">
+                {t.team_invite_login_desc || (isHu ? "Jelentkezz be a meghívott e-mail címeddel, és a hozzád rendelt társasházak automatikusan aktiválódnak." : "Sign in with your invited email address to automatically activate access to your assigned condominiums.")}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Error message */}
         {errorMsg && (
