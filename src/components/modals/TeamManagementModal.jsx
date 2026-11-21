@@ -58,7 +58,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const isEn = currentLang === 'en';
   const isHu = !isEn;
 
-  const backdropProps = useBackdropClose(onClose, { enableEscape: !removeTargetMember && !handoverFromMember });
+  const backdropProps = useBackdropClose(onClose, { enableEscape: false });
 
   const orgCtx = useMemo(
     () => resolveUserOrgContext(currentUser, organizations, buildings),
