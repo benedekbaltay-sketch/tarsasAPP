@@ -369,3 +369,135 @@ export function runDunningDryRun(rule, buildings = [], flatsByBuilding = {}, opt
 
   return matches;
 }
+
+/**
+ * Generates a realistic sample email preview for a single flat (either chosen, matched, or random).
+ * If the selected flat does not currently have matching arrears, realistically simulates arrears
+ * according to the rule's threshold so that all merge tags ({{hatralek_osszeg}}, {{hatralek_honapok}}, etc.)
+ * are rendered cleanly and visibly.
+ * 
+ * @param {Object} rule - The dunning rule configuration
+ * @param {Array} buildings - Array of buildings from state
+ * @param {Object} options - Options: { buildingId, flatNum, unitId, seedIndex, isEn, repProfile }
+ * @returns {Object} Preview data with renderedSubject, renderedBody, flat, building, isSimulated, allUnits
+ */
+export function generateSampleFlatPreview(rule, buildings = [], options = {}) {
+  if (!rule) return null;
+
+  const targetBuildings = (rule.buildingId && rule.buildingId !== 'all')
+    ? buildings.filter(b => b.id === rule.buildingId)
+    : (options.buildingId && options.buildingId !== 'all')
+      ? buildings.filter(b => b.id === options.buildingId)
+      : buildings;
+
+  const effectiveBuildings = targetBuildings.length > 0 ? targetBuildings : buildings;
+
+  // Flatten all available units
+  const allUnits = [];
+  for (const b of effectiveBuildings) {
+    for (const f of (b.flats || [])) {
+      allUnits.push({ flat: f, building: b });
+    }
+  }
+
+  let selectedUnit = null;
+
+  // 1. If options specify flatNum and/or buildingId
+  if (options.flatNum !== undefined && options.flatNum !== null) {
+    selectedUnit = allUnits.find(u => 
+      String(u.flat.flatNum) === String(options.flatNum) &&
+      (!options.buildingId || options.buildingId === 'all' || u.building.id === options.buildingId)
+    );
+  }
+
+  // 2. If options specify seedIndex
+  if (!selectedUnit && typeof options.seedIndex === 'number' && allUnits.length > 0) {
+    const safeIdx = Math.abs(options.seedIndex) % allUnits.length;
+    selectedUnit = allUnits[safeIdx];
+  }
+
+  // 3. Fallback to first unit, or dummy unit if no buildings/flats exist
+  if (!selectedUnit && allUnits.length > 0) {
+    selectedUnit = allUnits[0];
+  }
+
+  const isEn = Boolean(options.isEn);
+
+  if (!selectedUnit) {
+    // Demo fallback when codebase has 0 buildings or flats
+    selectedUnit = {
+      building: {
+        id: 'demo-building',
+        name: isEn ? 'Sunflower Condominium' : 'Napfény Társasház',
+        officialName: isEn ? 'Sunflower Condominium' : 'Napfény Társasház',
+        address: isEn ? '1052 Budapest, Main Street 12.' : '1052 Budapest, Fő utca 12.',
+        bankKK: '11705008-20456789-00000000',
+        bankAccount: '11705008-20456789-00000000'
+      },
+      flat: {
+        id: 'demo-flat-1',
+        flatNum: 12,
+        owner: isEn ? 'John Smith' : 'Kovács István',
+        email: 'kovacs.istvan@pelda.hu',
+        monthlyFee: 24500,
+        renovationFee: 6500,
+        balance: 0,
+        renovationBalance: 0
+      }
+    };
+  }
+
+  const { flat, building } = selectedUnit;
+
+  // Check if flat already naturally matches the rule
+  const naturalMatch = evaluateFlatAgainstRule(rule, flat, building, {
+    ...options,
+    cooldownDays: 0 // bypass cooldown for preview
+  });
+
+  const allUnitsList = allUnits.map(u => ({
+    buildingId: u.building.id,
+    buildingName: u.building.officialName || u.building.name,
+    flatNum: u.flat.flatNum,
+    ownerName: u.flat.owner || u.flat.name || (isEn ? `Flat ${u.flat.flatNum}` : `${u.flat.flatNum}. lakás`)
+  }));
+
+  if (naturalMatch) {
+    return {
+      ...naturalMatch,
+      isSimulated: false,
+      allUnits: allUnitsList
+    };
+  }
+
+  // If flat does not naturally match, simulate realistic arrears according to the formula
+  const kkFee = getCurrentFee(flat, 'KK') > 0 ? getCurrentFee(flat, 'KK') : (Number(flat.monthlyFee) || 22000);
+  const faFee = getCurrentFee(flat, 'FA') > 0 ? getCurrentFee(flat, 'FA') : (Number(flat.renovationFee) || 6000);
+  const baseMonthly = rule.targetAccount === 'FA' ? faFee : (rule.targetAccount === 'KK' ? kkFee : (kkFee + faFee));
+  const effectiveMonthly = baseMonthly > 0 ? baseMonthly : 25000;
+
+  const thresholdMonths = Number(rule.monthThreshold) || 1.0;
+  const minAmount = Number(rule.minAmountHuf) || 0;
+
+  // Realistic sample: threshold + 0.2-0.5 months
+  const simMonths = Number((thresholdMonths > 0 ? thresholdMonths + 0.2 : 2.5).toFixed(1));
+  const calculatedArrears = Math.round(simMonths * effectiveMonthly);
+  const simArrears = Math.max(calculatedArrears, minAmount > 0 ? minAmount + 5000 : 35000);
+
+  const simulatedFlat = {
+    ...flat,
+    balance: rule.targetAccount === 'FA' ? (flat.balance || 0) : -simArrears,
+    renovationBalance: rule.targetAccount === 'FA' ? -simArrears : (flat.renovationBalance || 0)
+  };
+
+  const simResult = evaluateFlatAgainstRule(rule, simulatedFlat, building, {
+    ...options,
+    cooldownDays: 0
+  });
+
+  return {
+    ...(simResult || {}),
+    isSimulated: true,
+    allUnits: allUnitsList
+  };
+}

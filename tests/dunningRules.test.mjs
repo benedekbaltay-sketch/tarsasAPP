@@ -4,6 +4,7 @@ import {
   renderEmailTemplate, 
   evaluateFlatAgainstRule, 
   runDunningDryRun, 
+  generateSampleFlatPreview,
   DEFAULT_DUNNING_RULES,
   MERGE_VARIABLES 
 } from '../src/utils/dunningRules.js';
@@ -163,4 +164,46 @@ test('6. Dry-run multi-building scanner returns detailed match list with rendere
   assert.equal(results[1].flatNum, '10');
   assert.equal(results[1].ownerName, 'Szabó Péter');
   assert.match(results[1].renderedSubject, /Ház 2.*10/);
+});
+
+test('7. Realistic sample flat preview generates filled email template for random or paid-up flat', () => {
+  const rule = DEFAULT_DUNNING_RULES[1]; // Stage 1 notice (3 months debt)
+  const buildings = [
+    {
+      id: 'bld-test',
+      name: 'Teszt Ház',
+      officialName: 'Teszt Társasház Kft.',
+      address: '1011 Budapest, Vár u. 3.',
+      bankKK: '12345678-00000000',
+      flats: [
+        { flatNum: '1', balance: 0, monthlyFee: 20000, owner: 'Kiss Béla', email: 'bela@test.hu' },
+        { flatNum: '2', balance: 5000, monthlyFee: 25000, owner: 'Horváth Géza', email: 'geza@test.hu' }
+      ]
+    }
+  ];
+
+  // Both flats have 0 or positive balance (no actual arrears)
+  // generateSampleFlatPreview must realistically simulate arrears based on rule (>= 3 months)
+  const preview = generateSampleFlatPreview(rule, buildings, { seedIndex: 0 });
+
+  assert.ok(preview);
+  assert.equal(preview.flatNum, '1');
+  assert.equal(preview.ownerName, 'Kiss Béla');
+  assert.equal(preview.isSimulated, true);
+  assert.ok(preview.arrearsMonths >= 3.0);
+  assert.match(preview.renderedSubject, /Teszt Társasház.*1/);
+  assert.match(preview.renderedBody, /Kiss Béla/);
+  assert.match(preview.renderedBody, /12345678-00000000/);
+
+  // Test cycling with seedIndex: 1 picks second flat
+  const preview2 = generateSampleFlatPreview(rule, buildings, { seedIndex: 1 });
+  assert.ok(preview2);
+  assert.equal(preview2.flatNum, '2');
+  assert.equal(preview2.ownerName, 'Horváth Géza');
+
+  // Test fallback when zero buildings exist
+  const emptyPreview = generateSampleFlatPreview(rule, []);
+  assert.ok(emptyPreview);
+  assert.ok(emptyPreview.renderedSubject);
+  assert.ok(emptyPreview.renderedBody);
 });

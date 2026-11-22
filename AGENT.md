@@ -624,10 +624,11 @@ A rendszer jobb felső sarkában található Értesítési / E-mail felület kib
      - Változók beillesztése: `{{tulajdonos_neve}}`, `{{lakas_szam}}`, `{{hatralek_osszeg}}`, `{{hatralek_honapok}}`, `{{alapterulet}}`, `{{tarsashaz_neve}}`, `{{szamlaszam}}`, `{{kozlemeny}}`, `{{fizetesi_hatarido}}`, `{{kepviselo_neve}}`, `{{kepviselo_telefon}}`, `{{kepviselo_email}}`, `{{datum}}`.
      - Változó beillesztő chipek a szerkesztőben a könnyű kattintásos sablonépítéshez.
 
-3. **Élő Előnézet és Száraz Teszt ("Száraz teszt")**:
-   - A közös képviselő éles kiküldés előtt a "Száraz teszt futtatása" gombbal azonnal leellenőrizheti a szabály működését a valós albetét-egyenlegek alapján.
-   - A teszt részletes listát ad: melyik albetét, mennyi hátralékkal felel meg a szabálynak, és mely albetétek kerültek kizárásra a korábbi kiküldési cooldown miatt.
-   - Bármelyik érintett lakásnál a "Levél előnézet" gombra kattintva azonnal megjelenik a behelyettesített, formázott hivatalos levélsablon.
+3. **Valósághű Sablon-Előnézet és Száraz Teszt (`generateSampleFlatPreview`)**:
+   - A szabályszerkesztőben a korábbi száraz teszt táblázat helyett a felhasználó kérésének megfelelően a **"3. Előnézet"** fül kapott helyet, amely egy teljes, formázott e-mail kliens borítékot és levéltörzset mutat be.
+   - **Véletlenszerű vagy konkrét lakás előnézete**: A képviselő a "Másik lakás" (`Shuffle`) gombbal vagy a legördülő lakásválasztóval bármikor válthat a ház albetétei között.
+   - **Valósághű szimuláció**: Ha a választott lakásnak épp nincs a szabályt elérő valós hátraléka (pl. naprakész a befizetése), a motor automatikusan a szabály küszöbéhez illeszkedő életszerű teszt-hátralékot generál, így a dinamikus tagek (`{{hatralek_osszeg}}`, `{{hatralek_honapok}}`, `{{lakas_szam}}`, `{{tarsashaz_neve}}`, stb.) azonnal kitöltődnek, és a képviselő rögtön látja, hogyan néz ki a levél a valóságban a lakó postaládájában.
+   - A Kommunikációs Központ fő felületén a "Száraz teszt futtatása" funkció továbbra is elérhető a teljes adatbázisra kiterjedő tömeges kiértékelésre.
 
 4. **Kiküldési Várólista & API Integrációs Előkészítés**:
    - A száraz teszt eredményei vagy a manuálisan jóváhagyott tételek átkerülnek az `emailOutbox` várólistába.
@@ -639,7 +640,7 @@ A rendszer jobb felső sarkában található Értesítési / E-mail felület kib
    - Szerepkör alapú hozzáférés: Lakók nem férhetnek hozzá a felszólítási motorhoz, csak adminisztrátorok és kijelölt képviselők.
 
 6. **Automatizált Egységtesztek**:
-   - `tests/dunningRules.test.mjs` (`npm run test:dunning`): 6 determinisztikus teszt fedi le a sablonbehelyettesítést, a pozitív/nulla egyenlegek kizárását, a havi arányszámítást, a kombinált logikát, a cooldown védelmet és a többházas száraz tesztet.
+   - `tests/dunningRules.test.mjs` (`npm run test:dunning`): 7 determinisztikus teszt fedi le a sablonbehelyettesítést, a pozitív/nulla egyenlegek kizárását, a havi arányszámítást, a kombinált logikát, a cooldown védelmet, a többházas száraz tesztet és a valósághű minta lakás előnézet-generálást (`generateSampleFlatPreview`).
 
 ---
 

@@ -16,9 +16,10 @@ import {
   Copy, 
   Mail,
   ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  Shuffle
 } from 'lucide-react';
-import { MERGE_VARIABLES, evaluateFlatAgainstRule } from '../../utils/dunningRules.js';
+import { MERGE_VARIABLES, evaluateFlatAgainstRule, generateSampleFlatPreview } from '../../utils/dunningRules.js';
 import { formatCurrency } from '../../utils/finances.js';
 
 export function EditEmailRuleModal({
@@ -49,7 +50,8 @@ export function EditEmailRuleModal({
   const [enabled, setEnabled] = useState(rule?.enabled !== undefined ? rule.enabled : true);
 
   const [activeTab, setActiveTab] = useState('formula'); // 'formula' | 'template' | 'dryrun'
-  const [selectedPreviewFlat, setSelectedPreviewFlat] = useState(null);
+  const [sampleSeedIndex, setSampleSeedIndex] = useState(0);
+  const [selectedUnitKey, setSelectedUnitKey] = useState(''); // `${bId}::${flatNum}`
 
   // Form constructed rule object for real-time preview
   const liveRule = useMemo(() => {
@@ -73,33 +75,26 @@ export function EditEmailRuleModal({
     };
   }, [rule, name, nameEn, buildingId, targetAccount, conditionType, monthThreshold, minAmountHuf, operator, checkDayOfMonth, cooldownDays, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, isEn]);
 
-  // Dry run matches for the live rule against existing data
-  const dryRunMatches = useMemo(() => {
-    if (!isOpen) return [];
-    const targetBuildings = (buildingId && buildingId !== 'all')
-      ? (buildings || []).filter(b => b.id === buildingId)
-      : (buildings || []);
-
-    const matches = [];
-    for (const b of targetBuildings) {
-      for (const f of (b.flats || [])) {
-        const match = evaluateFlatAgainstRule(liveRule, f, b, { isEn, repProfile });
-        if (match) {
-          matches.push(match);
-        }
+  // Real-time realistic sample preview for any picked or random flat
+  const samplePreview = useMemo(() => {
+    if (!isOpen) return null;
+    let targetFlatNum = undefined;
+    let targetBuildingId = undefined;
+    if (selectedUnitKey) {
+      const parts = selectedUnitKey.split('::');
+      if (parts.length === 2) {
+        targetBuildingId = parts[0];
+        targetFlatNum = parts[1];
       }
     }
-    return matches;
-  }, [isOpen, liveRule, buildingId, buildings, isEn, repProfile]);
-
-  const activePreviewMatch = useMemo(() => {
-    if (!dryRunMatches || dryRunMatches.length === 0) return null;
-    if (selectedPreviewFlat) {
-      const found = dryRunMatches.find(m => m.flatNum === selectedPreviewFlat.flatNum && m.buildingId === selectedPreviewFlat.buildingId);
-      if (found) return found;
-    }
-    return dryRunMatches[0];
-  }, [dryRunMatches, selectedPreviewFlat]);
+    return generateSampleFlatPreview(liveRule, buildings || [], {
+      buildingId: targetBuildingId || (buildingId !== 'all' ? buildingId : undefined),
+      flatNum: targetFlatNum,
+      seedIndex: sampleSeedIndex,
+      isEn,
+      repProfile
+    });
+  }, [isOpen, liveRule, buildings, buildingId, selectedUnitKey, sampleSeedIndex, isEn, repProfile]);
 
   if (!isOpen) return null;
 
@@ -188,10 +183,7 @@ export function EditEmailRuleModal({
             }`}
           >
             <Eye className="w-3.5 h-3.5" />
-            <span>{isEn ? "3. Dry Run & Live Preview" : "3. Élő Teszt & Előnézet"}</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${dryRunMatches.length > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'}`}>
-              {dryRunMatches.length}
-            </span>
+            <span>{isEn ? "3. Preview" : "3. Előnézet"}</span>
           </button>
         </div>
 
@@ -462,92 +454,126 @@ export function EditEmailRuleModal({
 
           {activeTab === 'dryrun' && (
             <div className="space-y-4 animate-fadeIn">
-              <div className="flex items-center justify-between p-3.5 bg-gray-50 rounded-2xl border border-gray-200">
-                <div className="flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-gray-600" />
-                  <span className="text-xs font-bold text-gray-800">
-                    {isEn ? "Live Match Evaluation:" : "Jelenlegi adatok alapján érintett lakások:"}
-                  </span>
+              {/* Top Toolbar: Switcher & Randomize */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gray-50 rounded-2xl border border-gray-200">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center flex-shrink-0">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-gray-900 truncate flex items-center gap-2">
+                      <span>{isEn ? "Realistic Email Preview" : "Valósághű e-mail előnézet"}</span>
+                      {samplePreview?.isSimulated && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold">
+                          {isEn ? "Sample Debt Data" : "Minta hátralékadat"}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-500 truncate">
+                      {isEn 
+                        ? "See exactly how this notification arrives in the resident's email client" 
+                        : "Nézd meg, hogyan jelenik meg a felszólító levél a lakó postaládájában"}
+                    </p>
+                  </div>
                 </div>
-                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                  dryRunMatches.length > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
-                }`}>
-                  {dryRunMatches.length} {isEn ? "matching units" : "érintett albetét"}
-                </span>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {samplePreview?.allUnits && samplePreview.allUnits.length > 1 && (
+                    <select
+                      value={selectedUnitKey}
+                      onChange={(e) => setSelectedUnitKey(e.target.value)}
+                      className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-xl bg-white font-medium text-gray-700 focus:outline-none focus:border-[#1E3A8A] max-w-[190px] truncate"
+                      title={isEn ? "Select specific flat" : "Konkrét lakás kiválasztása"}
+                    >
+                      <option value="">{isEn ? "🎲 Random flat" : "🎲 Véletlenszerű lakás"}</option>
+                      {samplePreview.allUnits.map(u => (
+                        <option key={`${u.buildingId}::${u.flatNum}`} value={`${u.buildingId}::${u.flatNum}`}>
+                          {u.flatNum}. lakás ({u.ownerName})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedUnitKey('');
+                      setSampleSeedIndex(prev => prev + 1);
+                    }}
+                    className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-95"
+                    title={isEn ? "Try another random flat" : "Másik véletlenszerű lakás kipróbálása"}
+                  >
+                    <Shuffle className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                    <span>{isEn ? "Random Flat" : "Másik lakás"}</span>
+                  </button>
+                </div>
               </div>
 
-              {dryRunMatches.length === 0 ? (
-                <div className="py-12 text-center text-gray-400 space-y-2 border border-dashed border-gray-200 rounded-2xl">
-                  <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500 opacity-80" />
-                  <p className="text-xs font-semibold text-gray-600">
-                    {isEn ? "No units currently match this formula threshold. All units are up to date or under threshold!" : "A jelenlegi adatok alapján egyetlen lakás sem lépi át ezt a küszöböt. Nincs teendő!"}
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                  {/* Matching Units List */}
-                  <div className="md:col-span-5 max-h-[360px] overflow-y-auto space-y-1.5 pr-1">
-                    {dryRunMatches.map((m) => {
-                      const isSelected = activePreviewMatch?.flatNum === m.flatNum && activePreviewMatch?.buildingId === m.buildingId;
-                      return (
-                        <div
-                          key={`${m.buildingId}-${m.flatNum}`}
-                          onClick={() => setSelectedPreviewFlat(m)}
-                          className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between ${
-                            isSelected
-                              ? 'bg-blue-50 border-[#1E3A8A] text-[#1E3A8A] shadow-xs'
-                              : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
-                          }`}
-                        >
-                          <div className="min-w-0 pr-2">
-                            <div className="font-bold truncate">{m.ownerName}</div>
-                            <div className="text-[10px] text-gray-400 truncate">
-                              {m.buildingName} • {m.flatNum}. lakás
-                            </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <div className="font-bold text-red-600 font-display">
-                              {formatCurrency(m.balance)}
-                            </div>
-                            <div className="text-[10px] text-amber-700 font-semibold">
-                              {m.arrearsMonths} {isEn ? "mo." : "hó"}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+              {/* Email Client Envelope & Body */}
+              {samplePreview ? (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  {/* Email Header / Envelope */}
+                  <div className="p-4 sm:p-5 bg-gradient-to-b from-gray-50 to-white border-b border-gray-100 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-gray-500">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="font-semibold text-gray-400">{isEn ? "From:" : "Feladó:"}</span>
+                        <span className="font-bold text-gray-800">
+                          {samplePreview.context?.kepviselo_neve || (isEn ? "Property Management" : "Közös Képviselet")}
+                        </span>
+                        <span className="text-gray-400">&lt;{samplePreview.context?.kepviselo_email || "info@tarsasapp.hu"}&gt;</span>
+                      </div>
+                      <div className="text-gray-400 font-mono text-[10px]">
+                        {new Date().toLocaleString(isEn ? 'en-GB' : 'hu-HU', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+                      <span className="font-semibold text-gray-400">{isEn ? "To:" : "Címzett:"}</span>
+                      <span className="font-bold text-gray-800">{samplePreview.ownerName}</span>
+                      <span className="text-gray-400">&lt;{samplePreview.ownerEmail || `${samplePreview.flatNum}@pelda.hu`}&gt;</span>
+                      <span className="text-gray-300">•</span>
+                      <span className="text-gray-600 font-medium">{samplePreview.buildingName} • {samplePreview.flatNum}. lakás</span>
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                        {isEn ? "Subject" : "Tárgy"}
+                      </span>
+                      <div className="text-sm sm:text-base font-extrabold text-gray-900 mt-0.5">
+                        {samplePreview.renderedSubject || (isEn ? "(Empty Subject Line)" : "(Üres tárgysor)")}
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Rendered Live Letter Preview */}
-                  <div className="md:col-span-7 bg-white rounded-2xl border border-gray-200 p-4 shadow-2xs space-y-3">
-                    {activePreviewMatch ? (
-                      <>
-                        <div className="border-b border-gray-100 pb-2">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            {isEn ? "Generated Subject Line" : "Generált tárgysor"}
-                          </span>
-                          <span className="text-xs font-bold text-gray-900 block mt-0.5">
-                            {activePreviewMatch.renderedSubject}
-                          </span>
-                        </div>
+                  {/* Email Letter Body */}
+                  <div className="p-5 sm:p-6 bg-white">
+                    <div className="bg-gray-50/60 rounded-xl p-5 border border-gray-100 text-xs sm:text-sm font-sans whitespace-pre-wrap text-gray-800 leading-relaxed max-h-[360px] overflow-y-auto font-normal">
+                      {samplePreview.renderedBody || (isEn ? "(Empty Email Body)" : "(Üres levéltörzs)")}
+                    </div>
+                  </div>
 
-                        <div>
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">
-                            {isEn ? "Generated Letter Preview" : "Generált levéltartalom előnézete"}
-                          </span>
-                          <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200/70 text-xs font-mono whitespace-pre-wrap text-gray-800 max-h-[240px] overflow-y-auto leading-relaxed">
-                            {activePreviewMatch.renderedBody}
-                          </div>
-                        </div>
-
-                        <div className="text-[11px] text-gray-500 pt-1 flex items-center justify-between">
-                          <span>{isEn ? "Recipient Email:" : "Címzett e-mail:"} <strong>{activePreviewMatch.ownerEmail || (isEn ? "No email recorded" : "Nincs megadva e-mail")}</strong></span>
-                        </div>
-                      </>
-                    ) : null}
+                  {/* Envelope Footer Stats Badge */}
+                  <div className="px-5 py-3 bg-gray-50/80 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span>
+                        {isEn ? "Calculated Arrears:" : "Kiszámított hátralék:"} <strong className="text-red-600 font-display">{formatCurrency(-samplePreview.arrearsHuf)}</strong>
+                      </span>
+                      <span>
+                        {isEn ? "Months overdue:" : "Elmaradt havi előírás:"} <strong className="text-gray-800">{samplePreview.arrearsMonths} hó</strong>
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-gray-400 italic">
+                      {isEn ? "Dynamic variables update automatically when edited in Tab 2." : "A változók automatikusan frissülnek a 2. E-mail Sablon fülön végzett módosításokkor."}
+                    </div>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
 
