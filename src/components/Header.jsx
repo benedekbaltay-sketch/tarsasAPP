@@ -127,7 +127,7 @@ export function Header({
 
         {/* Right: Cloud Sync Badge, Role Switchers, Language toggle */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 flex-shrink-0">
-          <CloudSyncBadge hideWhenSynced={isInBuilding} />
+          <CloudSyncBadge hideWhenSynced={true} />
 
           {/* Unified Portfolio & Managed Buildings Switcher (when inside a building in KK mode) */}
           {isCurrentlyAdminMode && !isPortfolioView && (onGoPortfolio || onSelectBuilding) && (
