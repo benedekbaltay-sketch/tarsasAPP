@@ -23,7 +23,9 @@ import {
   ArrowUpRight, 
   CheckCircle2, 
   FileText,
-  Play
+  Play,
+  Calculator,
+  Calendar
 } from 'lucide-react';
 import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
