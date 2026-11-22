@@ -877,9 +877,9 @@ export const translations = {
     bank_api_not_configured: "A közvetlen banki API kapcsolat nincs konfigurálva ebben a környezetben.",
     bank_api_https_required: "Nem biztonságos (HTTP) banki API cím blokkolva éles környezetben.",
     // Universal Notification Bell
-    notif_title: "Értesítések",
+    notif_title: "Értesítések & E-mailek",
     notif_mark_all_read: "Mind olvasott",
-    notif_empty: "Nincs új értesítésed.",
+    notif_empty: "Nincs új értesítésed vagy rendszerüzeneted.",
     notif_important_badge: "Fontos",
     notif_dismiss: "Elrejtés",
     // Self-Service Team Delegation & Organization Permissions
@@ -1868,9 +1868,9 @@ export const translations = {
     bank_api_not_configured: "Direct Bank API gateway is not configured for this environment.",
     bank_api_https_required: "Insecure HTTP bank gateway URL blocked in production.",
     // Universal Notification Bell
-    notif_title: "Notifications",
+    notif_title: "Notifications & Emails",
     notif_mark_all_read: "Mark all read",
-    notif_empty: "You have no notifications.",
+    notif_empty: "You have no notifications or messages.",
     notif_important_badge: "Important",
     notif_dismiss: "Dismiss",
     // Self-Service Team Delegation & Organization Permissions

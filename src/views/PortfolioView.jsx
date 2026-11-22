@@ -151,7 +151,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
           </p>
         </div>
 
-        {/* Top Actions: Team, Calendar, Add Building */}
+        {/* Top Actions: Team, Add Building */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto shrink-0">
           {canManageTeam && onOpenTeamManagement && (
             <button
@@ -164,16 +164,6 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
               <span>{t.team_btn_label || (isEn ? "Team & Permissions" : "Csapat & Jogosultságok")}</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={() => onOpenCalendar && onOpenCalendar('all')}
-            className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs border border-gray-200 shadow-2xs transition-all cursor-pointer hover:border-gray-300 active:scale-95"
-            title={isEn ? "Open Calendar & Tasks" : "Naptár és Feladatok"}
-          >
-            <Calendar className="w-4 h-4 text-[#1E3A8A]" />
-            <span>{t.portfolio_switch_to_calendar || (isEn ? "Calendar" : "Naptár")}</span>
-          </button>
 
           {canCreateBuilding && (
             <button

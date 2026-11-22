@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { Bell, ShieldAlert, Info, CheckCheck, X, Clock } from 'lucide-react';
+import { Bell, Mail, ShieldAlert, Info, CheckCheck, X, Clock } from 'lucide-react';
 import { getNotificationsForUser } from '../utils/teamPermissions';
 
 function formatNotifTime(iso, isEn) {
@@ -82,8 +82,8 @@ export function NotificationBell() {
         onClick={() => setIsOpen((prev) => !prev)}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        aria-label={t.notif_title || (isEn ? 'Notifications' : 'Értesítések')}
-        title={t.notif_title || (isEn ? 'Notifications' : 'Értesítések')}
+        aria-label={t.notif_title || (isEn ? 'Notifications & Emails' : 'Értesítések / E-mailek')}
+        title={t.notif_title || (isEn ? 'Notifications & Emails' : 'Értesítések / E-mailek')}
         className={`relative flex items-center justify-center w-8.5 h-8 sm:w-9 sm:h-8.5 rounded-xl border transition-all cursor-pointer active:scale-95 shadow-2xs ${
           isOpen
             ? 'border-[#1E3A8A] bg-blue-50 text-[#1E3A8A]'
@@ -92,7 +92,10 @@ export function NotificationBell() {
             : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-gray-700'
         }`}
       >
-        <Bell className="w-4 h-4" />
+        <div className="relative flex items-center justify-center">
+          <Mail className="w-4 h-4" />
+          <Bell className="w-2.5 h-2.5 absolute -bottom-1 -right-1 text-current stroke-[2.2]" />
+        </div>
         {unreadCount > 0 && (
           <span
             className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-extrabold leading-none flex items-center justify-center shadow-xs ring-2 ring-white"
@@ -106,15 +109,18 @@ export function NotificationBell() {
       {isOpen && (
         <div
           role="dialog"
-          aria-label={t.notif_title || (isEn ? 'Notifications' : 'Értesítések')}
+          aria-label={t.notif_title || (isEn ? 'Notifications & Emails' : 'Értesítések / E-mailek')}
           className="absolute -right-10 sm:right-0 mt-2 w-[min(22rem,calc(100vw-1.5rem))] sm:w-96 bg-white rounded-2xl border border-gray-200 shadow-2xl z-50 overflow-hidden animate-fadeIn"
         >
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/80 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <Bell className="w-4 h-4 text-[#1E3A8A] flex-shrink-0" />
+              <div className="relative flex items-center justify-center text-[#1E3A8A] flex-shrink-0">
+                <Mail className="w-4 h-4" />
+                <Bell className="w-2.5 h-2.5 absolute -bottom-1 -right-1 text-[#1E3A8A] stroke-[2.2]" />
+              </div>
               <span className="text-xs font-bold text-gray-900 truncate">
-                {t.notif_title || (isEn ? 'Notifications' : 'Értesítések')}
+                {t.notif_title || (isEn ? 'Notifications & Emails' : 'Értesítések & E-mailek')}
               </span>
               {unreadCount > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-extrabold">
@@ -139,11 +145,12 @@ export function NotificationBell() {
           <div className="max-h-[380px] overflow-y-auto divide-y divide-gray-100">
             {userNotifications.length === 0 ? (
               <div className="py-10 px-6 text-center">
-                <div className="w-10 h-10 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center mx-auto mb-2.5">
-                  <Bell className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center mx-auto mb-2.5 relative">
+                  <Mail className="w-5 h-5" />
+                  <Bell className="w-3 h-3 absolute -bottom-0.5 -right-0.5 text-gray-400 stroke-[2.2]" />
                 </div>
                 <p className="text-xs font-semibold text-gray-500">
-                  {t.notif_empty || (isEn ? 'You have no notifications.' : 'Nincs új értesítésed.')}
+                  {t.notif_empty || (isEn ? 'You have no notifications or messages.' : 'Nincs új értesítésed vagy rendszerüzeneted.')}
                 </p>
               </div>
             ) : (
