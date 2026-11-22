@@ -571,6 +571,33 @@ A jóváhagyott migrációs terv alapján elkészült a teljes lokális Cloud Fi
 
 ---
 
+## 23. Tapadó Havi Fejlécek és Csoportosított Listanézetek (`StickyMonthGroup`, `dateGrouping.js`)
+
+A portál tranzakciós és könyvelési listáiban (mind az Összes tétel / Lakás előzmények teljes képernyős modálban (`FullscreenTxModal.jsx`), mind az Adminisztrátori műszerfal tranzakciós táblázatában (`AdminView.jsx`)) a havi elhatároló fejlécek tapadó (`position: sticky`) módon működnek:
+
+1. **Önálló Wrapper `<section>` elemek (`StickyMonthSection`)**:
+   - A tételek nem egy lapos listaként renderelődnek, hanem hónaponként külön `<section className="month-group divide-y divide-gray-100 relative">` konténerekbe vannak csoportosítva (`groupItemsByMonth(items, isEn)`).
+   - Ennek köszönhetően, amikor az alsóbb hónap fejléce felér az aktuális havi fejléchez, a böngésző natív CSS sticky viselkedése révén a következő hónap természetesen és simán kitolja felfelé az előzőt.
+
+2. **Átlátszatlan, Frosted-Glass Fejléc és Rétegrend (`StickyMonthHeader`)**:
+   - A tapadó fejléc `bg-gray-100/95 sm:bg-gray-50/95` átlátszatlan/félig áttetsző hátteret, `backdrop-blur-md` elmosást, diszkrét `border-y border-gray-200/90` keretet és `shadow-2xs` árnyékot kap.
+   - `z-index`: `z-10`, így a lista görgetett elemei soha nem látszódnak át alatta, de a felső navigációs fejléc (`z-30`) és a modálok/menük (`z-40`, `z-50`) alatt marad.
+
+3. **Szülő Kártyák `overflow: hidden` Védelme**:
+   - A szülő kártyákon a `position: sticky`-t blokkoló `overflow: hidden` eltávolításra került. A lekerekített sarkok tökéletes illeszkedését a legelső csoport fejlécének `first:rounded-t-2xl` formázása és az alsó elemek sarkainak lekerekítése biztosítja.
+
+4. **Dinamikus Fejléc Magasság Követés (`--app-header-height`)**:
+   - A `Header.jsx` komponens `ResizeObserver` segítségével dinamikusan beállítja a `--app-header-height` CSS változót a `document.documentElement` gyökérelemen.
+   - Teljes oldalas nézetekben (`AdminView`) a fejléc `top: var(--app-header-height, 61px)` és `top-[57px] sm:top-[61px]` pozícióval pontosan a fix fejléc alá tapad, nem csúszik be alá impersonation esetén sem.
+   - Modálos belső görgetésnél (`FullscreenTxModal`) a `topOffset="modal"` (`top-0`) érvényesül.
+
+5. **Kétnyelvűség és Egységtesztek**:
+   - Magyar: `2026. NOV.`, `2026. OKT.`, `EGYÉB`
+   - Angol: `NOV 2026`, `OCT 2026`, `OTHER`
+   - Tesztcsomag: `tests/dateGrouping.test.mjs` (`npm run test:grouping`).
+
+---
+
 ## 22. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:

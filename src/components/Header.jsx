@@ -21,6 +21,24 @@ export function Header({
 
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
   const switcherRef = useRef(null);
+  const headerContainerRef = useRef(null);
+
+  useEffect(() => {
+    const el = headerContainerRef.current;
+    if (!el) return;
+    const updateHeaderHeight = () => {
+      const h = el.offsetHeight;
+      if (h > 0) {
+        document.documentElement.style.setProperty('--app-header-height', `${h}px`);
+      }
+    };
+    updateHeaderHeight();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(updateHeaderHeight);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+  }, [state.isImpersonating]);
 
   useEffect(() => {
     setIsSwitcherOpen(false);
@@ -82,7 +100,7 @@ export function Header({
         : (t.building_address || ''));
 
   return (
-    <div className="sticky top-0 z-30 w-full shadow-sm">
+    <div ref={headerContainerRef} className="sticky top-0 z-30 w-full shadow-sm">
       <ImpersonationBanner onExit={onGoHome} />
       <header className="w-full bg-white border-b border-gray-200 px-3 sm:px-4 md:px-8 py-3 flex items-center justify-between">
         {/* Left: Menu Trigger & Logo / Building Name */}

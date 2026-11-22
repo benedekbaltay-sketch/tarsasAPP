@@ -27,6 +27,8 @@ import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
 import { TransactionFilterBar } from '../TransactionFilterBar';
 import { initialFilterState, applyTransactionFilters, getActiveFilterCount } from '../../utils/filterUtils';
+import { StickyMonthSection } from '../StickyMonthGroup';
+import { groupItemsByMonth } from '../../utils/dateGrouping';
 
 export function FullscreenTxModal({
   isOpen,
@@ -155,6 +157,10 @@ export function FullscreenTxModal({
       );
     });
   }, [isOpen, postFilterItems, query]);
+
+  const groupedItems = useMemo(() => {
+    return groupItemsByMonth(filteredItems, isEn);
+  }, [filteredItems, isEn]);
 
   const handleExport = () => {
     if (type === 'flat' && effectiveFlatNum) {
@@ -359,199 +365,189 @@ export function FullscreenTxModal({
       {/* Content List */}
       <div className="flex-1 min-h-0 overflow-y-auto w-full overscroll-contain">
         <div className="p-4 md:p-8 max-w-4xl mx-auto w-full">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-xs divide-y divide-gray-100 overflow-hidden">
-          {filteredItems.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xs divide-y divide-gray-100">
+          {groupedItems.length === 0 ? (
             <div className="p-8 text-center text-gray-400 text-sm">
               {isEn ? "No records found" : "Nem található tétel"}
             </div>
           ) : (
-            filteredItems.map((item, index) => {
+            groupedItems.map((group, groupIdx) => (
+              <StickyMonthSection
+                key={group.key}
+                monthKey={group.key}
+                label={group.monthKey}
+                topOffset="modal"
+                isFirst={groupIdx === 0}
+              >
+                {group.items.map((item) => {
+                  const isExpense = item.isExpense || item.type === "Debit";
+                  const isNegative = isExpense || (item.amount < 0);
+                  const isZero = Math.abs(Math.round(item.amount || 0)) === 0;
+                  const isKK = (item.account || item.targetAccount) === "Közös Költség";
+                  const isSelected = selectedId === item.id;
 
-
-                const isExpense = item.isExpense || item.type === "Debit";
-                const isNegative = isExpense || (item.amount < 0);
-                const isZero = Math.abs(Math.round(item.amount || 0)) === 0;
-                const isKK = (item.account || item.targetAccount) === "Közös Költség";
-                const isSelected = selectedId === item.id;
-
-                let itemTitle;
-                if (type === 'flat') {
-                  itemTitle = item.type === "Debit"
-                    ? (item.title?.trim() || item.comment?.trim() || (isEn ? "Debit" : "Előírás"))
-                    : (isEn ? "Payment" : "Befizetés");
-                } else if (item.isExpense) {
-                  if (item.title && item.title.trim()) {
-                    itemTitle = item.title.trim();
-                  } else if (item.comment && item.comment.trim()) {
-                    itemTitle = item.comment.trim();
-                  } else if (item.provider && item.provider !== 'Közös Költség' && item.provider !== 'Felújítási Alap') {
-                    itemTitle = item.provider;
+                  let itemTitle;
+                  if (type === 'flat') {
+                    itemTitle = item.type === "Debit"
+                      ? (item.title?.trim() || item.comment?.trim() || (isEn ? "Debit" : "Előírás"))
+                      : (isEn ? "Payment" : "Befizetés");
+                  } else if (item.isExpense) {
+                    if (item.title && item.title.trim()) {
+                      itemTitle = item.title.trim();
+                    } else if (item.comment && item.comment.trim()) {
+                      itemTitle = item.comment.trim();
+                    } else if (item.provider && item.provider !== 'Közös Költség' && item.provider !== 'Felújítási Alap') {
+                      itemTitle = item.provider;
+                    } else {
+                      itemTitle = translateCategory(item.category, isEn) || (isEn ? "Expense" : "Kiadás");
+                    }
                   } else {
-                    itemTitle = translateCategory(item.category, isEn) || (isEn ? "Expense" : "Kiadás");
+                    itemTitle = (item.flatNum === 'Global' || item.flatNum === 'Egyéb' || !item.flatNum)
+                      ? (item.title?.trim() || item.comment?.trim() || (isEn ? "Condominium" : "Társasház"))
+                      : `${item.flatNum}. lakás`;
                   }
-                } else {
-                  itemTitle = (item.flatNum === 'Global' || item.flatNum === 'Egyéb' || !item.flatNum)
-                    ? (item.title?.trim() || item.comment?.trim() || (isEn ? "Condominium" : "Társasház"))
-                    : `${item.flatNum}. lakás`;
-                }
 
-                const parseDate = (d) => {
-                  if (!d) return null;
-                  const cleaned = d.replace(/\./g, '-').trim();
-                  const parsed = new Date(cleaned);
-                  return isNaN(parsed) ? null : parsed;
-                };
-                const curDate = parseDate(item.date);
-                const prevDate = index > 0 ? parseDate(filteredItems[index - 1].date) : null;
-                const monthKey = curDate ? curDate.toLocaleString(isEn ? 'en' : 'hu', { month: 'short', year: 'numeric' }) : '';
-                const prevMonth = prevDate ? prevDate.toLocaleString(isEn ? 'en' : 'hu', { month: 'short', year: 'numeric' }) : '';
-                const showSeparator = monthKey && monthKey !== prevMonth;
-
-                return (
-                  <React.Fragment key={item.id}>
-                    {showSeparator && (
-                      <div className="bg-gray-100/90 px-4 py-1.5 border-t border-b border-gray-200 flex items-center justify-between">
-                        <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">{monthKey}</span>
-                      </div>
-                    )}
-                      <div
-                        data-fullscreen-tx-item="true"
-                        onClick={() => {
-                          const sel = window.getSelection ? window.getSelection().toString() : '';
-                          if (sel && sel.trim().length > 0) return;
-                          setSelectedId(item.id);
-                        }}
-                        onDoubleClick={() => onOpenEditTx && onOpenEditTx(item.id, item.itemType || (item.isExpense ? 'Expense' : (item.id?.startsWith('d-') ? 'Debit' : (item.amount < 0 ? 'Debit' : 'Payment'))), false)}
-                        className={`p-4 transition-all flex items-center justify-between gap-4 cursor-pointer select-text ${
-                          isSelected ? 'bg-blue-50/70' : 'hover:bg-gray-50/70'}
-                        `}
-                        title={isEn ? "Double click to view details" : "Dupla kattintás a részletek megtekintéséhez"}
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            isZero ? 'bg-gray-100 text-gray-500' : (isNegative ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600')
-                          }`}>
-                            {isZero ? <Minus className="w-5 h-5" /> : (isNegative ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />)}
-                          </div>
-
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                              <span className="text-sm font-bold text-gray-900 truncate select-text cursor-text">
-                                {itemTitle}
-                              </span>
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                isKK ? 'bg-blue-100 text-[#1E3A8A]' : 'bg-purple-100 text-purple-700'
-                              }`}>
-                                {isKK ? 'KK' : 'FA'}
-                              </span>
-                              {(() => {
-                                const linkedCase = linkedCaseMap[item.id];
-                                if (!linkedCase) return null;
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onClose?.();
-                                      onNavigateToCase?.(linkedCase.tile.id, linkedCase.item.id);
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] border border-blue-200 transition-colors cursor-pointer"
-                                    title={`Ugrás a kapcsolódó ügyhöz: ${linkedCase.item.title || 'Ügy'} (${linkedCase.tile.title})`}
-                                  >
-                                    <Shield className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
-                                    <span className="truncate max-w-[120px] sm:max-w-[180px]">Ügy: {linkedCase.item.title || 'Kárügy'}</span>
-                                    <ExternalLink className="w-2.5 h-2.5 text-blue-500 flex-shrink-0" />
-                                  </button>
-                                );
-                              })()}
-                            </div>
-                            <div className="text-xs text-gray-500 truncate select-text cursor-text">
-                              <span>{item.date}</span>
-                              {item.isExpense ? (
-                                <>
-                                  {item.comment && item.comment.trim() && item.comment.trim() !== itemTitle && (
-                                    <span> • {item.comment.trim()}</span>
-                                  )}
-                                  {item.category && translateCategory(item.category, isEn) !== itemTitle && (
-                                    <span className="text-gray-400"> ({translateCategory(item.category, isEn)})</span>
-                                  )}
-                                </>
-                              ) : (
-                                <>
-                                  {item.comment && item.comment.trim() !== itemTitle && (
-                                    <span> • {item.comment.trim()}</span>
-                                  )}
-                                  {item.category && (
-                                    <span className="text-gray-400"> • {translateCategory(item.category, isEn)}</span>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
+                  return (
+                    <div
+                      key={item.id}
+                      data-fullscreen-tx-item="true"
+                      onClick={() => {
+                        const sel = window.getSelection ? window.getSelection().toString() : '';
+                        if (sel && sel.trim().length > 0) return;
+                        setSelectedId(item.id);
+                      }}
+                      onDoubleClick={() => onOpenEditTx && onOpenEditTx(item.id, item.itemType || (item.isExpense ? 'Expense' : (item.id?.startsWith('d-') ? 'Debit' : (item.amount < 0 ? 'Debit' : 'Payment'))), false)}
+                      className={`p-4 transition-all flex items-center justify-between gap-4 cursor-pointer select-text ${
+                        isSelected ? 'bg-blue-50/70' : 'hover:bg-gray-50/70'}
+                      `}
+                      title={isEn ? "Double click to view details" : "Dupla kattintás a részletek megtekintéséhez"}
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isZero ? 'bg-gray-100 text-gray-500' : (isNegative ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600')
+                        }`}>
+                          {isZero ? <Minus className="w-5 h-5" /> : (isNegative ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />)}
                         </div>
 
-                        <div className="flex items-center gap-3 flex-shrink-0">
-                          <div className="text-right select-text cursor-text">
-                            <div className={`text-sm font-bold font-display ${isZero ? 'text-gray-600' : (isNegative ? 'text-red-600' : 'text-emerald-600')}`}>
-                              {isZero ? '' : (isNegative ? '-' : '+')}{Math.abs(Math.round(item.amount || 0)).toLocaleString('hu-HU')} Ft
-                            </div>
-                            {item.runningBalance !== undefined ? (
-                              <div className="text-[11px] text-gray-400">
-                                Egyenleg: {formatCurrency(item.runningBalance)}
-                              </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                            <span className="text-sm font-bold text-gray-900 truncate select-text cursor-text">
+                              {itemTitle}
+                            </span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              isKK ? 'bg-blue-100 text-[#1E3A8A]' : 'bg-purple-100 text-purple-700'
+                            }`}>
+                              {isKK ? 'KK' : 'FA'}
+                            </span>
+                            {(() => {
+                              const linkedCase = linkedCaseMap[item.id];
+                              if (!linkedCase) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onClose?.();
+                                    onNavigateToCase?.(linkedCase.tile.id, linkedCase.item.id);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] border border-blue-200 transition-colors cursor-pointer"
+                                  title={`Ugrás a kapcsolódó ügyhöz: ${linkedCase.item.title || 'Ügy'} (${linkedCase.tile.title})`}
+                                >
+                                  <Shield className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
+                                  <span className="truncate max-w-[120px] sm:max-w-[180px]">Ügy: {linkedCase.item.title || 'Kárügy'}</span>
+                                  <ExternalLink className="w-2.5 h-2.5 text-blue-500 flex-shrink-0" />
+                                </button>
+                              );
+                            })()}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate select-text cursor-text">
+                            <span>{item.date}</span>
+                            {item.isExpense ? (
+                              <>
+                                {item.comment && item.comment.trim() && item.comment.trim() !== itemTitle && (
+                                  <span> • {item.comment.trim()}</span>
+                                )}
+                                {item.category && translateCategory(item.category, isEn) !== itemTitle && (
+                                  <span className="text-gray-400"> ({translateCategory(item.category, isEn)})</span>
+                                )}
+                              </>
                             ) : (
-                              (() => {
-                                const m = item.paymentMethod || item.method;
-                                const isCash = m === 'Cash' || m === 'Készpénz' || m === 'Cash (Register)' || m === 'Készpénz (Pénztár)';
-                                if (isCash) {
-                                  return (
-                                    <div className="mt-0.5">
-                                      <span className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px] leading-tight">
-                                        {isEn ? "Cash (Register)" : "Készpénz (Pénztár)"}
-                                      </span>
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <div className="text-[11px] text-gray-400 mt-0.5">
-                                    {translateCategory(m || 'Bank Transfer', isEn)}
-                                  </div>
-                                );
-                              })()
+                              <>
+                                {item.comment && item.comment.trim() !== itemTitle && (
+                                  <span> • {item.comment.trim()}</span>
+                                )}
+                                {item.category && (
+                                  <span className="text-gray-400"> • {translateCategory(item.category, isEn)}</span>
+                                )}
+                              </>
                             )}
                           </div>
-
-                          {isEditMode && (
-                            <div className="flex items-center gap-1 border-l border-gray-100 pl-2">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setIsEditMode(false);
-                                  onOpenEditTx(item.id, item.itemType || (item.isExpense ? 'Expense' : (item.id?.startsWith('d-') ? 'Debit' : (item.amount < 0 ? 'Debit' : 'Payment'))), true);
-                                }}
-                                className="p-1.5 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
-                                title="Szerkesztés"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOpenDeleteTx(item.id, item.itemType || (item.isExpense ? 'Expense' : (item.id?.startsWith('d-') ? 'Debit' : (item.amount < 0 ? 'Debit' : 'Payment'))));
-                                }}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                                title="Törlés"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </div>
-                    </React.Fragment>
-                );
-              })
-            )}
+
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <div className="text-right select-text cursor-text">
+                          <div className={`text-sm font-bold font-display ${isZero ? 'text-gray-600' : (isNegative ? 'text-red-600' : 'text-emerald-600')}`}>
+                            {isZero ? '' : (isNegative ? '-' : '+')}{Math.abs(Math.round(item.amount || 0)).toLocaleString('hu-HU')} Ft
+                          </div>
+                          {item.runningBalance !== undefined ? (
+                            <div className="text-[11px] text-gray-400">
+                              Egyenleg: {formatCurrency(item.runningBalance)}
+                            </div>
+                          ) : (
+                            (() => {
+                              const m = item.paymentMethod || item.method;
+                              const isCash = m === 'Cash' || m === 'Készpénz' || m === 'Cash (Register)' || m === 'Készpénz (Pénztár)';
+                              if (isCash) {
+                                return (
+                                  <div className="mt-0.5">
+                                    <span className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px] leading-tight">
+                                      {isEn ? "Cash (Register)" : "Készpénz (Pénztár)"}
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="text-[11px] text-gray-400 mt-0.5">
+                                  {translateCategory(m || 'Bank Transfer', isEn)}
+                                </div>
+                              );
+                            })()
+                          )}
+                        </div>
+
+                        {isEditMode && (
+                          <div className="flex items-center gap-1 border-l border-gray-100 pl-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsEditMode(false);
+                                onOpenEditTx(item.id, item.itemType || (item.isExpense ? 'Expense' : (item.id?.startsWith('d-') ? 'Debit' : (item.amount < 0 ? 'Debit' : 'Payment'))), true);
+                              }}
+                              className="p-1.5 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
+                              title="Szerkesztés"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenDeleteTx(item.id, item.itemType || (item.isExpense ? 'Expense' : (item.id?.startsWith('d-') ? 'Debit' : (item.amount < 0 ? 'Debit' : 'Payment'))));
+                              }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                              title="Törlés"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </StickyMonthSection>
+            ))
+          )}
           </div>
         </div>
       </div>

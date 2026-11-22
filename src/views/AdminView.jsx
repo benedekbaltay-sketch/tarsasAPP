@@ -37,6 +37,8 @@ import {
 import { exportTransactionsToExcel } from '../utils/exportExcel';
 import { TransactionFilterBar } from '../components/TransactionFilterBar';
 import { initialFilterState, applyTransactionFilters, getActiveFilterCount } from '../utils/filterUtils';
+import { StickyMonthSection } from '../components/StickyMonthGroup';
+import { groupItemsByMonth } from '../utils/dateGrouping';
 
 export function AdminView({
   onBackToPortfolio,
@@ -165,6 +167,10 @@ export function AdminView({
 
   const activeTxFilterCount = getActiveFilterCount(txFilters);
   const displayTxList = (txSearchQuery || activeTxFilterCount > 0) ? filteredTxList : filteredTxList.slice(0, 8);
+
+  const groupedTxList = useMemo(() => {
+    return groupItemsByMonth(displayTxList, isEn);
+  }, [displayTxList, isEn]);
 
   const handleExportExcel = () => {
     exportTransactionsToExcel(transactions, expenses, isEn);
@@ -763,7 +769,7 @@ export function AdminView({
       </div>
 
       {/* 4. All Transactions & Expenses Table (Revolut style) */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
         
         {/* Header Bar */}
         <div className="p-4 sm:p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-white">
@@ -853,170 +859,180 @@ export function AdminView({
 
         {/* Transactions Modern List */}
         <div className="divide-y divide-gray-100">
-          {displayTxList.length === 0 ? (
+          {groupedTxList.length === 0 ? (
             <div className="p-8 text-center text-gray-400 text-sm">
               {isEn ? "No records found" : "Nem található tranzakció"}
             </div>
           ) : (
-            displayTxList.map((item) => {
-              const isExpense = item.isExpense;
-              const isNegative = isExpense || (item.amount < 0);
-              const isZero = Math.abs(Math.round(item.amount || 0)) === 0;
-              const isKK = item.targetAccount === "Közös Költség";
-              const isSelected = selectedTxId === item.id;
+            groupedTxList.map((group, groupIdx) => (
+              <StickyMonthSection
+                key={group.key}
+                monthKey={group.key}
+                label={group.monthKey}
+                topOffset="page"
+                isFirst={groupIdx === 0}
+              >
+                {group.items.map((item) => {
+                  const isExpense = item.isExpense;
+                  const isNegative = isExpense || (item.amount < 0);
+                  const isZero = Math.abs(Math.round(item.amount || 0)) === 0;
+                  const isKK = item.targetAccount === "Közös Költség";
+                  const isSelected = selectedTxId === item.id;
 
-              let displayName;
-              if (isExpense) {
-                if (item.title && item.title.trim()) {
-                  displayName = item.title.trim();
-                } else if (item.comment && item.comment.trim()) {
-                  displayName = item.comment.trim();
-                } else if (item.provider && item.provider !== 'Közös Költség' && item.provider !== 'Felújítási Alap') {
-                  displayName = item.provider;
-                } else {
-                  displayName = translateCategory(item.category, isEn) || (isEn ? "Expense" : "Kiadás");
-                }
-              } else {
-                displayName = (item.flatNum === 'Global' || item.flatNum === 'Egyéb' || !item.flatNum)
-                  ? (item.title?.trim() || item.comment?.trim() || (isEn ? "Condominium" : "Társasház"))
-                  : `${item.flatNum}. lakás`;
-              }
+                  let displayName;
+                  if (isExpense) {
+                    if (item.title && item.title.trim()) {
+                      displayName = item.title.trim();
+                    } else if (item.comment && item.comment.trim()) {
+                      displayName = item.comment.trim();
+                    } else if (item.provider && item.provider !== 'Közös Költség' && item.provider !== 'Felújítási Alap') {
+                      displayName = item.provider;
+                    } else {
+                      displayName = translateCategory(item.category, isEn) || (isEn ? "Expense" : "Kiadás");
+                    }
+                  } else {
+                    displayName = (item.flatNum === 'Global' || item.flatNum === 'Egyéb' || !item.flatNum)
+                      ? (item.title?.trim() || item.comment?.trim() || (isEn ? "Condominium" : "Társasház"))
+                      : `${item.flatNum}. lakás`;
+                  }
 
-              return (
-                <div
-                  key={item.id}
-                  data-admin-tx-item="true"
-                  onClick={() => {
-                    const sel = window.getSelection ? window.getSelection().toString() : '';
-                    if (sel && sel.trim().length > 0) return;
-                    setSelectedTxId(item.id);
-                  }}
-                  onDoubleClick={() => onOpenEditTx && onOpenEditTx(item.id, isExpense ? 'Expense' : 'Payment', false)}
-                  className={`p-4 transition-all flex items-center justify-between gap-4 cursor-pointer select-text ${
-                    isSelected
-                      ? 'bg-blue-50/70'
-                      : 'hover:bg-gray-50/70'
-                  }`}
-                  title={isEn ? "Double click to view details" : "Dupla kattintás a részletek megtekintéséhez"}
-                >
-                  {/* Left: Icon & Details */}
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      isZero ? 'bg-gray-100 text-gray-500' : (isNegative ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600')
-                    }`}>
-                      {isZero ? <Minus className="w-5 h-5" /> : (isNegative ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />)}
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                        <span className="text-sm font-bold text-gray-900 truncate select-text cursor-text">
-                          {displayName}
-                        </span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                          isKK ? 'bg-blue-100 text-[#1E3A8A]' : 'bg-purple-100 text-purple-700'
+                  return (
+                    <div
+                      key={item.id}
+                      data-admin-tx-item="true"
+                      onClick={() => {
+                        const sel = window.getSelection ? window.getSelection().toString() : '';
+                        if (sel && sel.trim().length > 0) return;
+                        setSelectedTxId(item.id);
+                      }}
+                      onDoubleClick={() => onOpenEditTx && onOpenEditTx(item.id, isExpense ? 'Expense' : 'Payment', false)}
+                      className={`p-4 transition-all flex items-center justify-between gap-4 cursor-pointer select-text ${
+                        isSelected
+                          ? 'bg-blue-50/70'
+                          : 'hover:bg-gray-50/70'
+                      }`}
+                      title={isEn ? "Double click to view details" : "Dupla kattintás a részletek megtekintéséhez"}
+                    >
+                      {/* Left: Icon & Details */}
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isZero ? 'bg-gray-100 text-gray-500' : (isNegative ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600')
                         }`}>
-                          {isKK ? 'KK' : 'FA'}
-                        </span>
-                        {(() => {
-                          const linkedCase = linkedCaseMap[item.id];
-                          if (!linkedCase) return null;
-                          return (
+                          {isZero ? <Minus className="w-5 h-5" /> : (isNegative ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />)}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                            <span className="text-sm font-bold text-gray-900 truncate select-text cursor-text">
+                              {displayName}
+                            </span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              isKK ? 'bg-blue-100 text-[#1E3A8A]' : 'bg-purple-100 text-purple-700'
+                            }`}>
+                              {isKK ? 'KK' : 'FA'}
+                            </span>
+                            {(() => {
+                              const linkedCase = linkedCaseMap[item.id];
+                              if (!linkedCase) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onNavigateToCase?.(linkedCase.tile.id, linkedCase.item.id);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] border border-blue-200 transition-colors cursor-pointer"
+                                  title={`Ugrás a kapcsolódó ügyhöz: ${linkedCase.item.title || 'Ügy'} (${linkedCase.tile.title})`}
+                                >
+                                  <Shield className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
+                                  <span className="truncate max-w-[120px] sm:max-w-[180px]">Ügy: {linkedCase.item.title || 'Kárügy'}</span>
+                                  <ExternalLink className="w-2.5 h-2.5 text-blue-500 flex-shrink-0" />
+                                </button>
+                              );
+                            })()}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate select-text cursor-text">
+                            <span>{item.date}</span>
+                            {isExpense ? (
+                              <>
+                                {item.comment && item.comment.trim() && item.comment.trim() !== displayName && (
+                                  <span> &bull; {item.comment.trim()}</span>
+                                )}
+                                {item.category && translateCategory(item.category, isEn) !== displayName && (
+                                  <span className="text-gray-400"> ({translateCategory(item.category, isEn)})</span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {item.comment && item.comment.trim() !== displayName && (
+                                  <span> &bull; {item.comment.trim()}</span>
+                                )}
+                                {item.category && (
+                                  <span className="text-gray-400"> &bull; {translateCategory(item.category, isEn)}</span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Amount & Actions */}
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <div className="text-right select-text cursor-text">
+                          <div className={`text-sm font-bold font-display ${isZero ? 'text-gray-600' : (isNegative ? 'text-red-600' : 'text-emerald-600')}`}>
+                            {isZero ? '' : (isNegative ? '-' : '+')}{Math.abs(Math.round(item.amount || 0)).toLocaleString('hu-HU')} Ft
+                          </div>
+                          {(() => {
+                            const m = item.paymentMethod || item.method;
+                            const isCash = m === 'Cash' || m === 'Készpénz' || m === 'Cash (Register)' || m === 'Készpénz (Pénztár)';
+                            if (isCash) {
+                              return (
+                                <div className="mt-0.5">
+                                  <span className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px] leading-tight">
+                                    {isEn ? "Cash (Register)" : "Készpénz (Pénztár)"}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="text-[11px] text-gray-400 mt-0.5">
+                                {translateCategory(m || 'Bank Transfer', isEn)}
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {isTxEditMode && (
+                          <div className="flex items-center gap-1 border-l border-gray-100 pl-2">
                             <button
-                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onNavigateToCase?.(linkedCase.tile.id, linkedCase.item.id);
+                                onOpenEditTx(item.id, isExpense ? 'Expense' : 'Payment', true);
                               }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] border border-blue-200 transition-colors cursor-pointer"
-                              title={`Ugrás a kapcsolódó ügyhöz: ${linkedCase.item.title || 'Ügy'} (${linkedCase.tile.title})`}
+                              className="p-1.5 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
+                              title="Szerkesztés"
                             >
-                              <Shield className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
-                              <span className="truncate max-w-[120px] sm:max-w-[180px]">Ügy: {linkedCase.item.title || 'Kárügy'}</span>
-                              <ExternalLink className="w-2.5 h-2.5 text-blue-500 flex-shrink-0" />
+                              <Pencil className="w-3.5 h-3.5" />
                             </button>
-                          );
-                        })()}
-                      </div>
-                      <div className="text-xs text-gray-500 truncate select-text cursor-text">
-                        <span>{item.date}</span>
-                        {isExpense ? (
-                          <>
-                            {item.comment && item.comment.trim() && item.comment.trim() !== displayName && (
-                              <span> &bull; {item.comment.trim()}</span>
-                            )}
-                            {item.category && translateCategory(item.category, isEn) !== displayName && (
-                              <span className="text-gray-400"> ({translateCategory(item.category, isEn)})</span>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            {item.comment && item.comment.trim() !== displayName && (
-                              <span> &bull; {item.comment.trim()}</span>
-                            )}
-                            {item.category && (
-                              <span className="text-gray-400"> &bull; {translateCategory(item.category, isEn)}</span>
-                            )}
-                          </>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenDeleteTxConfirm(item.id, isExpense ? 'Expense' : 'Payment');
+                              }}
+                              className="p-1.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                              title="Törlés"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         )}
                       </div>
+
                     </div>
-                  </div>
-
-                  {/* Right: Amount & Actions */}
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <div className="text-right select-text cursor-text">
-                      <div className={`text-sm font-bold font-display ${isZero ? 'text-gray-600' : (isNegative ? 'text-red-600' : 'text-emerald-600')}`}>
-                        {isZero ? '' : (isNegative ? '-' : '+')}{Math.abs(Math.round(item.amount || 0)).toLocaleString('hu-HU')} Ft
-                      </div>
-                      {(() => {
-                        const m = item.paymentMethod || item.method;
-                        const isCash = m === 'Cash' || m === 'Készpénz' || m === 'Cash (Register)' || m === 'Készpénz (Pénztár)';
-                        if (isCash) {
-                          return (
-                            <div className="mt-0.5">
-                              <span className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px] leading-tight">
-                                {isEn ? "Cash (Register)" : "Készpénz (Pénztár)"}
-                              </span>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="text-[11px] text-gray-400 mt-0.5">
-                            {translateCategory(m || 'Bank Transfer', isEn)}
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    {isTxEditMode && (
-                      <div className="flex items-center gap-1 border-l border-gray-100 pl-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenEditTx(item.id, isExpense ? 'Expense' : 'Payment', true);
-                          }}
-                          className="p-1.5 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
-                          title="Szerkesztés"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenDeleteTxConfirm(item.id, isExpense ? 'Expense' : 'Payment');
-                          }}
-                          className="p-1.5 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                          title="Törlés"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                </div>
-              );
-            })
+                  );
+                })}
+              </StickyMonthSection>
+            ))
           )}
         </div>
 
