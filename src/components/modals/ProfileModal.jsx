@@ -54,6 +54,7 @@ export function ProfileModal({
     t, 
     saveFlatMaster, 
     updateRepProfile, 
+    updateOrganizationSettings,
     updateGlobalSettings, 
     setLanguage, 
     logout, 
@@ -66,8 +67,8 @@ export function ProfileModal({
   const isHu = !isEn;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
-  // Navigation tab for Admin Settings view: Strictly 3 tabs per portfolio specification
-  const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'security' | 'preferences'
+  // Navigation tab for Admin Settings view: Option A (personal, company, security, preferences)
+  const [activeTab, setActiveTab] = useState('personal'); // 'personal' | 'company' | 'security' | 'preferences'
 
   const orgCtx = resolveUserOrgContext(currentUser, state.organizations, buildings);
   const isStaff = Boolean(orgCtx.isStaff);
@@ -82,10 +83,20 @@ export function ProfileModal({
   const [repPhone, setRepPhone] = useState('');
   const [repOfficeHours, setRepOfficeHours] = useState('');
 
-  // 2. Account & Security state
+  // 2. Company / Organization Profile form state (Owner / Admin)
+  const [isEditingCompany, setIsEditingCompany] = useState(false);
+  const [companyName, setCompanyName] = useState('');
+  const [companyRepName, setCompanyRepName] = useState('');
+  const [companyAddress, setCompanyAddress] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('');
+  const [companyEmail, setCompanyEmail] = useState('');
+  const [companyOfficeHours, setCompanyOfficeHours] = useState('');
+  const [companyShowCentralContactToResidents, setCompanyShowCentralContactToResidents] = useState(false);
+
+  // 3. Account & Security state
   const [rememberMe, setRememberMe] = useState(true);
 
-  // 3. Global Preferences state
+  // 4. Global Preferences state
   const [notifBankErrors, setNotifBankErrors] = useState(true);
   const [notifExpiringLoans, setNotifExpiringLoans] = useState(true);
   const [notifUpcomingAssemblies, setNotifUpcomingAssemblies] = useState(true);
@@ -118,6 +129,17 @@ export function ProfileModal({
       setRepPhone(prof.phone ? formatPhoneNumber(prof.phone) : '');
       setRepOfficeHours(prof.officeHours || 'H-P: 08:00 - 16:00');
       setIsEditingRep(false);
+
+      // Load Company Profile
+      const org = orgCtx.org;
+      setCompanyName(org?.name || prof.companyName || '');
+      setCompanyRepName(org?.centralContact?.name || prof.companyName || prof.name || '');
+      setCompanyAddress(org?.centralContact?.address || prof.address || '');
+      setCompanyPhone(org?.centralContact?.phone ? formatPhoneNumber(org.centralContact.phone) : (prof.phone ? formatPhoneNumber(prof.phone) : ''));
+      setCompanyEmail(org?.centralContact?.email || prof.email || '');
+      setCompanyOfficeHours(org?.centralContact?.officeHours || prof.officeHours || 'H-P: 08:00 - 16:00');
+      setCompanyShowCentralContactToResidents(Boolean(org?.showCentralContactToResidents ?? prof.showCentralContactToResidents ?? false));
+      setIsEditingCompany(false);
 
       // Load Global Settings
       const sett = globalSettings || {};
@@ -182,6 +204,31 @@ export function ProfileModal({
     });
 
     setIsEditingRep(false);
+  };
+
+  // 2. Save Company Profile (Owner / Admin)
+  const handleSaveCompanyProfile = (e) => {
+    e.preventDefault();
+    if (!companyName.trim()) {
+      showToast(isEn ? "Company name is required!" : "A cégnév megadása kötelező!", "error");
+      return;
+    }
+    const formattedPhone = companyPhone ? formatPhoneNumber(companyPhone.trim()) : '';
+    setCompanyPhone(formattedPhone);
+
+    updateOrganizationSettings({
+      name: companyName.trim(),
+      centralContact: {
+        name: companyRepName.trim(),
+        phone: formattedPhone,
+        email: companyEmail.trim(),
+        address: companyAddress.trim(),
+        officeHours: companyOfficeHours.trim(),
+      },
+      showCentralContactToResidents: companyShowCentralContactToResidents,
+    });
+
+    setIsEditingCompany(false);
   };
 
   // 2. Remember Me Toggle
@@ -333,16 +380,31 @@ export function ProfileModal({
               <div className="bg-white rounded-2xl border border-gray-200 p-1.5 shadow-2xs flex items-center gap-1 overflow-x-auto">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('profile')}
+                  onClick={() => setActiveTab('personal')}
                   className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer flex-1 justify-center ${
-                    activeTab === 'profile'
+                    activeTab === 'personal' || activeTab === 'profile'
                       ? 'bg-[#1E3A8A] text-white shadow-xs'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }`}
                 >
                   <User className="w-4 h-4" />
-                  <span>{t.settings_tab_profile || (isEn ? "Personal Profile" : "Személyes profil")}</span>
+                  <span>{t.settings_tab_personal || (isEn ? "Personal Profile" : "Személyes profil")}</span>
                 </button>
+
+                {!isStaff && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('company')}
+                    className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap cursor-pointer flex-1 justify-center ${
+                      activeTab === 'company'
+                        ? 'bg-[#1E3A8A] text-white shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Building2 className="w-4 h-4" />
+                    <span>{t.settings_tab_company || (isEn ? "Company Profile" : "Céges profil")}</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -372,7 +434,7 @@ export function ProfileModal({
               </div>
 
               {/* TAB 1: SZEMÉLYES PROFIL & ELÉRHETŐSÉGEK */}
-              {activeTab === 'profile' && (
+              {(activeTab === 'personal' || activeTab === 'profile') && (
                 <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-xs space-y-6">
                   <div className="flex items-center justify-between pb-3 border-b border-gray-100">
                     <div className="flex items-center gap-2.5">
@@ -425,18 +487,13 @@ export function ProfileModal({
                           </span>
                         </div>
                       </div>
-                      {onOpenTeamManagement && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onClose();
-                            onOpenTeamManagement('company');
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-blue-50 hover:border-blue-200 text-[#1E3A8A] font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                        >
-                          <span>{t.personal_profile_company_link || (isEn ? "Manage Company & Team →" : "Cégadatok és Csapat kezelése →")}</span>
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('company')}
+                        className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-blue-50 hover:border-blue-200 text-[#1E3A8A] font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                      >
+                        <span>{isEn ? "Edit Company Profile →" : "Cégprofil megtekintése / szerkesztése →"}</span>
+                      </button>
                     </div>
                   )}
 
@@ -610,7 +667,326 @@ export function ProfileModal({
                 </div>
               )}
 
-              {/* TAB 2: FIÓK ÉS BIZTONSÁG */}
+              {/* TAB 2: CÉGES / KÖZÖS KÉPVISELETI PROFIL (CSAK OWNER / ADMIN) */}
+              {activeTab === 'company' && !isStaff && (
+                <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-xs space-y-6">
+                  <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-gray-900 font-display">
+                          {t.settings_company_title || (isEn ? "Condominium Management Company Profile" : "Közös Képviseleti Vállalkozói Profil")}
+                        </h3>
+                        <p className="text-xs text-gray-500">
+                          {t.settings_company_desc || (isEn ? "This official organization data appears on formal documents, balance statements, and as the central company contact for condominiums." : "Ez a hivatalos cégadat szerepel a hivatalos dokumentumokon, egyenlegközlőkön és a társasházak központi elérhetőségeként.")}
+                        </p>
+                      </div>
+                    </div>
+
+                    {!isEditingCompany && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingCompany(true)}
+                        className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-semibold shadow-2xs"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                        <span>{t.edit || "Szerkesztés"}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {!isEditingCompany ? (
+                    /* Read-only Company Profile */
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                      {/* Company Name */}
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                        <div className="min-w-0 mr-2">
+                          <span className="text-gray-400 text-[10px] uppercase font-bold block mb-1">
+                            {t.settings_company_name || (isEn ? "Company / Business Name" : "Cégnév / Vállalkozás megnevezése")}
+                          </span>
+                          <span className="font-bold text-gray-900 text-sm truncate block">
+                            {companyName || "Nincs megadva"}
+                          </span>
+                        </div>
+                        {companyName && (
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(companyName, 'company-name')}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer flex-shrink-0"
+                            title="Másolás"
+                          >
+                            {copiedKey === 'company-name' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Displayed Representative Name */}
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                        <div className="min-w-0 mr-2">
+                          <span className="text-gray-400 text-[10px] uppercase font-bold block mb-1">
+                            {t.team_central_contact_name || (isEn ? "Displayed Representative Name" : "Megjelenített képviseleti név")}
+                          </span>
+                          <span className="font-bold text-gray-900 text-sm truncate block">
+                            {companyRepName || "Nincs megadva"}
+                          </span>
+                        </div>
+                        {companyRepName && (
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(companyRepName, 'company-rep')}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer flex-shrink-0"
+                            title="Másolás"
+                          >
+                            {copiedKey === 'company-rep' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Central Email */}
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                        <div className="min-w-0 mr-2">
+                          <span className="text-gray-400 text-[10px] uppercase font-bold block mb-1 flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-[#1E3A8A]" />
+                            <span>{t.settings_central_email || (isEn ? "Central Email" : "Központi e-mail cím")}</span>
+                          </span>
+                          <span className="font-bold text-gray-900 text-sm truncate block">
+                            {companyEmail || "Nincs megadva"}
+                          </span>
+                        </div>
+                        {companyEmail && (
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(companyEmail, 'company-email')}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer flex-shrink-0"
+                            title="Másolás"
+                          >
+                            {copiedKey === 'company-email' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Central Phone */}
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                        <div className="min-w-0 mr-2">
+                          <span className="text-gray-400 text-[10px] uppercase font-bold block mb-1 flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-emerald-600" />
+                            <span>{t.settings_central_phone || (isEn ? "Central Phone" : "Központi telefonszám")}</span>
+                          </span>
+                          <span className="font-bold text-gray-900 text-sm truncate block">
+                            {companyPhone || "Nincs megadva"}
+                          </span>
+                        </div>
+                        {companyPhone && (
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(companyPhone, 'company-phone')}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer flex-shrink-0"
+                            title="Másolás"
+                          >
+                            {copiedKey === 'company-phone' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Headquarters / Office Address */}
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                        <div className="min-w-0 mr-2">
+                          <span className="text-gray-400 text-[10px] uppercase font-bold block mb-1 flex items-center gap-1">
+                            <MapPin className="w-3 h-3 text-red-500" />
+                            <span>{t.settings_office_address || (isEn ? "Office / Headquarters Address" : "Iroda / Levelezési cím")}</span>
+                          </span>
+                          <span className="font-bold text-gray-900 text-sm truncate block">
+                            {companyAddress || "Nincs megadva"}
+                          </span>
+                        </div>
+                        {companyAddress && (
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(companyAddress, 'company-address')}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer flex-shrink-0"
+                            title="Másolás"
+                          >
+                            {copiedKey === 'company-address' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Office Hours */}
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                        <div className="min-w-0 mr-2">
+                          <span className="text-gray-400 text-[10px] uppercase font-bold block mb-1 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-amber-500" />
+                            <span>{t.settings_office_hours || (isEn ? "Office Hours" : "Ügyfélfogadási idő")}</span>
+                          </span>
+                          <span className="font-bold text-gray-900 text-sm truncate block">
+                            {companyOfficeHours || "Nincs megadva"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Escalation Channel Status Indicator */}
+                      <div className="sm:col-span-2 p-3.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-gray-700">
+                          <ShieldCheck className="w-4 h-4 text-[#1E3A8A]" />
+                          <div>
+                            <span className="font-bold block">
+                              {t.team_show_central_to_residents_title || "Központi céges elérhetőség megjelenítése a lakók felületén"}:
+                            </span>
+                            <span className="text-[11px] text-gray-500 block">
+                              {companyShowCentralContactToResidents
+                                ? (isEn ? "Residents see company escalation contact below building managers." : "A lakók látják a központi ügyfélszolgálatot a házkezelő elérhetősége alatt.")
+                                : (isEn ? "Only the assigned building manager is shown to residents." : "A lakók kizárólag a házhoz rendelt felelős házkezelőt látják.")}
+                            </span>
+                          </div>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          companyShowCentralContactToResidents ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          {companyShowCentralContactToResidents ? (isEn ? "ENABLED" : "BEKAPCSOLVA") : (isEn ? "DISABLED" : "KIKAPCSOLVA")}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Edit Company Profile Form */
+                    <form onSubmit={handleSaveCompanyProfile} className="space-y-4 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block font-bold text-gray-700 mb-1">
+                            {t.settings_company_name || (isEn ? "Company / Business Name" : "Cégnév / Vállalkozás megnevezése")} *
+                          </label>
+                          <input
+                            type="text"
+                            value={companyName}
+                            onChange={(e) => setCompanyName(e.target.value)}
+                            placeholder="Alfa Társasházkezelő Kft."
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-gray-700 mb-1">
+                            {t.team_central_contact_name || (isEn ? "Displayed Representative Name" : "Megjelenített képviseleti név")}
+                          </label>
+                          <input
+                            type="text"
+                            value={companyRepName}
+                            onChange={(e) => setCompanyRepName(e.target.value)}
+                            placeholder="Kovács János közös képviselő"
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-gray-700 mb-1">
+                            {t.settings_central_phone || (isEn ? "Central Phone" : "Központi telefonszám")}
+                          </label>
+                          <input
+                            type="tel"
+                            value={companyPhone}
+                            onChange={(e) => setCompanyPhone(e.target.value)}
+                            placeholder="+36 1 234 5678"
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-gray-700 mb-1">
+                            {t.settings_central_email || (isEn ? "Central Email" : "Központi e-mail cím")}
+                          </label>
+                          <input
+                            type="email"
+                            value={companyEmail}
+                            onChange={(e) => setCompanyEmail(e.target.value)}
+                            placeholder="iroda@alfa.hu"
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-gray-700 mb-1">
+                            {t.settings_office_address || (isEn ? "Office / Headquarters Address" : "Iroda / Levelezési cím")}
+                          </label>
+                          <input
+                            type="text"
+                            value={companyAddress}
+                            onChange={(e) => setCompanyAddress(e.target.value)}
+                            placeholder="1011 Budapest, Fő utca 1."
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-gray-700 mb-1">
+                            {t.settings_office_hours || (isEn ? "Office Hours" : "Ügyfélfogadási idő")}
+                          </label>
+                          <input
+                            type="text"
+                            value={companyOfficeHours}
+                            onChange={(e) => setCompanyOfficeHours(e.target.value)}
+                            placeholder="Hétfő - Péntek: 09:00 - 16:00"
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                          />
+                        </div>
+
+                        {/* Owner Checkbox: Show Central Company Contact to Residents as Escalation Channel */}
+                        <div className="sm:col-span-2 pt-2 border-t border-gray-100">
+                          <label className="flex items-start gap-3 p-3 bg-gray-50/80 hover:bg-blue-50/50 border border-gray-200 rounded-xl cursor-pointer transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={companyShowCentralContactToResidents}
+                              onChange={(e) => setCompanyShowCentralContactToResidents(e.target.checked)}
+                              className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                            />
+                            <div className="space-y-0.5">
+                              <span className="text-xs font-bold text-gray-900 block">
+                                {t.team_show_central_to_residents_title || (isEn ? "Display Central Company Contact to Residents" : "Központi céges elérhetőség megjelenítése a lakók felületén")}
+                              </span>
+                              <span className="text-[11px] text-gray-500 block leading-relaxed">
+                                {t.team_show_central_to_residents_desc || (isEn
+                                  ? "When enabled, residents will see the company's central phone and email below their assigned building manager's direct contact as an escalation / customer care channel."
+                                  : "Ha be van kapcsolva, a lakók a felelős házkezelő közvetlen elérhetősége alatt másodlagosként látják a cég központi ügyfélszolgálati telefonszámát és e-mail címét is (eszkalációs és minőségbiztosítási pontként).")}
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const org = orgCtx.org;
+                            const prof = repProfile || {};
+                            setCompanyName(org?.name || prof.companyName || '');
+                            setCompanyRepName(org?.centralContact?.name || prof.companyName || prof.name || '');
+                            setCompanyAddress(org?.centralContact?.address || prof.address || '');
+                            setCompanyPhone(org?.centralContact?.phone ? formatPhoneNumber(org.centralContact.phone) : (prof.phone ? formatPhoneNumber(prof.phone) : ''));
+                            setCompanyEmail(org?.centralContact?.email || prof.email || '');
+                            setCompanyOfficeHours(org?.centralContact?.officeHours || prof.officeHours || 'H-P: 08:00 - 16:00');
+                            setCompanyShowCentralContactToResidents(Boolean(org?.showCentralContactToResidents ?? prof.showCentralContactToResidents ?? false));
+                            setIsEditingCompany(false);
+                          }}
+                          className="px-4 py-2 border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold rounded-xl transition-colors cursor-pointer"
+                        >
+                          {t.cancel || "Mégse"}
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-5 py-2 bg-[#1E3A8A] hover:bg-blue-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                        >
+                          <Save className="w-4 h-4" />
+                          <span>{t.save || "Mentés"}</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: FIÓK ÉS BIZTONSÁG */}
               {activeTab === 'security' && (
                 <div className="space-y-5">
                   {/* Account Summary & Password Change */}

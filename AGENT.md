@@ -648,9 +648,13 @@ A rendszer jobb felső sarkában található Értesítési / E-mail felület kib
 
 A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhetőségeinek kezelése egységes, hierarchikus architektúrát kapott, megszüntetve az adatduplikációt és a hatásköri keveredést:
 
-1. **Teljes Szétválasztás — Személyes Profil vs. Cégadatok (1-es Modell)**:
-   - **Fiók / Rendszerbeállítások (`ProfileModal.jsx`)**: Kizárólag a bejelentkezett ember személyes fiókja (akár cégtulajdonos, akár munkatárs, akár lakó). Csak a személyes adatok szerkeszthetők itt: *Név*, *Közvetlen telefonszám*, *Közvetlen e-mail cím*, *Fogadási/ügyfélfogadási idő*, valamint a személyes biztonság (jelszó, bejelentkezve maradás, értesítések, nyelvválasztás). A cégnév, irodai cím és eszkalációs beállítások teljesen kikerültek a személyes profilból, elkerülve a párhuzamos űrlapokat. Ha van hozzárendelt szervezet, a felületen egy átkattintó gomb ("Cégadatok és Csapat kezelése →") közvetlenül a Csapat modal Céges fülére navigál.
-   - **Csapat & Jogosultságok (`TeamManagementModal.jsx` Tab 3 - "Céges elérhetőség")**: Ez az **egyetlen hivatalos hely**, ahol a CÉG / IRODA központi adatai (Cégnév, Székhely/Iroda címe, Megjelenített képviseleti név, Központi telefonszám, Központi e-mail cím, Nyitvatartás, és a Tulajdonosi eszkalációs kapcsoló) beállíthatók és módosíthatók a fiók tulajdonosa (Owner / SuperAdmin) által.
+1. **Minden Profiladat a Fiók / Rendszerbeállításokban (A Opció: 4 Dedikált Fül)**:
+   - **Fiók / Rendszerbeállítások (`ProfileModal.jsx`)**: Minden profil jellegű adat egyetlen átlátható beállítási központban kapott helyet 4 füllel:
+     1. 👤 **Személyes profil** (`personal`): Saját név, közvetlen telefonszám, közvetlen e-mail, saját fogadóóra/elérhetőségi idő. (Munkatársaknál központi cégjelvénnyel).
+     2. 🏢 **Céges profil** (`company` — kizárólag a fiók tulajdonosa / Owner látja és szerkesztheti): Cégnév, Megjelenített képviseleti név, Iroda/Székhely címe, Központi telefonszám, Központi e-mail cím, Irodai ügyfélfogadás, valamint a lakói eszkalációs csatorna kapcsolója.
+     3. 🔒 **Fiók & Biztonság** (`security`): Jelszóváltás, bejelentkezve maradás.
+     4. ⚙️ **Alkalmazás-beállítások** (`preferences`): Értesítési hangok, rendszerüzenetek, felület nyelve (HU/EN).
+   - **Csapat & Jogosultságok (`TeamManagementModal.jsx`)**: 100%-ban letisztult a munkatársak, meghívások, házkiosztások és biztonsági jogosultsági szintek kezelésére; a korábbi céges profil szerkesztése teljesen kikerült innen a Rendszerbeállítások Céges profil fülére.
 
 2. **Kollégák / Alkalmazottak Saját Házkezelői Profilja (`isStaff`)**:
    - A meghívott kollégák (`isStaff: true`) a fejléc profil menüjében nem látják és nem szerkeszthetik a központi céges adatokat (cégnév, székhely cím nem írható felül általuk).

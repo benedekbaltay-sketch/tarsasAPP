@@ -40,7 +40,7 @@ import {
 } from '../../utils/teamPermissions';
 import { formatPhoneNumber } from '../../utils/phone';
 
-export function TeamManagementModal({ isOpen, onClose, initialTab = 'members' }) {
+export function TeamManagementModal({ isOpen, onClose }) {
   const {
     state,
     t,
@@ -104,33 +104,15 @@ export function TeamManagementModal({ isOpen, onClose, initialTab = 'members' })
   const [removeTargetMember, setRemoveTargetMember] = useState(null);
   const [resetPersonalContactsOnRemove, setResetPersonalContactsOnRemove] = useState(true);
 
-  // Company central contact form (Owner only)
-  const [orgName, setOrgName] = useState('');
-  const [centralName, setCentralName] = useState('');
-  const [centralPhone, setCentralPhone] = useState('');
-  const [centralEmail, setCentralEmail] = useState('');
-  const [centralAddress, setCentralAddress] = useState('');
-  const [centralHours, setCentralHours] = useState('');
-  const [showCentralContactToResidents, setShowCentralContactToResidents] = useState(false);
-
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab || 'members');
+      setActiveTab('members');
       setEditingMemberId(null);
       setGeneratedInviteBanner(null);
       setHandoverFromMember(null);
       setRemoveTargetMember(null);
-
-      const org = orgCtx.org;
-      setOrgName(org?.name || repProfile?.companyName || repProfile?.name || currentUser?.name || '');
-      setCentralName(org?.centralContact?.name || repProfile?.companyName || repProfile?.name || '');
-      setCentralPhone(org?.centralContact?.phone || repProfile?.phone || '');
-      setCentralEmail(org?.centralContact?.email || repProfile?.email || currentUser?.email || '');
-      setCentralAddress(org?.centralContact?.address || repProfile?.address || '');
-      setCentralHours(org?.centralContact?.officeHours || repProfile?.officeHours || '');
-      setShowCentralContactToResidents(Boolean(org?.showCentralContactToResidents ?? repProfile?.showCentralContactToResidents ?? false));
     }
-  }, [isOpen, orgCtx.org?.id, initialTab]);
+  }, [isOpen, orgCtx.org?.id]);
 
   // Keyboard Escape listener: close sub-modals first, then main modal
   useEffect(() => {
@@ -303,21 +285,6 @@ export function TeamManagementModal({ isOpen, onClose, initialTab = 'members' })
     }
   };
 
-  const handleSaveCompanySettings = (e) => {
-    e.preventDefault();
-    updateOrganizationSettings({
-      name: orgName,
-      centralContact: {
-        name: centralName.trim(),
-        phone: formatPhoneNumber(centralPhone),
-        email: centralEmail.trim(),
-        address: centralAddress.trim(),
-        officeHours: centralHours.trim(),
-      },
-      showCentralContactToResidents,
-    });
-  };
-
   // Buildings displaying a given member's personal contact
   const getPersonalContactBuildingsForEmail = (email) => {
     const clean = normalizeEmail(email);
@@ -416,21 +383,6 @@ export function TeamManagementModal({ isOpen, onClose, initialTab = 'members' })
                   : (t.team_tab_invite || (isEn ? 'Attach / Invite Colleague' : 'Munkatárs csatolása'))}
               </span>
             </button>
-
-            {(orgCtx.isOwner || orgCtx.isSuperAdmin) && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('company')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'company'
-                    ? 'bg-[#1E3A8A] text-white shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>{t.team_tab_company || (isEn ? 'Company Info' : 'Céges elérhetőség')}</span>
-              </button>
-            )}
           </div>
 
           {activeTab === 'members' && (
@@ -1230,139 +1182,6 @@ export function TeamManagementModal({ isOpen, onClose, initialTab = 'members' })
                       ? (t.save || (isEn ? 'Save Changes' : 'Módosítások mentése'))
                       : (t.team_submit_invite || (isEn ? 'Attach & Send Invite Email' : 'Csatolás & Meghívó e-mail küldése'))}
                   </span>
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* ============================================================== */}
-          {/* TAB 3: COMPANY CENTRAL CONTACT (OWNER ONLY)                    */}
-          {/* ============================================================== */}
-          {activeTab === 'company' && (orgCtx.isOwner || orgCtx.isSuperAdmin) && (
-            <form onSubmit={handleSaveCompanySettings} className="space-y-4">
-              <div className="p-3.5 rounded-xl bg-blue-50/60 border border-blue-200/80 text-[11px] text-slate-700">
-                {t.team_company_info_desc || (
-                  isEn
-                    ? 'This central company contact is displayed to residents on every condominium set to "Central Company Contact". Individual buildings can switch to display the assigned building manager\'s own contact inside Building Settings.'
-                    : 'Ez a központi céges elérhetőség jelenik meg a lakók felületén minden olyan társasháznál, ahol a „Céges központi elérhetőség” mód aktív. Az egyes házak beállításaiban a ház tényleges kezelője átválthatja saját elérhetőségre.'
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div className="sm:col-span-2">
-                  <label className="block font-bold text-gray-700 mb-1">
-                    {t.team_org_name_label || (isEn ? 'Company / Management Name' : 'Cég / Közös Képviselet neve')}
-                  </label>
-                  <input
-                    type="text"
-                    value={orgName}
-                    onChange={(e) => setOrgName(e.target.value)}
-                    placeholder={isEn ? 'e.g. Alpha Property Management Ltd.' : 'pl. Alfa Társasházkezelő Kft.'}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">
-                    {t.team_central_contact_name || (isEn ? 'Displayed Representative Name' : 'Megjelenített képviseleti név')}
-                  </label>
-                  <input
-                    type="text"
-                    value={centralName}
-                    onChange={(e) => setCentralName(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">
-                    {t.team_central_phone || (isEn ? 'Central Phone Number' : 'Központi telefonszám')}
-                  </label>
-                  <div className="relative">
-                    <Phone className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={centralPhone}
-                      onChange={(e) => setCentralPhone(e.target.value)}
-                      onBlur={() => setCentralPhone(formatPhoneNumber(centralPhone))}
-                      placeholder="+36 30 123 4567"
-                      className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">
-                    {t.team_central_email || (isEn ? 'Central Email' : 'Központi e-mail cím')}
-                  </label>
-                  <input
-                    type="email"
-                    value={centralEmail}
-                    onChange={(e) => setCentralEmail(e.target.value)}
-                    placeholder="iroda@ceg.hu"
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">
-                    {t.team_central_address || (isEn ? 'Office / Headquarters Address' : 'Iroda / Székhely címe')}
-                  </label>
-                  <div className="relative">
-                    <MapPin className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={centralAddress}
-                      onChange={(e) => setCentralAddress(e.target.value)}
-                      placeholder={isEn ? 'e.g. 1011 Budapest, Fo utca 1.' : 'pl. 1011 Budapest, Fő utca 1.'}
-                      className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">
-                    {t.team_office_hours || (isEn ? 'Office Hours (optional)' : 'Ügyfélfogadási idő (opcionális)')}
-                  </label>
-                  <input
-                    type="text"
-                    value={centralHours}
-                    onChange={(e) => setCentralHours(e.target.value)}
-                    placeholder={isEn ? 'Mon–Thu 9:00–16:00' : 'H–Cs 9:00–16:00'}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                  />
-                </div>
-
-                {/* Owner Option: Show Company Central Contact to Residents as Escalation Channel */}
-                <div className="sm:col-span-2 pt-2 border-t border-gray-100">
-                  <label className="flex items-start gap-3 p-3 bg-gray-50/80 hover:bg-blue-50/50 border border-gray-200 rounded-xl cursor-pointer transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={showCentralContactToResidents}
-                      onChange={(e) => setShowCentralContactToResidents(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
-                    />
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-gray-900 block">
-                        {t.team_show_central_to_residents_title || (isEn ? "Display Central Company Contact to Residents" : "Központi céges elérhetőség megjelenítése a lakók felületén")}
-                      </span>
-                      <span className="text-[11px] text-gray-500 block leading-relaxed">
-                        {t.team_show_central_to_residents_desc || (isEn
-                          ? "When enabled, residents will see the company's central phone and email below their assigned building manager's direct contact as an escalation / customer care channel."
-                          : "Ha be van kapcsolva, a lakók a felelős házkezelő közvetlen elérhetősége alatt másodlagosként látják a cég központi ügyfélszolgálati telefonszámát és e-mail címét is (eszkalációs és minőségbiztosítási pontként).")}
-                      </span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-2 border-t border-gray-100">
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-xs shadow-sm flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>{t.save || (isEn ? 'Save Company Details' : 'Cégadatok mentése')}</span>
                 </button>
               </div>
             </form>
