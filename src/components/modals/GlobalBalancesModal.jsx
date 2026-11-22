@@ -367,8 +367,9 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
               officialName: buildingOfficialName.trim(),
               address: buildingAddress.trim() || b.address,
               taxNumber: buildingTaxNumber.trim(),
-              contactDisplayMode: contactDisplayMode === 'manager' ? 'manager' : 'company',
-              managerContact: nextManagerContact,
+              contactDisplayMode: b.contactDisplayMode || 'company',
+              managerContact: b.managerContact || null,
+              showCentralContactToResidents: b.showCentralContactToResidents !== undefined ? b.showCentralContactToResidents : false,
               ...bankUpdates,
               bankApi: {
                 provider: apiProvider,
@@ -550,7 +551,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                   </div>
                 )}
 
-                {/* Section A2: Per-Building Resident Contact Switcher (editable by actual building manager!) */}
+                {/* Section A2: Per-Building Resident Contact Summary (managed exclusively in Team & Permissions) */}
                 {!isAccountsOnly && (
                   <div className="bg-blue-50/40 p-4 rounded-xl border border-blue-200/80 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -558,115 +559,62 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <UserCheck className="w-4 h-4" />
                         <span>{t.bld_contact_section_title || (isEn ? "Resident-Facing Representative Contact" : "Lakóknak megjelenő kapcsolattartó")}</span>
                       </h4>
-                      <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-blue-200">
-                        <button
-                          type="button"
-                          onClick={() => setContactDisplayMode('company')}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
-                            contactDisplayMode === 'company'
-                              ? 'bg-[#1E3A8A] text-white'
-                              : 'text-gray-600 hover:text-gray-900'
+                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-[#1E3A8A] text-[10px] font-bold">
+                        {targetBuilding?.contactDisplayMode === 'manager'
+                          ? (isEn ? "Colleague Contact" : "Munkatárs elérhetősége")
+                          : (isEn ? "Central Company" : "Központi cég")}
+                      </span>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-white border border-blue-100 text-xs space-y-2">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-700">
+                        {targetBuilding?.contactDisplayMode === 'manager' && targetBuilding?.managerContact ? (
+                          <>
+                            <span className="font-bold text-gray-900">
+                              👤 {targetBuilding.managerContact.name || '—'}
+                            </span>
+                            {targetBuilding.managerContact.phone && <span>📞 {targetBuilding.managerContact.phone}</span>}
+                            {targetBuilding.managerContact.email && <span>✉️ {targetBuilding.managerContact.email}</span>}
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-gray-900">
+                              🏢 {companyPreviewContact.name || '—'}
+                            </span>
+                            {companyPreviewContact.phone && <span>📞 {companyPreviewContact.phone}</span>}
+                            {companyPreviewContact.email && <span>✉️ {companyPreviewContact.email}</span>}
+                          </>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1 border-t border-gray-100 text-[11px] text-gray-500">
+                        <span>
+                          {isEn ? "Central company escalation channel:" : "Központi cégadatok megjelenítése eszkalációként:"}
+                        </span>
+                        <span
+                          className={`font-bold px-1.5 py-0.2 rounded text-[10px] ${
+                            targetBuilding?.showCentralContactToResidents
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-gray-100 text-gray-600'
                           }`}
                         >
-                          {t.bld_contact_mode_company || (isEn ? "Central Company" : "Központi céges")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setContactDisplayMode('manager')}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
-                            contactDisplayMode === 'manager'
-                              ? 'bg-[#1E3A8A] text-white'
-                              : 'text-gray-600 hover:text-gray-900'
-                          }`}
-                        >
-                          {t.bld_contact_mode_manager || (isEn ? "Building Manager's Own" : "Kezelő saját elérhetősége")}
-                        </button>
+                          {targetBuilding?.showCentralContactToResidents
+                            ? (isEn ? "ENABLED" : "BEKAPCSOLVA")
+                            : (isEn ? "DISABLED" : "KIKAPCSOLVA")}
+                        </span>
                       </div>
                     </div>
 
-                    {contactDisplayMode === 'company' ? (
-                      <div className="p-3 rounded-xl bg-white border border-blue-100 text-[11px] text-gray-600 space-y-1">
-                        <div className="font-semibold text-gray-800">
-                          {t.bld_contact_company_preview || (isEn ? "Residents currently see the central company contact:" : "A lakók jelenleg a központi céges elérhetőséget látják:")}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-700">
-                          <span className="font-bold">{companyPreviewContact.name || '—'}</span>
-                          {companyPreviewContact.phone && <span>📞 {companyPreviewContact.phone}</span>}
-                          {companyPreviewContact.email && <span>✉️ {companyPreviewContact.email}</span>}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-3 bg-white p-3.5 rounded-xl border border-blue-200/70">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-[11px] text-gray-600">
-                            {t.bld_contact_manager_desc || (
-                              isEn
-                                ? "Enter the responsible building manager's contact details shown at the top of the residents' dashboard."
-                                : "Add meg a ház tényleges kezelőjének elérhetőségeit, amely a lakók felületének tetején jelenik meg."
-                            )}
-                          </p>
-                          <button
-                            type="button"
-                            onClick={handleFillMyContact}
-                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] font-bold text-[11px] border border-blue-200 cursor-pointer transition-colors flex-shrink-0"
-                          >
-                            {t.bld_contact_fill_mine || (isEn ? "Fill my details" : "Saját adataim kitöltése")}
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          <div>
-                            <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">
-                              {t.bld_contact_manager_name || (isEn ? "Manager Name" : "Házkezelő neve")}
-                            </label>
-                            <input
-                              type="text"
-                              value={managerName}
-                              onChange={(e) => setManagerName(e.target.value)}
-                              placeholder={isEn ? "e.g. Anna Kovács" : "pl. Kovács Anna"}
-                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">
-                              {t.bld_contact_manager_phone || (isEn ? "Direct Phone" : "Közvetlen telefonszám")}
-                            </label>
-                            <input
-                              type="text"
-                              value={managerPhone}
-                              onChange={(e) => setManagerPhone(e.target.value)}
-                              onBlur={() => setManagerPhone(formatPhoneNumber(managerPhone))}
-                              placeholder="+36 30 123 4567"
-                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">
-                              {t.bld_contact_manager_email || (isEn ? "Direct Email" : "Közvetlen e-mail cím")}
-                            </label>
-                            <input
-                              type="email"
-                              value={managerEmail}
-                              onChange={(e) => setManagerEmail(e.target.value)}
-                              placeholder="anna@ceg.hu"
-                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">
-                              {t.bld_contact_manager_hours || (isEn ? "Office Hours (optional)" : "Fogadási / elérhetőségi idő (opcionális)")}
-                            </label>
-                            <input
-                              type="text"
-                              value={managerOfficeHours}
-                              onChange={(e) => setManagerOfficeHours(e.target.value)}
-                              placeholder={isEn ? "Mon–Thu 9:00–16:00" : "H–Cs 9:00–16:00"}
-                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
+                      <span>ℹ️</span>
+                      <span>
+                        {t.bld_contact_team_managed_hint || (
+                          isEn
+                            ? "Resident-facing representative contact and central company escalation visibility are configured under Csapat & Jogosultságok (Team & Permissions)."
+                            : "A lakóknak megjelenő kapcsolattartó és a központi cégadatok láthatósága a Csapat & Jogosultságok menüpontban, a munkatársak házhoz rendelésénél állítható be."
+                        )}
+                      </span>
+                    </p>
                   </div>
                 )}
 

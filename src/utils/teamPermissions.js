@@ -287,8 +287,41 @@ export function canUserEditBankAccountNumbers(user, building, organizations = []
   if (ctx.isOwner) {
     return building ? isBuildingInOrganization(building, ctx.org) : true;
   }
-  if (ctx.isStaff && ctx.permissions.canEditBankAccounts) {
-    return building ? canUserAccessBuilding(user, building, organizations, buildings) : true;
+  if (ctx.isStaff) {
+    if (building && !canUserAccessBuilding(user, building, organizations, buildings)) {
+      return false;
+    }
+    const member = (ctx.org?.members || []).find((m) => m && normalizeEmail(m.email) === normalizeEmail(user?.email));
+    const perBuilding = building?.id ? member?.buildingAssignments?.[building.id] : null;
+    if (perBuilding && perBuilding.canEditBankAccounts !== undefined) {
+      return Boolean(perBuilding.canEditBankAccounts);
+    }
+    return Boolean(ctx.permissions?.canEditBankAccounts);
+  }
+  return false;
+}
+
+/**
+ * Checks whether a staff member has active management/write permissions on a given building
+ * (returns false if the colleague was explicitly assigned 'viewer' role on that building).
+ */
+export function canUserManageBuilding(user, building, organizations = [], buildings = []) {
+  const ctx = resolveUserOrgContext(user, organizations, buildings);
+  if (ctx.isSuspended) return false;
+  if (ctx.isSuperAdmin) return true;
+  if (ctx.isOwner) {
+    return building ? isBuildingInOrganization(building, ctx.org) : true;
+  }
+  if (ctx.isStaff) {
+    if (building && !canUserAccessBuilding(user, building, organizations, buildings)) {
+      return false;
+    }
+    const member = (ctx.org?.members || []).find((m) => m && normalizeEmail(m.email) === normalizeEmail(user?.email));
+    const perBuilding = building?.id ? member?.buildingAssignments?.[building.id] : null;
+    if (perBuilding && perBuilding.role === 'viewer') {
+      return false;
+    }
+    return true;
   }
   return false;
 }

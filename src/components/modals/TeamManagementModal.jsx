@@ -29,6 +29,7 @@ import {
   Send,
   Loader2,
   CheckCircle2,
+  UserCheck,
 } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 import {
@@ -83,8 +84,16 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const [editingMemberId, setEditingMemberId] = useState(null);
   const [formEmail, setFormEmail] = useState('');
   const [formName, setFormName] = useState('');
+  const [formPhone, setFormPhone] = useState('');
   const [formScope, setFormScope] = useState('selected'); // 'all' | 'selected'
   const [formBuildingIds, setFormBuildingIds] = useState([]);
+  const [formBuildingAssignments, setFormBuildingAssignments] = useState({});
+  const [allScopeDefaults, setAllScopeDefaults] = useState({
+    role: 'manager',
+    canEditBankAccounts: false,
+    showManagerContact: false,
+    showCentralContact: false,
+  });
   const [buildingSearch, setBuildingSearch] = useState('');
   const [permCreateBuildings, setPermCreateBuildings] = useState(false);
   const [permManageTeam, setPermManageTeam] = useState(false);
@@ -161,8 +170,16 @@ export function TeamManagementModal({ isOpen, onClose }) {
     setEditingMemberId(null);
     setFormEmail('');
     setFormName('');
+    setFormPhone('');
     setFormScope('selected');
     setFormBuildingIds([]);
+    setFormBuildingAssignments({});
+    setAllScopeDefaults({
+      role: 'manager',
+      canEditBankAccounts: false,
+      showManagerContact: false,
+      showCentralContact: false,
+    });
     setBuildingSearch('');
     setPermCreateBuildings(false);
     setPermManageTeam(false);
@@ -171,6 +188,16 @@ export function TeamManagementModal({ isOpen, onClose }) {
 
   const openNewInviteForm = () => {
     resetInviteForm();
+    const initialAssignments = {};
+    orgBuildings.forEach((b) => {
+      initialAssignments[b.id] = {
+        role: 'manager',
+        canEditBankAccounts: false,
+        showManagerContact: false,
+        showCentralContact: Boolean(b.showCentralContactToResidents),
+      };
+    });
+    setFormBuildingAssignments(initialAssignments);
     setActiveTab('invite');
   };
 
@@ -178,19 +205,92 @@ export function TeamManagementModal({ isOpen, onClose }) {
     setEditingMemberId(member.id);
     setFormEmail(member.email || '');
     setFormName(member.name || '');
+    setFormPhone(member.phone || '');
     setFormScope(member.buildingScope === 'all' ? 'all' : 'selected');
-    setFormBuildingIds(Array.isArray(member.buildingIds) ? [...member.buildingIds] : []);
+    const bIds = Array.isArray(member.buildingIds) ? [...member.buildingIds] : [];
+    setFormBuildingIds(bIds);
     setBuildingSearch('');
     setPermCreateBuildings(Boolean(member.permissions?.canCreateBuildings));
     setPermManageTeam(Boolean(member.permissions?.canManageTeam));
     setPermEditBankAccounts(Boolean(member.permissions?.canEditBankAccounts));
+
+    const initialAssignments = {};
+    orgBuildings.forEach((b) => {
+      const existing = member.buildingAssignments?.[b.id];
+      if (existing) {
+        initialAssignments[b.id] = {
+          role: existing.role === 'viewer' ? 'viewer' : 'manager',
+          canEditBankAccounts: Boolean(existing.canEditBankAccounts),
+          showManagerContact: Boolean(existing.showManagerContact),
+          showCentralContact: Boolean(existing.showCentralContact),
+        };
+      } else {
+        const isManagerHere = b.contactDisplayMode === 'manager' && normalizeEmail(b.managerContact?.email) === normalizeEmail(member.email);
+        initialAssignments[b.id] = {
+          role: 'manager',
+          canEditBankAccounts: Boolean(member.permissions?.canEditBankAccounts),
+          showManagerContact: isManagerHere,
+          showCentralContact: Boolean(b.showCentralContactToResidents),
+        };
+      }
+    });
+    setFormBuildingAssignments(initialAssignments);
     setActiveTab('invite');
   };
 
   const toggleBuildingSelection = (bId) => {
-    setFormBuildingIds((prev) =>
-      prev.includes(bId) ? prev.filter((id) => id !== bId) : [...prev, bId]
-    );
+    setFormBuildingIds((prev) => {
+      const exists = prev.includes(bId);
+      if (exists) {
+        return prev.filter((id) => id !== bId);
+      }
+      return [...prev, bId];
+    });
+
+    setFormBuildingAssignments((prev) => {
+      if (prev[bId]) return prev;
+      const targetB = orgBuildings.find((b) => b.id === bId);
+      return {
+        ...prev,
+        [bId]: {
+          role: 'manager',
+          canEditBankAccounts: permEditBankAccounts,
+          showManagerContact: false,
+          showCentralContact: Boolean(targetB?.showCentralContactToResidents),
+        },
+      };
+    });
+  };
+
+  const updateBuildingAssignment = (bId, key, value) => {
+    setFormBuildingAssignments((prev) => ({
+      ...prev,
+      [bId]: {
+        role: 'manager',
+        canEditBankAccounts: false,
+        showManagerContact: false,
+        showCentralContact: false,
+        ...(prev[bId] || {}),
+        [key]: value,
+      },
+    }));
+  };
+
+  const copyAssignmentToAllSelected = (sourceBId) => {
+    const src = formBuildingAssignments[sourceBId] || {
+      role: 'manager',
+      canEditBankAccounts: false,
+      showManagerContact: false,
+      showCentralContact: false,
+    };
+    setFormBuildingAssignments((prev) => {
+      const next = { ...prev };
+      formBuildingIds.forEach((id) => {
+        next[id] = { ...src };
+      });
+      return next;
+    });
+    showToast(t.team_copied_assignments || (isEn ? 'Settings copied to all selected buildings!' : 'Beállítások átmásolva az összes kiválasztott házra!'));
   };
 
   const handleSaveMember = async (e) => {
@@ -202,12 +302,37 @@ export function TeamManagementModal({ isOpen, onClose }) {
       canEditBankAccounts: permEditBankAccounts,
     };
 
+    // Build finalized per-building assignments payload
+    const assignmentsPayload = {};
+    if (formScope === 'all') {
+      orgBuildings.forEach((b) => {
+        assignmentsPayload[b.id] = {
+          role: allScopeDefaults.role || 'manager',
+          canEditBankAccounts: Boolean(allScopeDefaults.canEditBankAccounts || permEditBankAccounts),
+          showManagerContact: Boolean(allScopeDefaults.showManagerContact),
+          showCentralContact: Boolean(allScopeDefaults.showCentralContact),
+        };
+      });
+    } else {
+      formBuildingIds.forEach((bId) => {
+        const item = formBuildingAssignments[bId] || {};
+        assignmentsPayload[bId] = {
+          role: item.role === 'viewer' ? 'viewer' : 'manager',
+          canEditBankAccounts: Boolean(item.canEditBankAccounts),
+          showManagerContact: Boolean(item.showManagerContact),
+          showCentralContact: Boolean(item.showCentralContact),
+        };
+      });
+    }
+
     if (editingMemberId) {
       const ok = updateTeamMember(editingMemberId, {
         name: formName,
+        phone: formPhone,
         buildingScope: formScope,
         buildingIds: formBuildingIds,
         permissions: permissionsPayload,
+        buildingAssignments: assignmentsPayload,
       });
       if (ok) {
         resetInviteForm();
@@ -221,9 +346,11 @@ export function TeamManagementModal({ isOpen, onClose }) {
       const res = await inviteOrAttachTeamMember({
         email: formEmail,
         name: formName,
+        phone: formPhone,
         buildingScope: formScope,
         buildingIds: formBuildingIds,
         permissions: permissionsPayload,
+        buildingAssignments: assignmentsPayload,
       });
 
       if (res?.success) {
@@ -714,6 +841,16 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                 : (isEn ? `${assignedBuildings.length} building(s)` : `${assignedBuildings.length} társasház`)}
                             </span>
 
+                            {Object.values(m.buildingAssignments || {}).some((a) => a?.showManagerContact) && (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold"
+                                title={isEn ? 'Colleague contact is visible to residents on assigned buildings' : 'A lakók az ő elérhetőségét látják a kijelölt házakon'}
+                              >
+                                <UserCheck className="w-3 h-3 text-purple-600" />
+                                {isEn ? 'Resident Contact' : 'Lakói kapcsolattartó'}
+                              </span>
+                            )}
+
                             {/* 1. Create Buildings Permission */}
                             {m.permissions?.canCreateBuildings ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
@@ -906,7 +1043,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
           {/* ============================================================== */}
           {activeTab === 'invite' && (
             <form onSubmit={handleSaveMember} className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 <div>
                   <label className="block font-bold text-gray-700 mb-1">
                     {t.team_email_label || (isEn ? 'Colleague Email Address' : 'Munkatárs e-mail címe')} *
@@ -936,6 +1073,23 @@ export function TeamManagementModal({ isOpen, onClose }) {
                     placeholder={isEn ? 'e.g. Anna Kovács' : 'pl. Kovács Anna'}
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                   />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">
+                    {t.phone || (isEn ? 'Direct Phone Number' : 'Közvetlen telefonszám')}
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={formPhone}
+                      onChange={(e) => setFormPhone(e.target.value)}
+                      onBlur={() => setFormPhone(formatPhoneNumber(formPhone))}
+                      placeholder="+36 30 123 4567"
+                      className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -969,11 +1123,68 @@ export function TeamManagementModal({ isOpen, onClose }) {
                 </div>
 
                 {formScope === 'all' ? (
-                  <p className="text-[11px] text-gray-600 bg-white p-3 rounded-lg border border-gray-200">
-                    {isEn
-                      ? `This colleague will automatically have full operational management access to all ${orgBuildings.length} current and future company condominiums.`
-                      : `Ez a munkatárs automatikusan teljes körű operatív kezelési hozzáférést kap mind a(z) ${orgBuildings.length} jelenlegi és jövőbeli céges társasházhoz.`}
-                  </p>
+                  <div className="bg-white p-3.5 rounded-xl border border-blue-200 space-y-3">
+                    <p className="text-[11px] text-gray-600">
+                      {isEn
+                        ? `This colleague will manage all ${orgBuildings.length} company condominiums. Choose their default settings below:`
+                        : `Ez a munkatárs mind a(z) ${orgBuildings.length} céges társasházhoz hozzáfér. Állítsd be az alapértelmezett jogosultságokat:`}
+                    </p>
+                    <div className="space-y-2.5 pt-2 border-t border-gray-100">
+                      <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+                        <input
+                          type="checkbox"
+                          checked={allScopeDefaults.showManagerContact}
+                          onChange={(e) =>
+                            setAllScopeDefaults((prev) => ({ ...prev, showManagerContact: e.target.checked }))
+                          }
+                          className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
+                        />
+                        <div>
+                          <span className="font-bold text-gray-900">
+                            👤 {t.team_assign_show_manager_contact || (isEn ? "Display colleague's contact to residents (Property Manager)" : "Az ő adatai jelenjenek meg a lakóknak mint képviselő / kezelő")}
+                          </span>
+                          <p className="text-[11px] text-gray-500">
+                            {t.team_assign_show_manager_contact_hint || (isEn ? "If unchecked, company / owner contact remains visible." : "Ha nincs bepipálva, a központi cég / tulajdonos elérhetősége látszódik.")}
+                          </p>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+                        <input
+                          type="checkbox"
+                          checked={allScopeDefaults.showCentralContact}
+                          onChange={(e) =>
+                            setAllScopeDefaults((prev) => ({ ...prev, showCentralContact: e.target.checked }))
+                          }
+                          className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
+                        />
+                        <div>
+                          <span className="font-bold text-gray-900">
+                            🏢 {t.team_assign_show_central_contact || (isEn ? "Show central company details to residents (escalation channel)" : "Központi cégadatok megjelenítése a lakóknak (eszkaláció)")}
+                          </span>
+                          <p className="text-[11px] text-gray-500">
+                            {t.team_assign_show_central_contact_hint || (isEn ? "Provides an escalation / feedback channel directly to the company." : "Hivatalos céges panasz / eszkalációs csatornát biztosít a lakóknak.")}
+                          </p>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+                        <input
+                          type="checkbox"
+                          checked={allScopeDefaults.canEditBankAccounts}
+                          onChange={(e) =>
+                            setAllScopeDefaults((prev) => ({ ...prev, canEditBankAccounts: e.target.checked }))
+                          }
+                          className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
+                        />
+                        <div>
+                          <span className="font-bold text-gray-900">
+                            🔒 {t.team_assign_can_edit_iban || (isEn ? "Can modify bank account numbers (IBAN)" : "Bankszámlaszám (IBAN) módosítása")}
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
@@ -1003,7 +1214,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
                       </button>
                     </div>
 
-                    <div className="max-h-44 overflow-y-auto bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+                    <div className="max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
                       {filteredOrgBuildings.length === 0 ? (
                         <div className="p-4 text-center text-[11px] text-gray-400">
                           {isEn ? 'No buildings found.' : 'Nem található társasház.'}
@@ -1011,24 +1222,150 @@ export function TeamManagementModal({ isOpen, onClose }) {
                       ) : (
                         filteredOrgBuildings.map((b) => {
                           const checked = formBuildingIds.includes(b.id);
+                          const assignment = formBuildingAssignments[b.id] || {
+                            role: 'manager',
+                            canEditBankAccounts: false,
+                            showManagerContact: false,
+                            showCentralContact: Boolean(b.showCentralContactToResidents),
+                          };
                           return (
-                            <label
+                            <div
                               key={b.id}
-                              className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors ${
-                                checked ? 'bg-blue-50/70' : 'hover:bg-gray-50'
+                              className={`p-3 transition-colors ${
+                                checked ? 'bg-blue-50/40' : 'hover:bg-gray-50'
                               }`}
                             >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleBuildingSelection(b.id)}
-                                className="w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <div className="text-xs font-bold text-gray-900 truncate">{b.name}</div>
-                                {b.address && <div className="text-[10px] text-gray-500 truncate">{b.address}</div>}
+                              <div className="flex items-start justify-between gap-2">
+                                <label className="flex items-start gap-2.5 min-w-0 cursor-pointer flex-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => toggleBuildingSelection(b.id)}
+                                    className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-bold text-gray-900 truncate">{b.name}</div>
+                                    {b.address && <div className="text-[10px] text-gray-500 truncate">{b.address}</div>}
+                                  </div>
+                                </label>
+                                {checked && (
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                      assignment.role === 'viewer'
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : 'bg-blue-100 text-blue-800'
+                                    }`}
+                                  >
+                                    {assignment.role === 'viewer'
+                                      ? (isEn ? 'Viewer' : 'Megtekintő')
+                                      : (isEn ? 'Manager' : 'Kezelő')}
+                                  </span>
+                                )}
                               </div>
-                            </label>
+
+                              {checked && (
+                                <div className="mt-3 ml-6 pl-3 border-l-2 border-blue-200 space-y-2.5 bg-white/80 p-2.5 rounded-lg border border-gray-100">
+                                  {/* Role selector on this building */}
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-[11px] font-bold text-gray-700">
+                                      {t.team_assign_role_label || (isEn ? 'Permission level on this building:' : 'Jogosultság ezen a házon:')}
+                                    </span>
+                                    <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                                      <button
+                                        type="button"
+                                        onClick={() => updateBuildingAssignment(b.id, 'role', 'manager')}
+                                        className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                                          assignment.role !== 'viewer'
+                                            ? 'bg-[#1E3A8A] text-white shadow-xs'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                        }`}
+                                      >
+                                        {t.team_assign_role_manager || (isEn ? 'Manager (Edit & Post)' : 'Teljes kezelő')}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateBuildingAssignment(b.id, 'role', 'viewer')}
+                                        className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                                          assignment.role === 'viewer'
+                                            ? 'bg-amber-600 text-white shadow-xs'
+                                            : 'text-gray-600 hover:text-gray-900'
+                                        }`}
+                                      >
+                                        {t.team_assign_role_viewer || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő')}
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Contact checkboxes */}
+                                  <label className="flex items-start gap-2 cursor-pointer text-xs">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(assignment.showManagerContact)}
+                                      onChange={(e) =>
+                                        updateBuildingAssignment(b.id, 'showManagerContact', e.target.checked)
+                                      }
+                                      className="mt-0.5 w-3.5 h-3.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
+                                    />
+                                    <div>
+                                      <span className="font-semibold text-gray-900 text-[11px]">
+                                        👤 {t.team_assign_show_manager_contact || (isEn ? "Display colleague's contact to residents (Property Manager)" : "Az ő adatai jelenjenek meg a lakóknak mint képviselő / kezelő")}
+                                      </span>
+                                      <p className="text-[10px] text-gray-500">
+                                        {t.team_assign_show_manager_contact_hint || (isEn ? "If unchecked, company / owner contact remains visible." : "Ha nincs bepipálva, a központi cég / tulajdonos elérhetősége látszódik.")}
+                                      </p>
+                                    </div>
+                                  </label>
+
+                                  <label className="flex items-start gap-2 cursor-pointer text-xs">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(assignment.showCentralContact)}
+                                      onChange={(e) =>
+                                        updateBuildingAssignment(b.id, 'showCentralContact', e.target.checked)
+                                      }
+                                      className="mt-0.5 w-3.5 h-3.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
+                                    />
+                                    <div>
+                                      <span className="font-semibold text-gray-900 text-[11px]">
+                                        🏢 {t.team_assign_show_central_contact || (isEn ? "Show central company details to residents (escalation channel)" : "Központi cégadatok megjelenítése a lakóknak (eszkaláció)")}
+                                      </span>
+                                      <p className="text-[10px] text-gray-500">
+                                        {t.team_assign_show_central_contact_hint || (isEn ? "Provides an escalation / feedback channel directly to the company." : "Hivatalos céges panasz / eszkalációs csatornát biztosít a lakóknak.")}
+                                      </p>
+                                    </div>
+                                  </label>
+
+                                  <label className="flex items-start gap-2 cursor-pointer text-xs">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(assignment.canEditBankAccounts)}
+                                      onChange={(e) =>
+                                        updateBuildingAssignment(b.id, 'canEditBankAccounts', e.target.checked)
+                                      }
+                                      className="mt-0.5 w-3.5 h-3.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
+                                    />
+                                    <div>
+                                      <span className="font-semibold text-gray-900 text-[11px]">
+                                        🔒 {t.team_assign_can_edit_iban || (isEn ? "Can modify bank account numbers (IBAN) on this building" : "Bankszámlaszám (IBAN) módosítása ezen a házon")}
+                                      </span>
+                                    </div>
+                                  </label>
+
+                                  {formBuildingIds.length > 1 && (
+                                    <div className="pt-1 flex justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={() => copyAssignmentToAllSelected(b.id)}
+                                        className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1 cursor-pointer hover:underline"
+                                      >
+                                        <Copy className="w-2.5 h-2.5" />
+                                        <span>{t.team_copy_to_all_blds || (isEn ? 'Copy settings to all selected buildings' : 'Beállítások másolása a többi kijelölt házra')}</span>
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           );
                         })
                       )}

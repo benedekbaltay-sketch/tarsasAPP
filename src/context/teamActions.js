@@ -77,9 +77,11 @@ export function createTeamActions({ state, persistState, showToast, t }) {
   const inviteOrAttachTeamMember = async ({
     email,
     name = '',
+    phone = '',
     buildingScope = 'selected',
     buildingIds = [],
     permissions = {},
+    buildingAssignments = {},
   }) => {
     const actor = state.currentUser;
     if (!actor || !canUserManageTeam(actor, state.organizations, state.buildings)) {
@@ -127,6 +129,11 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       ? []
       : Array.from(new Set((Array.isArray(buildingIds) ? buildingIds : []).filter(Boolean)));
 
+    const cleanPhone = phone !== undefined ? String(phone).trim() : (existingMember?.phone || '');
+    const cleanBuildingAssignments = buildingAssignments && typeof buildingAssignments === 'object'
+      ? buildingAssignments
+      : (existingMember?.buildingAssignments || {});
+
     const nowIso = new Date().toISOString();
     const expiresIso = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const token = generateInviteToken();
@@ -139,12 +146,14 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       id: memberId,
       email: cleanEmail,
       name: displayName,
+      phone: cleanPhone,
       orgRole: 'staff',
       active: true,
       status: 'active',
       buildingScope: cleanScope,
       buildingIds: cleanBuildingIds,
       permissions: normalizedPerms,
+      buildingAssignments: cleanBuildingAssignments,
       invitedBy: normalizeEmail(actor.email),
       addedAt: existingMember?.addedAt || nowIso,
       updatedAt: nowIso,
@@ -155,9 +164,11 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       token,
       email: cleanEmail,
       name: displayName,
+      phone: cleanPhone,
       buildingScope: cleanScope,
       buildingIds: cleanBuildingIds,
       permissions: normalizedPerms,
+      buildingAssignments: cleanBuildingAssignments,
       status: 'pending',
       createdBy: normalizeEmail(actor.email),
       createdAt: nowIso,
@@ -201,10 +212,43 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         updatedAt: nowIso,
       };
 
-      // Tag legacy buildings with this orgId if they do not have an orgId yet
-      const nextBuildings = (s.buildings || []).map((b) =>
-        b && !b.organizationId ? { ...b, organizationId: org.id } : b
-      );
+      // Tag legacy buildings with this orgId if needed and update resident contact visibility based on per-building assignments
+      const nextBuildings = (s.buildings || []).map((b) => {
+        if (!b) return b;
+        let updatedB = !b.organizationId ? { ...b, organizationId: org.id } : { ...b };
+        const isAssigned = cleanScope === 'all' || cleanBuildingIds.includes(b.id);
+        const bAssigned = cleanBuildingAssignments[b.id];
+
+        if (isAssigned && bAssigned) {
+          if (bAssigned.showManagerContact) {
+            updatedB.contactDisplayMode = 'manager';
+            updatedB.managerContact = {
+              name: displayName,
+              email: cleanEmail,
+              phone: cleanPhone || updatedB.managerContact?.phone || '',
+              officeHours: updatedB.managerContact?.officeHours || '',
+              titleHu: 'Felelős házkezelő',
+              titleEn: 'Responsible Property Manager',
+            };
+          } else if (
+            updatedB.contactDisplayMode === 'manager' &&
+            normalizeEmail(updatedB.managerContact?.email) === cleanEmail
+          ) {
+            updatedB.contactDisplayMode = 'company';
+          }
+          if (bAssigned.showCentralContact !== undefined) {
+            updatedB.showCentralContactToResidents = Boolean(bAssigned.showCentralContact);
+          }
+        } else {
+          if (
+            updatedB.contactDisplayMode === 'manager' &&
+            normalizeEmail(updatedB.managerContact?.email) === cleanEmail
+          ) {
+            updatedB.contactDisplayMode = 'company';
+          }
+        }
+        return updatedB;
+      });
 
       // Ensure colleague has an admin profile record in s.users for seamless RTDB login
       const existingAdminUser = (s.users || []).find(
@@ -358,8 +402,8 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     return result;
   };
 
-  // Update an existing staff member's building scope & permissions
-  const updateTeamMember = (memberId, { name, buildingScope, buildingIds, permissions }) => {
+  // Update an existing staff member's building scope, per-building assignments & permissions
+  const updateTeamMember = (memberId, { name, phone, buildingScope, buildingIds, permissions, buildingAssignments }) => {
     const actor = state.currentUser;
     const actorCtx = resolveUserOrgContext(actor, state.organizations, state.buildings);
     if (!actor || !actorCtx.org || !canUserManageTeam(actor, state.organizations, state.buildings)) {
@@ -387,6 +431,14 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       ? []
       : (buildingIds !== undefined ? Array.from(new Set(buildingIds.filter(Boolean))) : (target.buildingIds || []));
 
+    const cleanPhone = phone !== undefined ? String(phone).trim() : (target.phone || '');
+    const cleanBuildingAssignments = buildingAssignments !== undefined
+      ? buildingAssignments
+      : (target.buildingAssignments || {});
+
+    const targetEmail = normalizeEmail(target.email);
+    const targetName = name !== undefined ? String(name).trim() || target.name : target.name;
+
     const updateNotif = buildNotification({
       type: 'team_updated',
       severity: 'info',
@@ -407,10 +459,12 @@ export function createTeamActions({ state, persistState, showToast, t }) {
             m.id === memberId
               ? {
                   ...m,
-                  name: name !== undefined ? String(name).trim() || m.name : m.name,
+                  name: targetName,
+                  phone: cleanPhone,
                   buildingScope: cleanScope,
                   buildingIds: cleanBuildingIds,
                   permissions: normalizedPerms,
+                  buildingAssignments: cleanBuildingAssignments,
                   updatedAt: new Date().toISOString(),
                 }
               : m
@@ -419,9 +473,47 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         };
       });
 
+      const nextBuildings = (s.buildings || []).map((b) => {
+        if (!b) return b;
+        const isAssigned = cleanScope === 'all' || cleanBuildingIds.includes(b.id);
+        const bAssigned = cleanBuildingAssignments[b.id];
+
+        let updatedB = { ...b };
+        if (isAssigned && bAssigned) {
+          if (bAssigned.showManagerContact) {
+            updatedB.contactDisplayMode = 'manager';
+            updatedB.managerContact = {
+              name: targetName,
+              email: targetEmail,
+              phone: cleanPhone || updatedB.managerContact?.phone || '',
+              officeHours: updatedB.managerContact?.officeHours || '',
+              titleHu: 'Felelős házkezelő',
+              titleEn: 'Responsible Property Manager',
+            };
+          } else if (
+            updatedB.contactDisplayMode === 'manager' &&
+            normalizeEmail(updatedB.managerContact?.email) === targetEmail
+          ) {
+            updatedB.contactDisplayMode = 'company';
+          }
+          if (bAssigned.showCentralContact !== undefined) {
+            updatedB.showCentralContactToResidents = Boolean(bAssigned.showCentralContact);
+          }
+        } else {
+          if (
+            updatedB.contactDisplayMode === 'manager' &&
+            normalizeEmail(updatedB.managerContact?.email) === targetEmail
+          ) {
+            updatedB.contactDisplayMode = 'company';
+          }
+        }
+        return updatedB;
+      });
+
       return {
         ...s,
         organizations: nextOrgs,
+        buildings: nextBuildings,
         notifications: [updateNotif, ...(s.notifications || [])].slice(0, 300),
       };
     }, true);

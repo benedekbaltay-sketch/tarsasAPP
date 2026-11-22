@@ -10,6 +10,7 @@ import {
   canUserDeleteBuilding,
   canUserManageTeam,
   canUserEditBankAccountNumbers,
+  canUserManageBuilding,
   canActorManageTargetMember,
   detectBankAccountChanges,
   buildBankChangeNotification,
@@ -459,4 +460,113 @@ test('8. Colleague invite password-setup URL, nested continueUrl extraction, str
     isEn: true,
   });
   assert.ok(mailto.startsWith('mailto:anna%40alfa.hu?subject='));
+});
+
+test('9. Per-building assignments: different roles & permissions on different buildings for same colleague', () => {
+  const colleague = { email: 'multirole@alfa.hu', role: 'admin' };
+  const customOrgs = [
+    {
+      id: 'org-a',
+      name: 'Alfa Kft.',
+      ownerEmail: 'tulaj@alfa.hu',
+      centralContact: {
+        name: 'Alfa Kft.',
+        email: 'info@alfa.hu',
+        phone: '+36 1 000 0000',
+      },
+      members: [
+        {
+          id: 'm-owner',
+          email: 'tulaj@alfa.hu',
+          orgRole: 'owner',
+          active: true,
+          buildingScope: 'all',
+        },
+        {
+          id: 'm-multi',
+          email: 'multirole@alfa.hu',
+          name: 'Többházas Tamás',
+          orgRole: 'staff',
+          active: true,
+          buildingScope: 'selected',
+          buildingIds: ['b-1', 'b-2'],
+          permissions: {
+            canCreateBuildings: false,
+            canManageTeam: false,
+            canEditBankAccounts: false, // global default is false
+          },
+          buildingAssignments: {
+            'b-1': {
+              role: 'manager',
+              canEditBankAccounts: true, // overridden to true on b-1
+              showManagerContact: true,
+              showCentralContact: true,
+            },
+            'b-2': {
+              role: 'viewer', // read-only viewer on b-2
+              canEditBankAccounts: false,
+              showManagerContact: false,
+              showCentralContact: false,
+            },
+          },
+        },
+      ],
+    },
+  ];
+
+  const testBuildings = [
+    {
+      id: 'b-1',
+      name: 'Ház 1',
+      organizationId: 'org-a',
+      contactDisplayMode: 'manager',
+      managerContact: {
+        name: 'Többházas Tamás',
+        email: 'multirole@alfa.hu',
+        phone: '+36 30 111 2222',
+      },
+      showCentralContactToResidents: true,
+    },
+    {
+      id: 'b-2',
+      name: 'Ház 2',
+      organizationId: 'org-a',
+      contactDisplayMode: 'company',
+      showCentralContactToResidents: false,
+    },
+  ];
+
+  // Access check: colleague has access to both buildings
+  assert.equal(canUserAccessBuilding(colleague, testBuildings[0], customOrgs, testBuildings), true);
+  assert.equal(canUserAccessBuilding(colleague, testBuildings[1], customOrgs, testBuildings), true);
+
+  // Management (write) check: Manager on b-1, Viewer on b-2
+  assert.equal(canUserManageBuilding(colleague, testBuildings[0], customOrgs, testBuildings), true);
+  assert.equal(canUserManageBuilding(colleague, testBuildings[1], customOrgs, testBuildings), false);
+
+  // Bank account editing check: canEditBankAccounts is TRUE on b-1, but FALSE on b-2
+  assert.equal(canUserEditBankAccountNumbers(colleague, testBuildings[0], customOrgs, testBuildings), true);
+  assert.equal(canUserEditBankAccountNumbers(colleague, testBuildings[1], customOrgs, testBuildings), false);
+
+  // Resident contact check for b-1 (Manager mode + escalation enabled)
+  const contactB1 = resolveBuildingResidentContact(
+    testBuildings[0],
+    { companyName: 'Alfa Kft.', phone: '+36 1 000 0000', email: 'info@alfa.hu' },
+    customOrgs
+  );
+  assert.equal(contactB1.mode, 'manager');
+  assert.equal(contactB1.name, 'Többházas Tamás');
+  assert.equal(contactB1.email, 'multirole@alfa.hu');
+  assert.equal(contactB1.showCentralEscalation, true);
+  assert.ok(contactB1.centralCompany);
+  assert.equal(contactB1.centralCompany.email, 'info@alfa.hu');
+
+  // Resident contact check for b-2 (Company mode + escalation disabled)
+  const contactB2 = resolveBuildingResidentContact(
+    testBuildings[1],
+    { companyName: 'Alfa Kft.', phone: '+36 1 000 0000', email: 'info@alfa.hu' },
+    customOrgs
+  );
+  assert.equal(contactB2.name, 'Alfa Kft.');
+  assert.equal(contactB2.showCentralEscalation, false);
 });

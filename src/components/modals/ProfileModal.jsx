@@ -827,25 +827,20 @@ export function ProfileModal({
                       </div>
 
                       {/* Escalation Channel Status Indicator */}
-                      <div className="sm:col-span-2 p-3.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between gap-2 text-xs">
+                      <div className="sm:col-span-2 p-3.5 rounded-xl bg-blue-50/50 border border-blue-100 flex items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-2 text-gray-700">
                           <ShieldCheck className="w-4 h-4 text-[#1E3A8A]" />
                           <div>
                             <span className="font-bold block">
-                              {t.team_show_central_to_residents_title || "Központi céges elérhetőség megjelenítése a lakók felületén"}:
+                              {isEn ? "Resident-Facing Visibility & Escalation" : "Lakóknak megjelenő adatok és eszkaláció"}:
                             </span>
                             <span className="text-[11px] text-gray-500 block">
-                              {companyShowCentralContactToResidents
-                                ? (isEn ? "Residents see company escalation contact below building managers." : "A lakók látják a központi ügyfélszolgálatot a házkezelő elérhetősége alatt.")
-                                : (isEn ? "Only the assigned building manager is shown to residents." : "A lakók kizárólag a házhoz rendelt felelős házkezelőt látják.")}
+                              {isEn
+                                ? "Configured per-building when assigning team members under Csapat & Jogosultságok (Team & Permissions)."
+                                : "A Csapat & Jogosultságok menüpontban, a munkatársak házankénti kiosztásánál állítható be."}
                             </span>
                           </div>
                         </div>
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                          companyShowCentralContactToResidents ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'
-                        }`}>
-                          {companyShowCentralContactToResidents ? (isEn ? "ENABLED" : "BEKAPCSOLVA") : (isEn ? "DISABLED" : "KIKAPCSOLVA")}
-                        </span>
                       </div>
                     </div>
                   ) : (
@@ -929,28 +924,6 @@ export function ProfileModal({
                             placeholder="Hétfő - Péntek: 09:00 - 16:00"
                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                           />
-                        </div>
-
-                        {/* Owner Checkbox: Show Central Company Contact to Residents as Escalation Channel */}
-                        <div className="sm:col-span-2 pt-2 border-t border-gray-100">
-                          <label className="flex items-start gap-3 p-3 bg-gray-50/80 hover:bg-blue-50/50 border border-gray-200 rounded-xl cursor-pointer transition-colors">
-                            <input
-                              type="checkbox"
-                              checked={companyShowCentralContactToResidents}
-                              onChange={(e) => setCompanyShowCentralContactToResidents(e.target.checked)}
-                              className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
-                            />
-                            <div className="space-y-0.5">
-                              <span className="text-xs font-bold text-gray-900 block">
-                                {t.team_show_central_to_residents_title || (isEn ? "Display Central Company Contact to Residents" : "Központi céges elérhetőség megjelenítése a lakók felületén")}
-                              </span>
-                              <span className="text-[11px] text-gray-500 block leading-relaxed">
-                                {t.team_show_central_to_residents_desc || (isEn
-                                  ? "When enabled, residents will see the company's central phone and email below their assigned building manager's direct contact as an escalation / customer care channel."
-                                  : "Ha be van kapcsolva, a lakók a felelős házkezelő közvetlen elérhetősége alatt másodlagosként látják a cég központi ügyfélszolgálati telefonszámát és e-mail címét is (eszkalációs és minőségbiztosítási pontként).")}
-                              </span>
-                            </div>
-                          </label>
                         </div>
                       </div>
 

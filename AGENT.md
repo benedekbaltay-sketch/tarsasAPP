@@ -662,21 +662,26 @@ A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhe
      - Fejlécben egy diszkrét jelvény jelzi a központi képviseleti cég nevét.
      - Csak a közvetlen munkatársi kapcsolattartó mezők szerkeszthetők: *Házkezelő neve*, *Közvetlen telefonszáma*, *Közvetlen e-mail címe*, *Ügyfélfogadási ideje*.
 
-3. **Tulajdonosi Eszkalációs / Minőségbiztosítási Csatorna Kapcsolója (`showCentralContactToResidents`)**:
-   - A cégtulajdonos a cégprofilban egy jelölőnégyzettel tetszés szerint szabályozhatja, hogy a lakók láthassák-e a központi iroda elérhetőségeit másodlagos minőségbiztosítási / panaszkezelési pontként:
-     - *"Központi céges elérhetőség megjelenítése a lakók felületén (Eszkalációs csatorna)"*.
-   - A beállítás perzisztens az `organizations[orgIndex].centralContact.showCentralContactToResidents` és `repProfile.showCentralContactToResidents` mezőkben.
+3. **Házankénti Jogosultságok és Lakói Kapcsolattartó Kiosztás (`buildingAssignments`)**:
+   - **Kizárólagosság a Csapat & Jogosultságok menüpontban**:
+     - A lakóknak megjelenő felelős házkezelő és a központi céges eszkalációs elérhetőség kapcsolója kizárólag a **Csapat & Jogosultságok** (`TeamManagementModal.jsx`) felületen, a munkatársak házakhoz rendelésekor állítható be.
+     - A korábbi kettős beállítási lehetőségek megszűntek: a `GlobalBalancesModal.jsx` felületéről a kézi váltógombok törlésre kerültek (helyükre informatív státuszjelvény került), és a `ProfileModal.jsx` cégprofiljából is eltávolításra került a felesleges kapcsoló.
+   - **Ugyanazon e-mail címhez különböző házakon eltérő jogosultságok**:
+     - Egy munkatárs (`member.buildingAssignments[buildingId]`) minden egyes hozzárendelt társasházán egyedileg konfigurálható:
+       - 👤 **„Az ő adatai jelenjenek meg a lakóknak mint képviselő / kezelő”** (`showManagerContact`): bepipálva a lakók a munkatárs nevét, telefonját és e-mailjét látják; ha nincs bepipálva, a tulajdonos / központi cég adatai látszanak.
+       - 🏢 **„Központi cégadatok megjelenítése a lakóknak (eszkaláció)”** (`showCentralContact`): szabályozza, hogy a cég központi ügyfélszolgálata megjelenjen-e másodlagos minőségbiztosítási pontként a lakóknak.
+       - 🔒 **„Bankszámlaszám (IBAN) módosítása ezen a házon”** (`canEditBankAccounts`): házankénti felülbírálat a folyószámla és megtakarítási számlaszámok védelmére.
+       - 📋 **„Jogosultság ezen a házon”** (`role`): `manager` (Teljes kezelő: rögzítés, könyvelés, módosítás) vagy `viewer` (Csak megtekintő: olvasási jog).
+     - Kényelmi funkció: *„Beállítások másolása a többi kijelölt házra”* gomb segíti a több társasházzal rendelkező kollégák gyors konfigurálását.
 
 4. **Lakói Felület Megjelenítés (`TenantView.jsx`)**:
    - Ha egy épület kapcsolattartási módja **Házkezelő** (`contactDisplayMode === 'manager'`), az elsődleges kiemelt kártyán a kijelölt házkezelő közvetlen neve, telefonja, e-mailje és fogadóórája jelenik meg.
-   - Amennyiben az Owner bekapcsolta az eszkalációs csatornát (`showCentralEscalation: true`) és a központi cégadatok meg vannak adva, a házkezelő kártyája alatt megjelenik egy esztétikus, diszkrét másodlagos sáv:
-     - **"Központi Iroda / Ügyfélszolgálat (Eszkaláció)"** a központi telefonnal és e-mail címmel.
-   - Ha a kapcsoló ki van kapcsolva, a lakó kizárólag a felelős házkezelőt látja, megkímélve a cégközpontot a közvetlen lakói hívásoktól.
-   - Ha a kapcsolattartási mód **Központi Cég** (`contactDisplayMode === 'company'`), az elsődleges kártyán a központi cégadatok jelennek meg.
+   - Amennyiben a házhoz be van kapcsolva a központi cégadatok megjelenítése (`showCentralContactToResidents: true`), a házkezelő kártyája alatt megjelenik a diszkrét másodlagos sáv: **"Központi Iroda / Ügyfélszolgálat (Eszkaláció)"** a központi telefonszámmal és e-mail címmel.
+   - Ha nincs bepipálva a munkatárs megjelenítése, a lakók változatlanul a központi céges vagy tulajdonosi elérhetőséget látják.
 
 5. **Kétnyelvűség és Tesztlefedettség**:
-   - Teljes szimmetrikus magyar és angol fordításkulcsok a `src/constants/translations.js` fájlban.
-   - Kibővített egységteszt a `tests/teamPermissions.test.mjs` (6. teszteset) fájlban ellenőrzi mind az alapértelmezett kikapcsolt, mind a bekapcsolt eszkalációs csatorna feloldását és elérhetőség-átadását.
+   - Teljes szimmetrikus magyar és angol fordításkulcsok a `src/constants/translations.js` fájlban (`team_assign_*`, `bld_contact_team_managed_hint`).
+   - 9 egységtesztből álló tesztcsomag a `tests/teamPermissions.test.mjs` fájlban (beleértve a 9. tesztesetet a házankénti eltérő jogosultságok, `canUserManageBuilding`, `canUserEditBankAccountNumbers` és `resolveBuildingResidentContact` ellenőrzésére).
 
 ---
 
