@@ -36,6 +36,7 @@ import { createBuildingActions } from './buildingActions';
 import { createLoanActions } from './loanActions';
 import { createCalendarActions } from './calendarActions';
 import { createTeamActions } from './teamActions';
+import { createEmailActions } from './emailActions';
 import {
   resolveUserOrgContext,
   getAccessibleBuildings,
@@ -1067,6 +1068,7 @@ export function AppProvider({ children }) {
   });
   const calendarActions = createCalendarActions({ state, persistState, showToast, t });
   const teamActions = createTeamActions({ state, persistState, showToast, t });
+  const emailActions = createEmailActions(state, setState);
 
   // Helper to check if current user is admin/KK authorized (respecting org suspension & staff delegation)
   const isCurrentUserAdmin = (user = state.currentUser, users = state.users) => {
@@ -1338,6 +1340,7 @@ export function AppProvider({ children }) {
     ...loanActions,
     ...calendarActions,
     ...teamActions,
+    ...emailActions,
     orgContext: resolveUserOrgContext(state.currentUser, state.organizations, state.buildings),
     getAccessibleBuildings: (u = state.currentUser, b = state.buildings, o = state.organizations) =>
       getAccessibleBuildings(u, b, o),

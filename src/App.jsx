@@ -29,6 +29,7 @@ import { BuildingSelectorModal } from './components/modals/BuildingSelectorModal
 import { AddBuildingModal } from './components/modals/AddBuildingModal';
 import { TeamManagementModal } from './components/modals/TeamManagementModal';
 import { FullscreenTxModal } from './components/modals/FullscreenTxModal';
+import { CommunicationCenterModal } from './components/modals/CommunicationCenterModal';
 import { 
   DeleteFlatConfirmModal, 
   DeleteTxConfirmModal, 
@@ -202,6 +203,8 @@ function MainLayout() {
   const [passwordJustSet, setPasswordJustSet] = useState(() => Boolean(initialInviteUrlCtx.passwordSet && !initialInviteUrlCtx.oobCode));
   const [fullscreenTxData, setFullscreenTxData] = useState(() => initialNavState?.fullscreenTxData || null); // { type, flatNum }
   const [profileNavigation, setProfileNavigation] = useState(null); // { tileId, caseId, timestamp }
+  const [isCommunicationCenterOpen, setIsCommunicationCenterOpen] = useState(false);
+  const [communicationBuildingId, setCommunicationBuildingId] = useState('all');
 
   // Confirm modals
   const [deleteFlatNum, setDeleteFlatNum] = useState(null);
@@ -402,6 +405,7 @@ function MainLayout() {
     setIsBuildingSelectorOpen(false);
     setIsAddBuildingOpen(false);
     setIsTeamModalOpen(false);
+    setIsCommunicationCenterOpen(false);
     setIsDrawerOpen(false);
     setDeleteFlatNum(null);
     setDeleteTxData(null);
@@ -710,6 +714,10 @@ function MainLayout() {
             setCalendarBuildingId(isAdmin && (state.isPortfolioView || !state.currentBuildingId) ? 'all' : state.currentBuildingId);
             setIsCalendarOpen(true);
           }}
+          onOpenCommunicationCenter={() => {
+            setCommunicationBuildingId(state.isPortfolioView || !state.currentBuildingId ? 'all' : state.currentBuildingId);
+            setIsCommunicationCenterOpen(true);
+          }}
         />
       )}
 
@@ -964,6 +972,12 @@ function MainLayout() {
       <TeamManagementModal
         isOpen={Boolean(isAdmin && isTeamModalOpen)}
         onClose={() => setIsTeamModalOpen(false)}
+      />
+
+      <CommunicationCenterModal
+        isOpen={isCommunicationCenterOpen}
+        initialBuildingId={communicationBuildingId}
+        onClose={() => setIsCommunicationCenterOpen(false)}
       />
 
       {/* Confirm & Alert Dialogs (z-60) */}

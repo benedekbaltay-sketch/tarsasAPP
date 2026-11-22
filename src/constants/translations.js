@@ -876,12 +876,17 @@ export const translations = {
     smart_pay_verify_notice: "Jóváhagyás előtt mindig ellenőrizze a kedvezményezett nevét és az IBAN számlaszámot a banki alkalmazásban.",
     bank_api_not_configured: "A közvetlen banki API kapcsolat nincs konfigurálva ebben a környezetben.",
     bank_api_https_required: "Nem biztonságos (HTTP) banki API cím blokkolva éles környezetben.",
-    // Universal Notification Bell
+    // Universal Notification Bell & Communication Center
     notif_title: "Értesítések & E-mailek",
     notif_mark_all_read: "Mind olvasott",
     notif_empty: "Nincs új értesítésed vagy rendszerüzeneted.",
     notif_important_badge: "Fontos",
     notif_dismiss: "Elrejtés",
+    comm_center_title: "Kommunikációs & E-mail Központ",
+    open_communication_center: "Kommunikációs Központ megnyitása",
+    comm_tab_inbox: "Értesítések & Rendszerüzenetek",
+    comm_tab_rules: "Felszólítási Szabályok (Dunning)",
+    comm_tab_outbox: "Kiküldési Napló & Várólista",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Csapat & Jogosultságok",
     team_modal_subtitle: "Munkatársak e-mail csatolása, társasházak kiosztása és jogosultságok kezelése.",
@@ -1867,12 +1872,17 @@ export const translations = {
     smart_pay_verify_notice: "Always verify the beneficiary name and IBAN in your banking app before confirming the transfer.",
     bank_api_not_configured: "Direct Bank API gateway is not configured for this environment.",
     bank_api_https_required: "Insecure HTTP bank gateway URL blocked in production.",
-    // Universal Notification Bell
+    // Universal Notification Bell & Communication Center
     notif_title: "Notifications & Emails",
     notif_mark_all_read: "Mark all read",
     notif_empty: "You have no notifications or messages.",
     notif_important_badge: "Important",
     notif_dismiss: "Dismiss",
+    comm_center_title: "Communication & Email Center",
+    open_communication_center: "Open Communication Center",
+    comm_tab_inbox: "Notifications & System Alerts",
+    comm_tab_rules: "Dunning & Reminder Rules",
+    comm_tab_outbox: "Outbox & Delivery Logs",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Team & Access Permissions",
     team_modal_subtitle: "Attach colleagues by email, assign condominiums, and manage security permissions.",

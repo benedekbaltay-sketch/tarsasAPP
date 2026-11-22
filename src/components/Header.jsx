@@ -14,7 +14,8 @@ export function Header({
   onGoHome, 
   onGoPortfolio,
   onSelectBuilding,
-  onOpenCalendar
+  onOpenCalendar,
+  onOpenCommunicationCenter
 }) {
   const { state, t, toggleLanguage } = useApp();
   const { currentUser, currentLang, buildings, currentBuildingId, isPortfolioView, organizations } = state;
@@ -286,7 +287,7 @@ export function Header({
           )}
 
           {/* Universal Notification Bell (visible to all users, right next to Calendar) */}
-          <NotificationBell />
+          <NotificationBell onOpenCommunicationCenter={onOpenCommunicationCenter} />
 
           {/* Profile Switcher (for multi-flat residents; admins use the unified building/portfolio switcher above) */}
           {!isCurrentlyAdminMode && (

@@ -598,7 +598,52 @@ A portál tranzakciós és könyvelési listáiban (mind az Összes tétel / Lak
 
 ---
 
-## 22. Maintenance Checklist for Future Sessions
+## 24. Teljes Nézetes Kommunikációs & E-mail Központ és Képletezhető Felszólítási Szabálymotor (`CommunicationCenterModal`, `dunningRules.js`)
+
+A rendszer jobb felső sarkában található Értesítési / E-mail felület kibővült egy teljes nézetes irányítóközponttal és egy automatizálható felszólítási szabállyal rendelkező motorral (Dunning Rules Engine):
+
+1. **Teljes Képernyős Kommunikációs Központ (`CommunicationCenterModal.jsx`)**:
+   - A fejléc értesítési lenyílójában (`NotificationBell.jsx`) egy új Nagyítás (`Maximize2`) ikon és lábléc gomb érhető el, amellyel egy kattintással megnyitható a teljes képernyős felület.
+   - Jobb felső sarokban `X` és `Esc` billentyű támogatás az azonnali bezáráshoz és az előző nézetbe való visszatéréshez.
+   - Három fő munkaterület / fül:
+     1. **Értesítések & Rendszerüzenetek**: Rendszerfigyelmeztetések, banki változások és meghívók szűrése épületenként vagy globálisan.
+     2. **Felszólítási Szabályok (Dunning Engine)**: Automatikus emlékeztető és felszólító szabályok konfigurálása.
+     3. **Kiküldési Napló & Várólista**: Generált és szimulált levelek listája, állapota, időbélyege és levélelőnézete.
+   - Portfólió nézetből megnyitva minden kezelt házat egyben kezel, háznézetből megnyitva pedig az adott társasházra szűr, de a fejlécben található társasház-választóval bármikor váltható.
+
+2. **Képletezhető Felszólítási Szabálymotor (`src/utils/dunningRules.js`)**:
+   - **Egyenlegtípus szűrés**: Közös költség (`KK`), Felújítási alap (`FA`) vagy Összesített hátralék (`ALL`).
+   - **Feltétel- és küszöbérték képletek**:
+     - *Havi hátralék küszöb*: Az elmaradt havi előírások hányadosa (`debt / monthlyFee`), pl. >= 1 hó emlékeztető, >= 3 hó fizetési felszólítás, >= 6 hó jogi eljárás előtti figyelmeztetés.
+     - *Minimum Ft küszöb*: Megadott forintösszeg feletti hátralékok (pl. >= 10 000 Ft).
+     - *Kombinált logika*: `OR` (vagy a havi elmaradás, vagy a forintösszeg teljesül) vagy `AND` (mindkét feltételnek teljesülnie kell).
+   - **Időzítés és kiküldési védelem (Cooldown)**:
+     - Futási nap beállítása (pl. minden hónap 15-én).
+     - Ismétlési védelem (`cooldownDays`, pl. 25-30 nap), amely megakadályozza a duplikált kiküldést ugyanabban a számlázási ciklusban.
+   - **Dinamikus sablonkezelő & Merge tagek**:
+     - Változók beillesztése: `{{tulajdonos_neve}}`, `{{lakas_szam}}`, `{{hatralek_osszeg}}`, `{{hatralek_honapok}}`, `{{alapterulet}}`, `{{tarsashaz_neve}}`, `{{szamlaszam}}`, `{{kozlemeny}}`, `{{fizetesi_hatarido}}`, `{{kepviselo_neve}}`, `{{kepviselo_telefon}}`, `{{kepviselo_email}}`, `{{datum}}`.
+     - Változó beillesztő chipek a szerkesztőben a könnyű kattintásos sablonépítéshez.
+
+3. **Élő Előnézet és Száraz Teszt ("Száraz teszt")**:
+   - A közös képviselő éles kiküldés előtt a "Száraz teszt futtatása" gombbal azonnal leellenőrizheti a szabály működését a valós albetét-egyenlegek alapján.
+   - A teszt részletes listát ad: melyik albetét, mennyi hátralékkal felel meg a szabálynak, és mely albetétek kerültek kizárásra a korábbi kiküldési cooldown miatt.
+   - Bármelyik érintett lakásnál a "Levél előnézet" gombra kattintva azonnal megjelenik a behelyettesített, formázott hivatalos levélsablon.
+
+4. **Kiküldési Várólista & API Integrációs Előkészítés**:
+   - A száraz teszt eredményei vagy a manuálisan jóváhagyott tételek átkerülnek az `emailOutbox` várólistába.
+   - Készen áll a külső e-mail szolgáltatók (pl. SendGrid, Mailgun, Brevo, Firebase Extension) közvetlen API bekötésére.
+
+5. **Adatperzisztencia és Biztonság**:
+   - `src/context/emailActions.js`: Reducer és state műveletek (`saveEmailRule`, `deleteEmailRule`, `toggleEmailRule`, `queueOutboxItems`, `clearOutboxItems`).
+   - `src/context/syncEngine.js`: `emailRules` és `emailOutbox` integrálva a helyi perzisztenciába és a felhőszinkronba.
+   - Szerepkör alapú hozzáférés: Lakók nem férhetnek hozzá a felszólítási motorhoz, csak adminisztrátorok és kijelölt képviselők.
+
+6. **Automatizált Egységtesztek**:
+   - `tests/dunningRules.test.mjs` (`npm run test:dunning`): 6 determinisztikus teszt fedi le a sablonbehelyettesítést, a pozitív/nulla egyenlegek kizárását, a havi arányszámítást, a kombinált logikát, a cooldown védelmet és a többházas száraz tesztet.
+
+---
+
+## 25. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
 1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?

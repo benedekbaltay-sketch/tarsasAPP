@@ -1,0 +1,576 @@
+import React, { useState, useMemo } from 'react';
+import { useApp } from '../../context/AppContext';
+import { 
+  X, 
+  Save, 
+  Sparkles, 
+  Calculator, 
+  Calendar, 
+  Clock, 
+  FileText, 
+  CheckCircle2, 
+  AlertTriangle, 
+  Building2, 
+  Eye, 
+  Plus, 
+  Copy, 
+  Mail,
+  ChevronRight,
+  ShieldCheck
+} from 'lucide-react';
+import { MERGE_VARIABLES, evaluateFlatAgainstRule } from '../../utils/dunningRules.js';
+import { formatCurrency } from '../../utils/finances.js';
+
+export function EditEmailRuleModal({
+  isOpen,
+  rule, // null for new, or rule object to edit
+  defaultBuildingId = 'all',
+  onClose,
+  onSave
+}) {
+  const { state, t } = useApp();
+  const { buildings, currentLang, repProfile } = state;
+  const isEn = currentLang === 'en';
+
+  const [name, setName] = useState(rule?.name || '');
+  const [nameEn, setNameEn] = useState(rule?.nameEn || '');
+  const [buildingId, setBuildingId] = useState(rule?.buildingId || defaultBuildingId || 'all');
+  const [targetAccount, setTargetAccount] = useState(rule?.targetAccount || 'total');
+  const [conditionType, setConditionType] = useState(rule?.conditionType || 'months');
+  const [monthThreshold, setMonthThreshold] = useState(rule?.monthThreshold !== undefined ? rule.monthThreshold : 1.0);
+  const [minAmountHuf, setMinAmountHuf] = useState(rule?.minAmountHuf !== undefined ? rule.minAmountHuf : 10000);
+  const [operator, setOperator] = useState(rule?.operator || 'OR');
+  const [checkDayOfMonth, setCheckDayOfMonth] = useState(rule?.checkDayOfMonth || 15);
+  const [cooldownDays, setCooldownDays] = useState(rule?.cooldownDays !== undefined ? rule.cooldownDays : 25);
+  const [templateSubject, setTemplateSubject] = useState(rule?.templateSubject || '');
+  const [templateSubjectEn, setTemplateSubjectEn] = useState(rule?.templateSubjectEn || '');
+  const [templateBody, setTemplateBody] = useState(rule?.templateBody || '');
+  const [templateBodyEn, setTemplateBodyEn] = useState(rule?.templateBodyEn || '');
+  const [enabled, setEnabled] = useState(rule?.enabled !== undefined ? rule.enabled : true);
+
+  const [activeTab, setActiveTab] = useState('formula'); // 'formula' | 'template' | 'dryrun'
+  const [selectedPreviewFlat, setSelectedPreviewFlat] = useState(null);
+
+  // Form constructed rule object for real-time preview
+  const liveRule = useMemo(() => {
+    return {
+      id: rule?.id || 'rule-draft',
+      name: name.trim() || (isEn ? 'Unnamed Rule' : 'Névtelen szabály'),
+      nameEn: nameEn.trim() || name.trim() || 'Unnamed Rule',
+      buildingId,
+      targetAccount,
+      conditionType,
+      monthThreshold: Number(monthThreshold) || 1.0,
+      minAmountHuf: Number(minAmountHuf) || 0,
+      operator,
+      checkDayOfMonth: Number(checkDayOfMonth) || 15,
+      cooldownDays: Number(cooldownDays) || 25,
+      templateSubject,
+      templateSubjectEn,
+      templateBody,
+      templateBodyEn,
+      enabled
+    };
+  }, [rule, name, nameEn, buildingId, targetAccount, conditionType, monthThreshold, minAmountHuf, operator, checkDayOfMonth, cooldownDays, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, isEn]);
+
+  // Dry run matches for the live rule against existing data
+  const dryRunMatches = useMemo(() => {
+    if (!isOpen) return [];
+    const targetBuildings = (buildingId && buildingId !== 'all')
+      ? (buildings || []).filter(b => b.id === buildingId)
+      : (buildings || []);
+
+    const matches = [];
+    for (const b of targetBuildings) {
+      for (const f of (b.flats || [])) {
+        const match = evaluateFlatAgainstRule(liveRule, f, b, { isEn, repProfile });
+        if (match) {
+          matches.push(match);
+        }
+      }
+    }
+    return matches;
+  }, [isOpen, liveRule, buildingId, buildings, isEn, repProfile]);
+
+  const activePreviewMatch = useMemo(() => {
+    if (!dryRunMatches || dryRunMatches.length === 0) return null;
+    if (selectedPreviewFlat) {
+      const found = dryRunMatches.find(m => m.flatNum === selectedPreviewFlat.flatNum && m.buildingId === selectedPreviewFlat.buildingId);
+      if (found) return found;
+    }
+    return dryRunMatches[0];
+  }, [dryRunMatches, selectedPreviewFlat]);
+
+  if (!isOpen) return null;
+
+  const handleInsertTag = (tag) => {
+    setTemplateBody(prev => `${prev} {{${tag}}} `);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSave({
+      ...liveRule,
+      id: rule?.id || `rule-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
+      <div 
+        className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-scaleUp my-auto"
+        role="dialog"
+        aria-modal="true"
+      >
+        {/* Modal Header */}
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/80">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center flex-shrink-0 shadow-2xs">
+              <Calculator className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-gray-900 font-display">
+                {rule ? (isEn ? "Edit Automated Rule" : "Automatikus szabály szerkesztése") : (isEn ? "Create Automated Rule" : "Új automatikus szabály létrehozása")}
+              </h3>
+              <p className="text-xs text-gray-500">
+                {isEn ? "Formula-based condition, timing, and dynamic template variables" : "Képletezhető feltételrendszer, időzítés és dinamikus levélsablon"}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all cursor-pointer"
+            title={isEn ? "Close" : "Bezárás"}
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-1 px-5 pt-3 border-b border-gray-100 bg-white">
+          <button
+            type="button"
+            onClick={() => setActiveTab('formula')}
+            className={`px-4 py-2 border-b-2 font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'formula'
+                ? 'border-[#1E3A8A] text-[#1E3A8A]'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            <Calculator className="w-3.5 h-3.5" />
+            <span>{isEn ? "1. Conditions & Formula" : "1. Feltétel & Képlet"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('template')}
+            className={`px-4 py-2 border-b-2 font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'template'
+                ? 'border-[#1E3A8A] text-[#1E3A8A]'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>{isEn ? "2. Email Template" : "2. E-mail Sablon"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('dryrun')}
+            className={`px-4 py-2 border-b-2 font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'dryrun'
+                ? 'border-[#1E3A8A] text-[#1E3A8A]'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>{isEn ? "3. Dry Run & Live Preview" : "3. Élő Teszt & Előnézet"}</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${dryRunMatches.length > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'}`}>
+              {dryRunMatches.length}
+            </span>
+          </button>
+        </div>
+
+        {/* Form Body */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+          {activeTab === 'formula' && (
+            <div className="space-y-4 animate-fadeIn">
+              {/* Basic Rule Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    {isEn ? "Rule Name (Hungarian)" : "Szabály megnevezése (Magyarul)"} *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="pl. 1 havi barátságos egyenleg-emlékeztető"
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    {isEn ? "Rule Name (English)" : "Szabály megnevezése (Angolul)"}
+                  </label>
+                  <input
+                    type="text"
+                    value={nameEn}
+                    onChange={(e) => setNameEn(e.target.value)}
+                    placeholder="e.g. 1-Month Friendly Balance Reminder"
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                  />
+                </div>
+              </div>
+
+              {/* Scope & Target Account */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    {isEn ? "Target Condominium" : "Érintett társasház hatóköre"}
+                  </label>
+                  <select
+                    value={buildingId}
+                    onChange={(e) => setBuildingId(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A] font-medium"
+                  >
+                    <option value="all">{isEn ? "🌐 All Managed Condominiums" : "🌐 Minden kezelt társasház"}</option>
+                    {(buildings || []).map(b => (
+                      <option key={b.id} value={b.id}>
+                        🏢 {b.officialName || b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    {isEn ? "Target Account / Balance" : "Érintett számla / Tartozás típusa"}
+                  </label>
+                  <select
+                    value={targetAccount}
+                    onChange={(e) => setTargetAccount(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A] font-medium"
+                  >
+                    <option value="total">{isEn ? "Σ Total Arrears (Operating + Renovation + Custom)" : "Σ Összesített hátralék (KK + FA + Egyedi)"}</option>
+                    <option value="KK">{isEn ? "Operating / Common Cost Arrears (KK)" : "Közös Költség elmaradás (KK)"}</option>
+                    <option value="FA">{isEn ? "Renovation Fund Arrears (FA)" : "Felújítási Alap elmaradás (FA)"}</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Formula & Condition Selector */}
+              <div className="bg-blue-50/50 border border-blue-200/80 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#1E3A8A]">
+                  <Calculator className="w-4 h-4 text-[#1E3A8A]" />
+                  <span>{isEn ? "Trigger Formula & Arrears Thresholds" : "Feltételi képlet és küszöbértékek"}</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                      {isEn ? "Condition Calculation Mode" : "Feltétel számítási módja"}
+                    </label>
+                    <select
+                      value={conditionType}
+                      onChange={(e) => setConditionType(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-xl bg-white focus:outline-none font-semibold text-gray-800"
+                    >
+                      <option value="months">{isEn ? "Number of unpaid months" : "Elmaradt havi díjak száma"}</option>
+                      <option value="amount">{isEn ? "Minimum debt in HUF" : "Minimum hátralék összeg (Ft)"}</option>
+                      <option value="combined">{isEn ? "Combined (Months & Amount)" : "Kombinált (Hónapok és Forint)"}</option>
+                    </select>
+                  </div>
+
+                  {(conditionType === 'months' || conditionType === 'combined') && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                        {isEn ? "Min. Unpaid Months Threshold" : "Minimum elmaradt havi díj (hó)"}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0.5"
+                        value={monthThreshold}
+                        onChange={(e) => setMonthThreshold(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-xl bg-white focus:outline-none font-bold text-gray-900"
+                      />
+                    </div>
+                  )}
+
+                  {(conditionType === 'amount' || conditionType === 'combined') && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                        {isEn ? "Min. Debt Amount (HUF)" : "Minimum tartozás összege (Ft)"}
+                      </label>
+                      <input
+                        type="number"
+                        step="1000"
+                        min="1000"
+                        value={minAmountHuf}
+                        onChange={(e) => setMinAmountHuf(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-xl bg-white focus:outline-none font-bold text-gray-900"
+                      />
+                    </div>
+                  )}
+
+                  {conditionType === 'combined' && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                        {isEn ? "Logical Operator" : "Logikai művelet"}
+                      </label>
+                      <select
+                        value={operator}
+                        onChange={(e) => setOperator(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-xl bg-white focus:outline-none font-bold text-gray-900"
+                      >
+                        <option value="OR">{isEn ? "VAGY (OR) – Either matches" : "VAGY (Bármelyik feltétel teljesül)"}</option>
+                        <option value="AND">{isEn ? "ÉS (AND) – Both must match" : "ÉS (Mindkét feltételnek teljesülnie kell)"}</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-[11px] text-blue-900/80 bg-blue-100/50 p-2.5 rounded-xl flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-blue-700 flex-shrink-0" />
+                  <span>
+                    <strong>{isEn ? "Active Formula:" : "Érvényes szabály:"}</strong>{' '}
+                    {conditionType === 'months' && (isEn ? `Triggers when flat arrears reach at least ${monthThreshold} months of common fees.` : `Akkor küld értesítést, ha a lakás tartozása eléri a legalább ${monthThreshold} havi előírást.`)}
+                    {conditionType === 'amount' && (isEn ? `Triggers when flat arrears reach at least ${formatCurrency(minAmountHuf)}.` : `Akkor küld értesítést, ha a hátralék eléri a legalább ${formatCurrency(minAmountHuf)} összeget.`)}
+                    {conditionType === 'combined' && (isEn ? `Triggers when debt is >= ${monthThreshold} months ${operator} >= ${formatCurrency(minAmountHuf)}.` : `Akkor küld, ha a hátralék eléri a legalább ${monthThreshold} havi előírást ${operator === 'OR' ? 'VAGY' : 'ÉS'} a ${formatCurrency(minAmountHuf)} összeget.`)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Timing & Deduplication */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-200">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-gray-500" />
+                    <span>{isEn ? "Monthly Check Day" : "Havi ellenőrzés napja"}</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={checkDayOfMonth}
+                    onChange={(e) => setCheckDayOfMonth(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">
+                    {isEn ? "Day of month (e.g. 15th)" : "Minden hónap adott napján (pl. 15-én)"}
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-gray-500" />
+                    <span>{isEn ? "Cooldown / Re-send Guard" : "Duplikáció-védelem (nap)"}</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="90"
+                    value={cooldownDays}
+                    onChange={(e) => setCooldownDays(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">
+                    {isEn ? "Minimum days between notices" : "Két felszólítás közötti türelmi idő"}
+                  </span>
+                </div>
+
+                <div className="flex flex-col justify-center">
+                  <label className="block text-xs font-bold text-gray-700 mb-2">
+                    {isEn ? "Rule Status" : "Szabály státusza"}
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={(e) => setEnabled(e.target.checked)}
+                      className="w-4 h-4 text-[#1E3A8A] rounded border-gray-300 focus:ring-0"
+                    />
+                    <span className="text-xs font-bold text-gray-800">
+                      {enabled ? (isEn ? "🟢 Active & Enabled" : "🟢 Aktív (Bekapcsolva)") : (isEn ? "⚪ Paused (Disabled)" : "⚪ Szüneteltetve (Kikapcsolva)")}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'template' && (
+            <div className="space-y-4 animate-fadeIn">
+              {/* Dynamic Tag Injector Pills */}
+              <div className="bg-blue-50/60 p-3.5 rounded-2xl border border-blue-200/70">
+                <span className="text-[11px] font-bold text-blue-900 block mb-2">
+                  {isEn ? "Click any merge tag below to insert into letter body:" : "Kattints bármelyik változóra a levél szövegébe való beszúráshoz:"}
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {MERGE_VARIABLES.map(v => (
+                    <button
+                      key={v.key}
+                      type="button"
+                      onClick={() => handleInsertTag(v.key)}
+                      className="px-2 py-1 rounded-lg bg-white hover:bg-blue-100/70 text-[#1E3A8A] text-[10px] font-mono font-bold border border-blue-200 transition-all cursor-pointer shadow-2xs"
+                      title={isEn ? v.labelEn : v.labelHu}
+                    >
+                      +{`{{${v.key}}}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Subject Field */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  {isEn ? "Email Subject Line" : "E-mail tárgysor"} *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={templateSubject}
+                  onChange={(e) => setTemplateSubject(e.target.value)}
+                  placeholder="pl. Fizetési felszólítás: {{tarsashaz_neve}}, {{lakas_szam}}. lakás"
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A] font-semibold"
+                />
+              </div>
+
+              {/* Body Textarea */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  {isEn ? "Email Letter Body Template" : "E-mail levél törzsszövege (Sablon)"} *
+                </label>
+                <textarea
+                  required
+                  rows={10}
+                  value={templateBody}
+                  onChange={(e) => setTemplateBody(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs font-sans border border-gray-200 rounded-2xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A] leading-relaxed resize-y"
+                  placeholder="Írd ide a felszólító levél szövegét a dinamikus {{változókkal}}..."
+                />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'dryrun' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="flex items-center justify-between p-3.5 bg-gray-50 rounded-2xl border border-gray-200">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-gray-600" />
+                  <span className="text-xs font-bold text-gray-800">
+                    {isEn ? "Live Match Evaluation:" : "Jelenlegi adatok alapján érintett lakások:"}
+                  </span>
+                </div>
+                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                  dryRunMatches.length > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                }`}>
+                  {dryRunMatches.length} {isEn ? "matching units" : "érintett albetét"}
+                </span>
+              </div>
+
+              {dryRunMatches.length === 0 ? (
+                <div className="py-12 text-center text-gray-400 space-y-2 border border-dashed border-gray-200 rounded-2xl">
+                  <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500 opacity-80" />
+                  <p className="text-xs font-semibold text-gray-600">
+                    {isEn ? "No units currently match this formula threshold. All units are up to date or under threshold!" : "A jelenlegi adatok alapján egyetlen lakás sem lépi át ezt a küszöböt. Nincs teendő!"}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  {/* Matching Units List */}
+                  <div className="md:col-span-5 max-h-[360px] overflow-y-auto space-y-1.5 pr-1">
+                    {dryRunMatches.map((m) => {
+                      const isSelected = activePreviewMatch?.flatNum === m.flatNum && activePreviewMatch?.buildingId === m.buildingId;
+                      return (
+                        <div
+                          key={`${m.buildingId}-${m.flatNum}`}
+                          onClick={() => setSelectedPreviewFlat(m)}
+                          className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-blue-50 border-[#1E3A8A] text-[#1E3A8A] shadow-xs'
+                              : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="font-bold truncate">{m.ownerName}</div>
+                            <div className="text-[10px] text-gray-400 truncate">
+                              {m.buildingName} • {m.flatNum}. lakás
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="font-bold text-red-600 font-display">
+                              {formatCurrency(m.balance)}
+                            </div>
+                            <div className="text-[10px] text-amber-700 font-semibold">
+                              {m.arrearsMonths} {isEn ? "mo." : "hó"}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Rendered Live Letter Preview */}
+                  <div className="md:col-span-7 bg-white rounded-2xl border border-gray-200 p-4 shadow-2xs space-y-3">
+                    {activePreviewMatch ? (
+                      <>
+                        <div className="border-b border-gray-100 pb-2">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                            {isEn ? "Generated Subject Line" : "Generált tárgysor"}
+                          </span>
+                          <span className="text-xs font-bold text-gray-900 block mt-0.5">
+                            {activePreviewMatch.renderedSubject}
+                          </span>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">
+                            {isEn ? "Generated Letter Preview" : "Generált levéltartalom előnézete"}
+                          </span>
+                          <div className="bg-gray-50/70 p-3.5 rounded-xl border border-gray-200/70 text-xs font-mono whitespace-pre-wrap text-gray-800 max-h-[240px] overflow-y-auto leading-relaxed">
+                            {activePreviewMatch.renderedBody}
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-gray-500 pt-1 flex items-center justify-between">
+                          <span>{isEn ? "Recipient Email:" : "Címzett e-mail:"} <strong>{activePreviewMatch.ownerEmail || (isEn ? "No email recorded" : "Nincs megadva e-mail")}</strong></span>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Modal Footer */}
+          <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+            >
+              {isEn ? "Cancel" : "Mégse"}
+            </button>
+
+            <button
+              type="submit"
+              className="px-5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{isEn ? "Save Rule" : "Szabály mentése"}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

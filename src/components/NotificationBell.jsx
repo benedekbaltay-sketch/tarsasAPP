@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { Mail, ShieldAlert, Info, CheckCheck, X, Clock } from 'lucide-react';
+import { Mail, ShieldAlert, Info, CheckCheck, X, Clock, Maximize2 } from 'lucide-react';
 import { getNotificationsForUser } from '../utils/teamPermissions';
 
 function formatNotifTime(iso, isEn) {
@@ -26,7 +26,7 @@ function formatNotifTime(iso, isEn) {
   }
 }
 
-export function NotificationBell() {
+export function NotificationBell({ onOpenCommunicationCenter }) {
   const {
     state,
     t,
@@ -123,16 +123,33 @@ export function NotificationBell() {
               )}
             </div>
 
-            {unreadCount > 0 && (
-              <button
-                type="button"
-                onClick={markAllNotificationsRead}
-                className="flex items-center gap-1 text-[11px] font-semibold text-[#1E3A8A] hover:underline cursor-pointer flex-shrink-0"
-              >
-                <CheckCheck className="w-3.5 h-3.5" />
-                <span>{t.notif_mark_all_read || (isEn ? 'Mark all read' : 'Mind olvasott')}</span>
-              </button>
-            )}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={markAllNotificationsRead}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-[#1E3A8A] hover:underline cursor-pointer"
+                  title={t.notif_mark_all_read || (isEn ? 'Mark all read' : 'Mind olvasott')}
+                >
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{t.notif_mark_all_read || (isEn ? 'Mark all' : 'Mind olvasott')}</span>
+                </button>
+              )}
+              {onOpenCommunicationCenter && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onOpenCommunicationCenter();
+                  }}
+                  className="p-1 rounded-lg text-gray-500 hover:text-[#1E3A8A] hover:bg-blue-50 transition-colors cursor-pointer"
+                  title={t.open_communication_center || (isEn ? 'Open Full Communication Center' : 'Kommunikációs Központ megnyitása')}
+                  aria-label={t.open_communication_center || (isEn ? 'Open Full Communication Center' : 'Kommunikációs Központ megnyitása')}
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Notification List */}
@@ -258,6 +275,23 @@ export function NotificationBell() {
               })
             )}
           </div>
+
+          {/* Footer: Open Full Communication Center */}
+          {onOpenCommunicationCenter && (
+            <div className="p-2.5 bg-gray-50/95 border-t border-gray-100 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onOpenCommunicationCenter();
+                }}
+                className="w-full py-1.5 px-3 bg-white hover:bg-blue-50 hover:border-blue-200 border border-gray-200 rounded-xl text-xs font-bold text-[#1E3A8A] flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>{t.open_communication_center || (isEn ? 'Open Communication & Email Center' : 'Kommunikációs & E-mail Központ')}</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -15,6 +15,7 @@
     "test:explorer": "node --test tests/docExplorer.test.mjs",
     "test:team": "node --test tests/teamPermissions.test.mjs",
     "test:grouping": "node --test tests/dateGrouping.test.mjs",
+    "test:dunning": "node --test tests/dunningRules.test.mjs",
     "migrate:emulator": "node scripts/migrateRtdbToFirestore.mjs --target=emulator",
     "verify:emulator": "node scripts/verifyMigrationParity.mjs --target=emulator"
   },

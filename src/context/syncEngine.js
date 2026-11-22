@@ -7,6 +7,7 @@ import {
   DEFAULT_REP_PROFILE,
   DEFAULT_GLOBAL_SETTINGS
 } from '../constants/defaultData';
+import { DEFAULT_DUNNING_RULES } from '../utils/dunningRules';
 import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
 import { purgeSensitiveLocalStorage } from '../services/firestoreAdapter';
 import { recalculateFlatBalances } from '../utils/finances';
@@ -343,6 +344,18 @@ export function mergeStateWithCloud(local, cloud) {
     };
   });
 
+  // 8. Merge email dunning rules
+  merged.emailRules = mergeItemArray(
+    ensureArray(local.emailRules && local.emailRules.length > 0 ? local.emailRules : DEFAULT_DUNNING_RULES),
+    ensureArray(cloud.emailRules && cloud.emailRules.length > 0 ? cloud.emailRules : DEFAULT_DUNNING_RULES)
+  );
+
+  // 9. Merge email outbox / logs
+  merged.emailOutbox = mergeItemArray(
+    ensureArray(local.emailOutbox),
+    ensureArray(cloud.emailOutbox)
+  ).slice(0, 500);
+
   merged.buildings = stripSensitiveBuildingFields(merged.buildings || []);
   merged.users = (merged.users || []).map(stripSensitiveUserFields);
 
@@ -385,6 +398,8 @@ export function loadInitialState() {
     calendarEvents: JSON.parse(JSON.stringify(DEFAULT_CALENDAR_EVENTS || [])),
     organizations: [],
     notifications: [],
+    emailRules: JSON.parse(JSON.stringify(DEFAULT_DUNNING_RULES)),
+    emailOutbox: [],
     repProfile: JSON.parse(JSON.stringify(DEFAULT_REP_PROFILE)),
     globalSettings: JSON.parse(JSON.stringify(DEFAULT_GLOBAL_SETTINGS)),
     activeRoleMode: null,
@@ -434,6 +449,12 @@ export function loadInitialState() {
         }
         if (parsed.notifications) {
           defaultState.notifications = ensureArray(parsed.notifications);
+        }
+        if (parsed.emailRules && Array.isArray(parsed.emailRules) && parsed.emailRules.length > 0) {
+          defaultState.emailRules = parsed.emailRules;
+        }
+        if (parsed.emailOutbox && Array.isArray(parsed.emailOutbox)) {
+          defaultState.emailOutbox = parsed.emailOutbox;
         }
         defaultState.activeRoleMode = parsed.activeRoleMode || localStorage.getItem("tarsashaz_role_mode") || null;
         defaultState.isPortfolioView = parsed.isPortfolioView !== undefined ? parsed.isPortfolioView : (localStorage.getItem("tarsashaz_is_portfolio") === "true");
@@ -611,6 +632,8 @@ export function createCloudPayload(targetState) {
     calendarEvents: targetState.calendarEvents || [],
     organizations: targetState.organizations || [],
     notifications: (targetState.notifications || []).slice(0, 300),
+    emailRules: targetState.emailRules || DEFAULT_DUNNING_RULES,
+    emailOutbox: (targetState.emailOutbox || []).slice(0, 300),
     repProfile: targetState.repProfile || DEFAULT_REP_PROFILE,
     globalSettings: targetState.globalSettings || DEFAULT_GLOBAL_SETTINGS,
     vault: getPermanentVault(),
