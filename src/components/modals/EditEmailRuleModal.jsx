@@ -33,8 +33,7 @@ export function EditEmailRuleModal({
   const { buildings, currentLang, repProfile } = state;
   const isEn = currentLang === 'en';
 
-  const [name, setName] = useState(rule?.name || '');
-  const [nameEn, setNameEn] = useState(rule?.nameEn || '');
+  const [name, setName] = useState(rule?.name || rule?.nameEn || '');
   const [buildingId, setBuildingId] = useState(rule?.buildingId || defaultBuildingId || 'all');
   const [targetAccount, setTargetAccount] = useState(rule?.targetAccount || 'total');
   const [conditionType, setConditionType] = useState(rule?.conditionType || 'months');
@@ -58,7 +57,7 @@ export function EditEmailRuleModal({
     return {
       id: rule?.id || 'rule-draft',
       name: name.trim() || (isEn ? 'Unnamed Rule' : 'Névtelen szabály'),
-      nameEn: nameEn.trim() || name.trim() || 'Unnamed Rule',
+      nameEn: name.trim() || (isEn ? 'Unnamed Rule' : 'Névtelen szabály'),
       buildingId,
       targetAccount,
       conditionType,
@@ -73,7 +72,7 @@ export function EditEmailRuleModal({
       templateBodyEn,
       enabled
     };
-  }, [rule, name, nameEn, buildingId, targetAccount, conditionType, monthThreshold, minAmountHuf, operator, checkDayOfMonth, cooldownDays, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, isEn]);
+  }, [rule, name, buildingId, targetAccount, conditionType, monthThreshold, minAmountHuf, operator, checkDayOfMonth, cooldownDays, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, isEn]);
 
   // Real-time realistic sample preview for any picked or random flat
   const samplePreview = useMemo(() => {
@@ -192,33 +191,18 @@ export function EditEmailRuleModal({
           {activeTab === 'formula' && (
             <div className="space-y-4 animate-fadeIn">
               {/* Basic Rule Info */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    {isEn ? "Rule Name (Hungarian)" : "Szabály megnevezése (Magyarul)"} *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="pl. 1 havi barátságos egyenleg-emlékeztető"
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    {isEn ? "Rule Name (English)" : "Szabály megnevezése (Angolul)"}
-                  </label>
-                  <input
-                    type="text"
-                    value={nameEn}
-                    onChange={(e) => setNameEn(e.target.value)}
-                    placeholder="e.g. 1-Month Friendly Balance Reminder"
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  {isEn ? "Rule Name" : "Szabály megnevezése"} *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={isEn ? "e.g. 1-Month Friendly Balance Reminder" : "pl. 1 havi barátságos egyenleg-emlékeztető"}
+                  className="w-full px-3.5 py-2.5 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A] font-semibold text-gray-900"
+                />
               </div>
 
               {/* Scope & Target Account */}
