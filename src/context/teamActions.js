@@ -712,6 +712,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         name: updatedCentralContact?.name || s.repProfile?.name,
         phone: updatedCentralContact?.phone || s.repProfile?.phone,
         email: updatedCentralContact?.email || s.repProfile?.email,
+        address: updatedCentralContact?.address !== undefined ? updatedCentralContact.address : s.repProfile?.address,
         officeHours: updatedCentralContact?.officeHours || s.repProfile?.officeHours,
         showCentralContactToResidents: updatedShowCentral,
       };

@@ -23,6 +23,7 @@ import {
   Clock,
   Mail,
   Phone,
+  MapPin,
   AlertTriangle,
   Settings,
   Send,
@@ -39,7 +40,7 @@ import {
 } from '../../utils/teamPermissions';
 import { formatPhoneNumber } from '../../utils/phone';
 
-export function TeamManagementModal({ isOpen, onClose }) {
+export function TeamManagementModal({ isOpen, onClose, initialTab = 'members' }) {
   const {
     state,
     t,
@@ -108,12 +109,13 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const [centralName, setCentralName] = useState('');
   const [centralPhone, setCentralPhone] = useState('');
   const [centralEmail, setCentralEmail] = useState('');
+  const [centralAddress, setCentralAddress] = useState('');
   const [centralHours, setCentralHours] = useState('');
   const [showCentralContactToResidents, setShowCentralContactToResidents] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setActiveTab('members');
+      setActiveTab(initialTab || 'members');
       setEditingMemberId(null);
       setGeneratedInviteBanner(null);
       setHandoverFromMember(null);
@@ -124,10 +126,11 @@ export function TeamManagementModal({ isOpen, onClose }) {
       setCentralName(org?.centralContact?.name || repProfile?.companyName || repProfile?.name || '');
       setCentralPhone(org?.centralContact?.phone || repProfile?.phone || '');
       setCentralEmail(org?.centralContact?.email || repProfile?.email || currentUser?.email || '');
+      setCentralAddress(org?.centralContact?.address || repProfile?.address || '');
       setCentralHours(org?.centralContact?.officeHours || repProfile?.officeHours || '');
       setShowCentralContactToResidents(Boolean(org?.showCentralContactToResidents ?? repProfile?.showCentralContactToResidents ?? false));
     }
-  }, [isOpen, orgCtx.org?.id]);
+  }, [isOpen, orgCtx.org?.id, initialTab]);
 
   // Keyboard Escape listener: close sub-modals first, then main modal
   useEffect(() => {
@@ -308,6 +311,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
         name: centralName.trim(),
         phone: formatPhoneNumber(centralPhone),
         email: centralEmail.trim(),
+        address: centralAddress.trim(),
         officeHours: centralHours.trim(),
       },
       showCentralContactToResidents,
@@ -1298,6 +1302,22 @@ export function TeamManagementModal({ isOpen, onClose }) {
                     placeholder="iroda@ceg.hu"
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                   />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1">
+                    {t.team_central_address || (isEn ? 'Office / Headquarters Address' : 'Iroda / Székhely címe')}
+                  </label>
+                  <div className="relative">
+                    <MapPin className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={centralAddress}
+                      onChange={(e) => setCentralAddress(e.target.value)}
+                      placeholder={isEn ? 'e.g. 1011 Budapest, Fo utca 1.' : 'pl. 1011 Budapest, Fő utca 1.'}
+                      className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                    />
+                  </div>
                 </div>
 
                 <div>

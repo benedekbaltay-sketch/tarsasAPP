@@ -195,6 +195,7 @@ function MainLayout() {
   const [isBuildingSelectorOpen, setIsBuildingSelectorOpen] = useState(false);
   const [isAddBuildingOpen, setIsAddBuildingOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+  const [teamModalInitialTab, setTeamModalInitialTab] = useState('members');
   const [initialInviteUrlCtx] = useState(() =>
     extractInviteContextFromUrl(window.location.search, window.location.hash)
   );
@@ -869,6 +870,10 @@ function MainLayout() {
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         profileNavigation={profileNavigation}
+        onOpenTeamManagement={(tab = 'company') => {
+          setTeamModalInitialTab(tab);
+          setIsTeamModalOpen(true);
+        }}
         onOpenEditTx={(id, type, initialEditMode = false) => {
           if (isAdmin) setEditTxData({ id, type, initialEditMode });
         }}
@@ -971,6 +976,7 @@ function MainLayout() {
 
       <TeamManagementModal
         isOpen={Boolean(isAdmin && isTeamModalOpen)}
+        initialTab={teamModalInitialTab}
         onClose={() => setIsTeamModalOpen(false)}
       />
 

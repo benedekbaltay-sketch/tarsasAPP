@@ -311,8 +311,8 @@ export const translations = {
 
     // System Settings & Representative Profile
     settings_title: "Fiók / Rendszerbeállítások",
-    settings_subtitle: "Közös képviseleti vállalkozói profil és portfólió beállítások",
-    settings_tab_profile: "Vállalkozói profil",
+    settings_subtitle: "Személyes elérhetőségek, fiók- és alkalmazásbeállítások",
+    settings_tab_profile: "Személyes profil",
     settings_tab_security: "Fiók & Biztonság",
     settings_tab_preferences: "Alkalmazás-beállítások",
     settings_tab_integrations: "Rendszerintegrációk",
@@ -1000,6 +1000,15 @@ export const translations = {
     staff_profile_title: "Saját Házkezelői Elérhetőségek",
     staff_profile_desc: "Ezek a közvetlen elérhetőségeid jelennek meg a lakóknak azokon a társasházakon, ahol te vagy a kijelölt felelős házkezelő.",
     staff_profile_company_badge: "Központi Cég",
+    personal_profile_title: "Személyes Elérhetőségek & Profil",
+    personal_profile_desc_owner: "A saját közvetlen kapcsolattartási és belépési adataid. A képviseleti cég hivatalos adatait a Csapat & Jogosultságok menüpontban kezelheted.",
+    personal_profile_desc_staff: "Ezek a közvetlen elérhetőségeid jelennek meg a lakóknak azokon a társasházakon, ahol te vagy a kijelölt felelős házkezelő.",
+    personal_profile_company_link: "Cégadatok és Csapat kezelése →",
+    personal_profile_name_label: "Képviselő / Felhasználó neve",
+    personal_profile_direct_phone: "Közvetlen telefonszám",
+    personal_profile_direct_email: "Közvetlen e-mail cím",
+    personal_profile_office_hours: "Ügyfélfogadási / elérhetőségi idő",
+    team_central_address: "Iroda / Székhely címe",
   },
   en: {
     app_title: "Common Cost Tracker",
@@ -1313,8 +1322,8 @@ export const translations = {
 
     // System Settings & Representative Profile
     settings_title: "Account / System Settings",
-    settings_subtitle: "Property management business profile & portfolio settings",
-    settings_tab_profile: "Business Profile",
+    settings_subtitle: "Personal contact, account, and application preferences",
+    settings_tab_profile: "Personal Profile",
     settings_tab_security: "Account & Security",
     settings_tab_preferences: "App Preferences",
     settings_tab_integrations: "Integrations",
@@ -2002,5 +2011,14 @@ export const translations = {
     staff_profile_title: "My Building Manager Contact Profile",
     staff_profile_desc: "These direct contact details appear to residents on condominiums where you are the assigned building manager.",
     staff_profile_company_badge: "Central Company",
+    personal_profile_title: "Personal Contact & Profile",
+    personal_profile_desc_owner: "Your personal direct contact and login details. Official company representation details are managed under Team & Access Permissions.",
+    personal_profile_desc_staff: "These direct contact details appear to residents on condominiums where you are the assigned building manager.",
+    personal_profile_company_link: "Manage Company & Team →",
+    personal_profile_name_label: "Representative / User Name",
+    personal_profile_direct_phone: "Direct Phone Number",
+    personal_profile_direct_email: "Direct Email Address",
+    personal_profile_office_hours: "Office / Availability Hours",
+    team_central_address: "Office / Headquarters Address",
   }
 };
