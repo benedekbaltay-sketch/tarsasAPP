@@ -276,10 +276,9 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50/90 text-gray-500 uppercase font-semibold border-b border-gray-200 text-[10px] tracking-wider">
                 <tr>
-                  <th className="py-3 px-4">{t.portfolio_col_building || (isEn ? "Condominium / Address" : "Társasház / Cím")}</th>
+                  <th className="py-3 px-4">{t.portfolio_col_building || (isEn ? "Address / Official Name" : "Cím / Hivatalos név")}</th>
                   <th className="py-3 px-3">{t.portfolio_col_tax || (isEn ? "Tax ID" : "Adószám")}</th>
                   <th className="py-3 px-3 text-center">{t.portfolio_col_flats || (isEn ? "Flats" : "Lakások")}</th>
-                  <th className="py-3 px-4">{t.portfolio_col_reserves || (isEn ? "Reserves" : "Tartalékok")}</th>
                   <th className="py-3 px-4">{t.portfolio_col_arrears || (isEn ? "Arrears Status" : "Hátralék státusz")}</th>
                   <th className="py-3 px-4 text-right">{t.portfolio_col_actions || (isEn ? "Actions" : "Műveletek")}</th>
                 </tr>
@@ -288,9 +287,6 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                 {filteredBuildings.map(b => {
                   const flats = b.flats || [];
                   const flatCount = flats.length;
-                  const bCommon = getBuildingReserve({ ...b, buildingInitialReserveCommon: b.buildingInitialReserveCommon || 0 });
-                  const bRenov = getBuildingRenovationFund({ ...b, buildingInitialReserveRenovation: b.buildingInitialReserveRenovation || 0 });
-                  const totalReserves = bCommon + bRenov;
 
                   let buildingArrears = 0;
                   let flatsInArrearsCount = 0;
@@ -339,7 +335,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                           : (isHu ? "Kattintson a kiválasztáshoz (második kattintás megnyitja)" : "Click to select (second click opens)")
                       }
                     >
-                      {/* 1. Building Name & Address */}
+                      {/* 1. Address (Primary) & Official Name (Sub) */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold flex-shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
@@ -347,10 +343,10 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                           </div>
                           <div className="min-w-0">
                             <span className="font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors font-display block truncate">
-                              {b.name}
+                              {b.address || b.name || t.building_address}
                             </span>
                             <span className="text-[11px] text-gray-500 block truncate">
-                              {b.officialName && b.officialName !== b.name ? `${b.officialName} • ${b.address || t.building_address}` : (b.address || t.building_address)}
+                              {b.officialName || b.name}
                             </span>
                           </div>
                         </div>
@@ -374,17 +370,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                         </span>
                       </td>
 
-                      {/* 4. Reserves */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="font-bold text-emerald-600 font-display text-xs">
-                          {formatCurrency(totalReserves)}
-                        </div>
-                        <div className="text-[10px] text-gray-400 font-medium">
-                          KK: {formatCurrency(bCommon)} | FA: {formatCurrency(bRenov)}
-                        </div>
-                      </td>
-
-                      {/* 5. Arrears Status */}
+                      {/* 4. Arrears Status */}
                       <td className="py-3 px-4 whitespace-nowrap">
                         {buildingArrears > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
@@ -400,7 +386,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                         )}
                       </td>
 
-                      {/* 6. Actions */}
+                      {/* 5. Actions */}
                       <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end">
                           <button

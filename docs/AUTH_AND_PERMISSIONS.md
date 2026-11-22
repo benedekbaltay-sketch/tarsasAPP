@@ -145,7 +145,8 @@ On the Owner card, all four permissions are permanently active with green indica
 1. **Keyboard Escape Close**: All non-fullscreen modals and `useBackdropClose` listen for `Escape` to close cleanly. In nested flows (e.g. colleague deletion confirmation inside `TeamManagementModal`), `Escape` dismisses the innermost popup first.
 2. **Dedicated Confirmation Popups**: Removing a colleague opens a centered modal dialog (`fixed inset-0 z-[70]`) with explicit confirmation, preventing accidental deletion.
 3. **Portfolio View UX**:
-   - Table view omits bank columns to prioritize high-level portfolio KPIs.
+   - Table view omits bank and reserves columns to prioritize high-level portfolio KPIs and streamlined scanning.
+   - Primary column displays the Address prominently, with the Official Legal Name displayed directly below in subtle text.
    - Removed distracting row-end shortcuts (calendar/settings).
    - Single-click row selection; double-click or subtle "Megnyitás" button to enter.
    - Full mouse text selection and copying enabled across all cells (no `select-none`).
