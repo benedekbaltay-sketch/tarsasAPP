@@ -994,6 +994,12 @@ export const translations = {
     bld_contact_manager_email: "Közvetlen e-mail cím",
     bld_contact_manager_hours: "Fogadási / elérhetőségi idő (opcionális)",
     rep_manager_contact_title: "Felelős házkezelő elérhetősége",
+    team_show_central_to_residents_title: "Központi céges elérhetőség megjelenítése a lakók felületén",
+    team_show_central_to_residents_desc: "Ha be van kapcsolva, a lakók a felelős házkezelő közvetlen elérhetősége alatt másodlagosként látják a cég központi ügyfélszolgálati telefonszámát és e-mail címét is (eszkalációs és minőségbiztosítási pontként).",
+    tenant_central_escalation_title: "Központi Iroda / Ügyfélszolgálat (Eszkaláció):",
+    staff_profile_title: "Saját Házkezelői Elérhetőségek",
+    staff_profile_desc: "Ezek a közvetlen elérhetőségeid jelennek meg a lakóknak azokon a társasházakon, ahol te vagy a kijelölt felelős házkezelő.",
+    staff_profile_company_badge: "Központi Cég",
   },
   en: {
     app_title: "Common Cost Tracker",
@@ -1990,5 +1996,11 @@ export const translations = {
     bld_contact_manager_email: "Direct Email",
     bld_contact_manager_hours: "Office Hours (optional)",
     rep_manager_contact_title: "Responsible Property Manager",
+    team_show_central_to_residents_title: "Display Central Company Contact to Residents",
+    team_show_central_to_residents_desc: "When enabled, residents will see the company's central phone and email below their assigned building manager's direct contact as an escalation / customer care channel.",
+    tenant_central_escalation_title: "Central Management Office / Escalation:",
+    staff_profile_title: "My Building Manager Contact Profile",
+    staff_profile_desc: "These direct contact details appear to residents on condominiums where you are the assigned building manager.",
+    staff_profile_company_badge: "Central Company",
   }
 };

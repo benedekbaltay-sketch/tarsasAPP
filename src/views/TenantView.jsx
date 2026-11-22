@@ -136,98 +136,146 @@ export function TenantView({
     <div className="max-w-5xl mx-auto px-4 py-6 md:py-8 space-y-6">
       
       {/* 1. Common Representative Quick Contact Card (Placed at the very top) */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold flex-shrink-0 shadow-xs">
-            <Shield className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-0.5">
-              {isPersonalManagerContact
-                ? (t.rep_manager_contact_title || (isEn ? "Responsible Property Manager" : "Felelős házkezelő elérhetősége"))
-                : (t.rep_contact_title || (isEn ? "Representative Contact" : "Közös Képviselet elérhetősége"))}
-            </span>
-            <h4 className="text-base font-bold text-gray-900 leading-tight">
-              {repName}
-            </h4>
-            <div className="flex flex-wrap items-center gap-2 mt-0.5">
-              <span className="text-xs text-gray-500 font-medium">
-                {currentBuilding?.name || t.building_address}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 sm:p-6 space-y-4">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold flex-shrink-0 shadow-xs">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-0.5">
+                {isPersonalManagerContact
+                  ? (t.rep_manager_contact_title || (isEn ? "Responsible Property Manager" : "Felelős házkezelő elérhetősége"))
+                  : (t.rep_contact_title || (isEn ? "Representative Contact" : "Közös Képviselet elérhetősége"))}
               </span>
-              {repOfficeHours && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-semibold">
-                  <Clock className="w-3 h-3" />
-                  <span>{repOfficeHours}</span>
+              <h4 className="text-base font-bold text-gray-900 leading-tight">
+                {repName}
+              </h4>
+              <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                <span className="text-xs text-gray-500 font-medium">
+                  {currentBuilding?.name || t.building_address}
                 </span>
+                {repOfficeHours && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-semibold">
+                    <Clock className="w-3 h-3" />
+                    <span>{repOfficeHours}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs w-full md:w-auto">
+            {/* Phone pill */}
+            <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200/80 rounded-xl px-3.5 py-2 text-gray-800">
+              <Phone className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
+              <a 
+                href={`tel:${repPhone.replace(/\s+/g, '')}`}
+                className="font-semibold hover:text-[#1E3A8A] hover:underline"
+                title={isEn ? "Call representative" : "Hívás"}
+              >
+                {repPhone}
+              </a>
+              <button
+                onClick={() => copyToClipboard(repPhone, 'repPhone')}
+                className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700 transition-colors ml-1 cursor-pointer"
+                title={t.pay_copy}
+              >
+                {copiedKey === 'repPhone' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+
+            {/* Email pill */}
+            <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200/80 rounded-xl px-3.5 py-2 text-gray-800">
+              <Mail className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
+              <a 
+                href={`mailto:${repEmail}`}
+                className="font-semibold hover:text-[#1E3A8A] hover:underline truncate max-w-[200px]"
+                title={isEn ? "Send email" : "E-mail küldése"}
+              >
+                {repEmail}
+              </a>
+              <button
+                onClick={() => copyToClipboard(repEmail, 'repEmail')}
+                className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700 transition-colors ml-1 cursor-pointer"
+                title={t.pay_copy}
+              >
+                {copiedKey === 'repEmail' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+
+            {/* Quick Settings & Change Password buttons */}
+            {onOpenSettings && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="flex items-center gap-1.5 bg-gray-50 border border-gray-200/80 hover:bg-gray-100 rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-800 transition-colors cursor-pointer"
+                title={t.menu_account_settings || (isEn ? "Settings" : "Beállítások")}
+              >
+                <Settings className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                <span>{t.nav_settings || (isEn ? "Settings" : "Beállítások")}</span>
+              </button>
+            )}
+
+            {onOpenChangePassword && (
+              <button
+                type="button"
+                onClick={onOpenChangePassword}
+                className="flex items-center gap-1.5 bg-blue-50 border border-blue-200/80 hover:bg-blue-100 rounded-xl px-3.5 py-2 text-xs font-bold text-[#1E3A8A] transition-colors cursor-pointer"
+                title={t.change_password || (isEn ? "Change Password" : "Jelszó módosítása")}
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>{t.change_password || (isEn ? "Change Password" : "Jelszó módosítása")}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Optional Secondary Escalation Bar: Displayed when enabled by Owner */}
+        {resolvedContact?.showCentralEscalation && resolvedContact?.centralCompany && (resolvedContact.centralCompany.phone || resolvedContact.centralCompany.email) && (
+          <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2.5 text-xs text-gray-500">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
+              <span className="font-semibold text-gray-700">
+                {t.tenant_central_escalation_title || (isEn ? "Central Management Office / Escalation:" : "Központi Iroda / Ügyfélszolgálat (Eszkaláció):")}
+              </span>
+              <span className="font-bold text-gray-900">{resolvedContact.centralCompany.name}</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {resolvedContact.centralCompany.phone && (
+                <div className="flex items-center gap-1.5 text-gray-700">
+                  <Phone className="w-3 h-3 text-[#1E3A8A]" />
+                  <a
+                    href={`tel:${resolvedContact.centralCompany.phone.replace(/\s+/g, '')}`}
+                    className="font-semibold hover:text-[#1E3A8A] hover:underline"
+                    title={isEn ? "Call Central Office" : "Központi szám hívása"}
+                  >
+                    {resolvedContact.centralCompany.phone}
+                  </a>
+                </div>
+              )}
+              {resolvedContact.centralCompany.email && (
+                <div className="flex items-center gap-1.5 text-gray-700">
+                  <Mail className="w-3 h-3 text-[#1E3A8A]" />
+                  <a
+                    href={`mailto:${resolvedContact.centralCompany.email}`}
+                    className="font-semibold hover:text-[#1E3A8A] hover:underline truncate max-w-[220px]"
+                    title={isEn ? "Email Central Office" : "Központi e-mail küldése"}
+                  >
+                    {resolvedContact.centralCompany.email}
+                  </a>
+                </div>
+              )}
+              {resolvedContact.centralCompany.officeHours && (
+                <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                  <Clock className="w-3 h-3 text-gray-400" />
+                  <span>{resolvedContact.centralCompany.officeHours}</span>
+                </div>
               )}
             </div>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs w-full md:w-auto">
-          {/* Phone pill */}
-          <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200/80 rounded-xl px-3.5 py-2 text-gray-800">
-            <Phone className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
-            <a 
-              href={`tel:${repPhone.replace(/\s+/g, '')}`}
-              className="font-semibold hover:text-[#1E3A8A] hover:underline"
-              title={isEn ? "Call representative" : "Hívás"}
-            >
-              {repPhone}
-            </a>
-            <button
-              onClick={() => copyToClipboard(repPhone, 'repPhone')}
-              className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700 transition-colors ml-1 cursor-pointer"
-              title={t.pay_copy}
-            >
-              {copiedKey === 'repPhone' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-
-          {/* Email pill */}
-          <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200/80 rounded-xl px-3.5 py-2 text-gray-800">
-            <Mail className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
-            <a 
-              href={`mailto:${repEmail}`}
-              className="font-semibold hover:text-[#1E3A8A] hover:underline truncate max-w-[200px]"
-              title={isEn ? "Send email" : "E-mail küldése"}
-            >
-              {repEmail}
-            </a>
-            <button
-              onClick={() => copyToClipboard(repEmail, 'repEmail')}
-              className="p-1 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700 transition-colors ml-1 cursor-pointer"
-              title={t.pay_copy}
-            >
-              {copiedKey === 'repEmail' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-
-          {/* Quick Settings & Change Password buttons */}
-          {onOpenSettings && (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="flex items-center gap-1.5 bg-gray-50 border border-gray-200/80 hover:bg-gray-100 rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-800 transition-colors cursor-pointer"
-              title={t.menu_account_settings || (isEn ? "Settings" : "Beállítások")}
-            >
-              <Settings className="w-3.5 h-3.5 text-[#1E3A8A]" />
-              <span>{t.nav_settings || (isEn ? "Settings" : "Beállítások")}</span>
-            </button>
-          )}
-
-          {onOpenChangePassword && (
-            <button
-              type="button"
-              onClick={onOpenChangePassword}
-              className="flex items-center gap-1.5 bg-blue-50 border border-blue-200/80 hover:bg-blue-100 rounded-xl px-3.5 py-2 text-xs font-bold text-[#1E3A8A] transition-colors cursor-pointer"
-              title={t.change_password || (isEn ? "Change Password" : "Jelszó módosítása")}
-            >
-              <Key className="w-3.5 h-3.5" />
-              <span>{t.change_password || (isEn ? "Change Password" : "Jelszó módosítása")}</span>
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* 2. Flat Financial Status & Bank Transfer Sections (Dynamic per account) */}

@@ -346,8 +346,9 @@ test('6. Per-building resident contact switcher (company vs building manager per
   assert.equal(companyRes.isPersonalManager, false);
   assert.equal(companyRes.name, 'Alfa Kezelő Kft.');
   assert.equal(companyRes.phone, '+36 1 222 3333');
+  assert.equal(companyRes.showCentralEscalation, false);
 
-  // Personal manager mode (set by the building's actual manager)
+  // Personal manager mode (set by the building's actual manager) - without central escalation
   const managerRes = resolveBuildingResidentContact(BUILDINGS[1], {}, ORGANIZATIONS);
   assert.equal(managerRes.mode, 'manager');
   assert.equal(managerRes.isPersonalManager, true);
@@ -355,6 +356,18 @@ test('6. Per-building resident contact switcher (company vs building manager per
   assert.equal(managerRes.phone, '+36 30 987 6543');
   assert.equal(managerRes.email, 'anna@alfa.hu');
   assert.equal(managerRes.officeHours, 'H–Cs 9:00–16:00');
+  assert.equal(managerRes.showCentralEscalation, false);
+
+  // Personal manager mode WITH Owner escalation toggle enabled
+  const orgWithEscalation = [{ ...ORGANIZATIONS[0], showCentralContactToResidents: true }];
+  const managerWithEscalation = resolveBuildingResidentContact(BUILDINGS[1], {}, orgWithEscalation);
+  assert.equal(managerWithEscalation.mode, 'manager');
+  assert.equal(managerWithEscalation.isPersonalManager, true);
+  assert.equal(managerWithEscalation.showCentralEscalation, true);
+  assert.ok(managerWithEscalation.centralCompany);
+  assert.equal(managerWithEscalation.centralCompany.name, 'Alfa Kezelő Kft.');
+  assert.equal(managerWithEscalation.centralCompany.phone, '+36 1 222 3333');
+  assert.equal(managerWithEscalation.centralCompany.email, 'iroda@alfa.hu');
 });
 
 test('7. Universal notification filtering, sorting, unread count, and invite tokens', () => {

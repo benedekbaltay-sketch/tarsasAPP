@@ -644,7 +644,39 @@ A rendszer jobb felső sarkában található Értesítési / E-mail felület kib
 
 ---
 
-## 25. Maintenance Checklist for Future Sessions
+## 25. Céges Elérhetőség, Házkezelői Profil és Tulajdonosi Eszkalációs Csatorna (`resolveBuildingResidentContact`, `ProfileModal`, `TenantView`)
+
+A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhetőségeinek kezelése egységes, hierarchikus architektúrát kapott, megszüntetve az adatduplikációt és a hatásköri keveredést:
+
+1. **Egyetlen Hiteles Adatforrás (Single Source of Truth) a Központi Cégadatokhoz**:
+   - Kizárólag a fiók legfelsőbb adminisztrátora / cégtulajdonosa (Owner / Primary Admin) jogosult a cég hivatalos adatait (Cégnév, Székhely/Iroda cím, Központi telefonszám, Központi e-mail cím) beállítani és módosítani.
+   - A beállítások elérhetők a **Csapat & Jogosultságok** modal 3. fülén ("Céges elérhetőség"), valamint az Admin fiók **Rendszerbeállítások / Vállalkozói Profil** (`ProfileModal.jsx`) felületén; a módosítások a `updateOrganizationSettings` és az `updateRepProfile` szinkronjának köszönhetően mindkét helyen azonnal, egységesen érvényesülnek.
+
+2. **Kollégák / Alkalmazottak Saját Házkezelői Profilja (`isStaff`)**:
+   - A meghívott kollégák (`isStaff: true`) a fejléc profil menüjében nem látják és nem szerkeszthetik a központi céges adatokat (cégnév, székhely cím nem írható felül általuk).
+   - Ehelyett a profil ablak számukra kifejezetten a **"Saját Házkezelői Elérhetőségek"** (`staff_profile_title`) nézetet jeleníti meg:
+     - Fejlécben egy diszkrét jelvény jelzi a központi képviseleti cég nevét.
+     - Csak a közvetlen munkatársi kapcsolattartó mezők szerkeszthetők: *Házkezelő neve*, *Közvetlen telefonszáma*, *Közvetlen e-mail címe*, *Ügyfélfogadási ideje*.
+
+3. **Tulajdonosi Eszkalációs / Minőségbiztosítási Csatorna Kapcsolója (`showCentralContactToResidents`)**:
+   - A cégtulajdonos a cégprofilban egy jelölőnégyzettel tetszés szerint szabályozhatja, hogy a lakók láthassák-e a központi iroda elérhetőségeit másodlagos minőségbiztosítási / panaszkezelési pontként:
+     - *"Központi céges elérhetőség megjelenítése a lakók felületén (Eszkalációs csatorna)"*.
+   - A beállítás perzisztens az `organizations[orgIndex].centralContact.showCentralContactToResidents` és `repProfile.showCentralContactToResidents` mezőkben.
+
+4. **Lakói Felület Megjelenítés (`TenantView.jsx`)**:
+   - Ha egy épület kapcsolattartási módja **Házkezelő** (`contactDisplayMode === 'manager'`), az elsődleges kiemelt kártyán a kijelölt házkezelő közvetlen neve, telefonja, e-mailje és fogadóórája jelenik meg.
+   - Amennyiben az Owner bekapcsolta az eszkalációs csatornát (`showCentralEscalation: true`) és a központi cégadatok meg vannak adva, a házkezelő kártyája alatt megjelenik egy esztétikus, diszkrét másodlagos sáv:
+     - **"Központi Iroda / Ügyfélszolgálat (Eszkaláció)"** a központi telefonnal és e-mail címmel.
+   - Ha a kapcsoló ki van kapcsolva, a lakó kizárólag a felelős házkezelőt látja, megkímélve a cégközpontot a közvetlen lakói hívásoktól.
+   - Ha a kapcsolattartási mód **Központi Cég** (`contactDisplayMode === 'company'`), az elsődleges kártyán a központi cégadatok jelennek meg.
+
+5. **Kétnyelvűség és Tesztlefedettség**:
+   - Teljes szimmetrikus magyar és angol fordításkulcsok a `src/constants/translations.js` fájlban.
+   - Kibővített egységteszt a `tests/teamPermissions.test.mjs` (6. teszteset) fájlban ellenőrzi mind az alapértelmezett kikapcsolt, mind a bekapcsolt eszkalációs csatorna feloldását és elérhetőség-átadását.
+
+---
+
+## 26. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
 1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?

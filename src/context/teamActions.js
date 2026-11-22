@@ -680,7 +680,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
   };
 
   // Update Organization Name & Central Contact Info (Owner / SuperAdmin only)
-  const updateOrganizationSettings = ({ name, centralContact }) => {
+  const updateOrganizationSettings = ({ name, centralContact, showCentralContactToResidents }) => {
     const actor = state.currentUser;
     const actorCtx = resolveUserOrgContext(actor, state.organizations, state.buildings);
     if (!actor || (!actorCtx.isOwner && !actorCtx.isSuperAdmin)) {
@@ -690,15 +690,36 @@ export function createTeamActions({ state, persistState, showToast, t }) {
 
     persistState((s) => {
       const { orgs, orgIndex, org } = ensureOrgInDraftState(s, actor);
+      const updatedCentralContact = centralContact !== undefined
+        ? { ...(org.centralContact || {}), ...centralContact }
+        : org.centralContact;
+      const updatedShowCentral = showCentralContactToResidents !== undefined
+        ? Boolean(showCentralContactToResidents)
+        : (org.showCentralContactToResidents !== undefined ? org.showCentralContactToResidents : false);
+
       orgs[orgIndex] = {
         ...org,
         name: name !== undefined ? String(name).trim() || org.name : org.name,
-        centralContact: centralContact !== undefined ? { ...(org.centralContact || {}), ...centralContact } : org.centralContact,
+        centralContact: updatedCentralContact,
+        showCentralContactToResidents: updatedShowCentral,
         updatedAt: new Date().toISOString(),
       };
+
+      // Keep repProfile synchronized with organization central contact
+      const nextRepProfile = {
+        ...(s.repProfile || {}),
+        companyName: name !== undefined ? String(name).trim() || s.repProfile?.companyName : s.repProfile?.companyName,
+        name: updatedCentralContact?.name || s.repProfile?.name,
+        phone: updatedCentralContact?.phone || s.repProfile?.phone,
+        email: updatedCentralContact?.email || s.repProfile?.email,
+        officeHours: updatedCentralContact?.officeHours || s.repProfile?.officeHours,
+        showCentralContactToResidents: updatedShowCentral,
+      };
+
       return {
         ...s,
         organizations: orgs,
+        repProfile: nextRepProfile,
       };
     }, true);
 

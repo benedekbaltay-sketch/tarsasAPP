@@ -104,10 +104,32 @@ export function AppProvider({ children }) {
         console.warn('Firestore updateRepProfile error:', err.message);
       });
     }
-    persistState(s => ({
-      ...s,
-      repProfile: nextRepProfile
-    }), true);
+    persistState(s => {
+      let nextOrgs = s.organizations;
+      if (Array.isArray(s.organizations) && s.organizations.length > 0) {
+        nextOrgs = s.organizations.map(org => {
+          return {
+            ...org,
+            name: nextRepProfile.companyName ? nextRepProfile.companyName : org.name,
+            centralContact: {
+              ...(org.centralContact || {}),
+              name: nextRepProfile.name || org.centralContact?.name || '',
+              phone: nextRepProfile.phone || org.centralContact?.phone || '',
+              email: nextRepProfile.email || org.centralContact?.email || '',
+              officeHours: nextRepProfile.officeHours || org.centralContact?.officeHours || '',
+            },
+            showCentralContactToResidents: nextRepProfile.showCentralContactToResidents !== undefined
+              ? Boolean(nextRepProfile.showCentralContactToResidents)
+              : org.showCentralContactToResidents
+          };
+        });
+      }
+      return {
+        ...s,
+        repProfile: nextRepProfile,
+        organizations: nextOrgs
+      };
+    }, true);
     showToast(state.currentLang === 'en' ? "Business profile updated!" : "Vállalkozói profil sikeresen mentve!");
   };
 

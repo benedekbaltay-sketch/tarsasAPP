@@ -546,6 +546,13 @@ export function resolveBuildingResidentContact(building, repProfile = {}, organi
     roleLabelEn: '',
   };
 
+  const showCentralEscalation = Boolean(
+    building?.showCentralContactToResidents ?? 
+    org?.showCentralContactToResidents ?? 
+    repProfile?.showCentralContactToResidents ?? 
+    false
+  );
+
   if (building?.contactDisplayMode === 'manager' && building?.managerContact) {
     const mc = building.managerContact;
     const hasManagerData = Boolean(
@@ -563,11 +570,22 @@ export function resolveBuildingResidentContact(building, repProfile = {}, organi
         officeHours: String(mc.officeHours || '').trim(),
         roleLabelHu: String(mc.titleHu || 'Felelős házkezelő').trim(),
         roleLabelEn: String(mc.titleEn || 'Responsible Property Manager').trim(),
+        showCentralEscalation,
+        centralCompany: {
+          name: companyContact.name,
+          phone: companyContact.phone,
+          email: companyContact.email,
+          officeHours: companyContact.officeHours,
+        },
       };
     }
   }
 
-  return companyContact;
+  return {
+    ...companyContact,
+    showCentralEscalation: false,
+    centralCompany: null,
+  };
 }
 
 /**

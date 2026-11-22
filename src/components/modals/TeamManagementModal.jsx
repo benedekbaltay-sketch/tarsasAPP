@@ -109,6 +109,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const [centralPhone, setCentralPhone] = useState('');
   const [centralEmail, setCentralEmail] = useState('');
   const [centralHours, setCentralHours] = useState('');
+  const [showCentralContactToResidents, setShowCentralContactToResidents] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -124,6 +125,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
       setCentralPhone(org?.centralContact?.phone || repProfile?.phone || '');
       setCentralEmail(org?.centralContact?.email || repProfile?.email || currentUser?.email || '');
       setCentralHours(org?.centralContact?.officeHours || repProfile?.officeHours || '');
+      setShowCentralContactToResidents(Boolean(org?.showCentralContactToResidents ?? repProfile?.showCentralContactToResidents ?? false));
     }
   }, [isOpen, orgCtx.org?.id]);
 
@@ -308,6 +310,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
         email: centralEmail.trim(),
         officeHours: centralHours.trim(),
       },
+      showCentralContactToResidents,
     });
   };
 
@@ -1308,6 +1311,28 @@ export function TeamManagementModal({ isOpen, onClose }) {
                     placeholder={isEn ? 'Mon–Thu 9:00–16:00' : 'H–Cs 9:00–16:00'}
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                   />
+                </div>
+
+                {/* Owner Option: Show Company Central Contact to Residents as Escalation Channel */}
+                <div className="sm:col-span-2 pt-2 border-t border-gray-100">
+                  <label className="flex items-start gap-3 p-3 bg-gray-50/80 hover:bg-blue-50/50 border border-gray-200 rounded-xl cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={showCentralContactToResidents}
+                      onChange={(e) => setShowCentralContactToResidents(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-gray-900 block">
+                        {t.team_show_central_to_residents_title || (isEn ? "Display Central Company Contact to Residents" : "Központi céges elérhetőség megjelenítése a lakók felületén")}
+                      </span>
+                      <span className="text-[11px] text-gray-500 block leading-relaxed">
+                        {t.team_show_central_to_residents_desc || (isEn
+                          ? "When enabled, residents will see the company's central phone and email below their assigned building manager's direct contact as an escalation / customer care channel."
+                          : "Ha be van kapcsolva, a lakók a felelős házkezelő közvetlen elérhetősége alatt másodlagosként látják a cég központi ügyfélszolgálati telefonszámát és e-mail címét is (eszkalációs és minőségbiztosítási pontként).")}
+                      </span>
+                    </div>
+                  </label>
                 </div>
               </div>
 
