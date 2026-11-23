@@ -30,7 +30,11 @@ import {
   ShieldAlert,
   Settings,
   Building2,
-  UserCheck
+  UserCheck,
+  Eye,
+  EyeOff,
+  Send,
+  Loader2
 } from 'lucide-react';
 import { resolveUserOrgContext } from '../../utils/teamPermissions';
 import { formatPhoneNumber } from '../../utils/phone';
@@ -39,6 +43,7 @@ import { ProfileSwitcherButton } from '../ProfileSwitcherButton';
 import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
 import { playNotificationSound } from '../../utils/sound';
+import { sendTestSettingsEmail } from '../../services/emailService';
 
 export function ProfileModal({
   isOpen,
@@ -103,6 +108,16 @@ export function ProfileModal({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [debugLogging, setDebugLogging] = useState(false);
 
+  // 5. Transactional Email & Reply-To state
+  const [emailProvider, setEmailProvider] = useState('resend');
+  const [emailApiKey, setEmailApiKey] = useState('');
+  const [emailReplyTo, setEmailReplyTo] = useState('');
+  const [emailSenderName, setEmailSenderName] = useState('');
+  const [emailSenderEmail, setEmailSenderEmail] = useState('');
+  const [showEmailApiKey, setShowEmailApiKey] = useState(false);
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [testEmailStatus, setTestEmailStatus] = useState(null);
+
   // Tenant editable fields
   const flat = (flats || []).find(f => f.flatNum === currentUser?.flatNum);
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings[0];
@@ -153,6 +168,16 @@ export function ProfileModal({
 
       const dev = sett.devSettings || {};
       setDebugLogging(Boolean(dev.debugLogging));
+
+      // Load Transactional Email & Reply-To Settings
+      const emailSett = sett.emailSettings || prof.emailSettings || {};
+      setEmailProvider(emailSett.provider || 'resend');
+      setEmailApiKey(emailSett.apiKey || '');
+      setEmailReplyTo(emailSett.replyTo || '');
+      setEmailSenderName(emailSett.senderName || '');
+      setEmailSenderEmail(emailSett.senderEmail || '');
+      setShowEmailApiKey(false);
+      setTestEmailStatus(null);
 
       // Tenant details
       if (flat) {
@@ -282,6 +307,57 @@ export function ProfileModal({
     updateGlobalSettings({
       devSettings: { debugLogging: val }
     });
+  };
+
+  // 7. Save Email & Reply-To Settings
+  const handleSaveEmailSettings = (e) => {
+    if (e) e.preventDefault();
+    const payload = {
+      provider: emailProvider,
+      apiKey: emailApiKey.trim(),
+      replyTo: emailReplyTo.trim().toLowerCase(),
+      senderName: emailSenderName.trim(),
+      senderEmail: emailSenderEmail.trim().toLowerCase(),
+    };
+    updateGlobalSettings({ emailSettings: payload });
+    updateRepProfile({ emailSettings: payload });
+    showToast(t.settings_email_saved_toast || (isEn ? "Email and Reply-To settings saved successfully!" : "E-mail és válaszcím beállítások sikeresen elmentve!"));
+  };
+
+  // 8. Test Email Dispatch
+  const handleSendTestEmail = async () => {
+    if (!emailApiKey.trim()) {
+      showToast((t.settings_email_api_key_label || "Szolgáltató API kulcs") + ": " + (isEn ? "Please enter an API key first." : "Kérjük, először adj meg egy API kulcsot!"), "error");
+      return;
+    }
+    setIsSendingTestEmail(true);
+    setTestEmailStatus(null);
+    try {
+      const target = emailReplyTo.trim() || repEmail.trim() || currentUser?.email;
+      const res = await sendTestSettingsEmail({
+        targetEmail: target,
+        emailSettings: {
+          provider: emailProvider,
+          apiKey: emailApiKey.trim(),
+          replyTo: emailReplyTo.trim().toLowerCase(),
+          senderName: emailSenderName.trim(),
+          senderEmail: emailSenderEmail.trim().toLowerCase(),
+        },
+        isEn,
+      });
+      if (res.success) {
+        setTestEmailStatus({ success: true, message: `${t.settings_email_test_success_toast || "Teszt e-mail sikeresen elküldve:"} ${target}` });
+        showToast(`${t.settings_email_test_success_toast || "Teszt e-mail sikeresen elküldve ide:"} ${target}`);
+      } else {
+        setTestEmailStatus({ success: false, message: res.message || res.error || "Ismeretlen hiba" });
+        showToast(`${t.settings_email_test_failed_toast || "Teszt e-mail küldése sikertelen: "}${res.message || res.error}`, "error");
+      }
+    } catch (err) {
+      setTestEmailStatus({ success: false, message: err?.message || "Hálózati hiba" });
+      showToast(`${t.settings_email_test_failed_toast || "Teszt e-mail küldése sikertelen: "}${err?.message}`, "error");
+    } finally {
+      setIsSendingTestEmail(false);
+    }
   };
 
   // 8. Cache clear
@@ -1249,6 +1325,185 @@ export function ProfileModal({
                         />
                         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1E3A8A]"></div>
                       </label>
+                    </div>
+                  </div>
+
+                  {/* Transactional Email & Custom Reply-To Settings */}
+                  <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-xs space-y-5">
+                    <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-900">
+                          {t.settings_email_section_title || "Tranzakciós E-mail Küldés & Válaszcím (Reply-To)"}
+                        </h4>
+                        <p className="text-xs text-gray-500">
+                          {t.settings_email_section_desc || "Állíts be egy tetszőleges e-mail címet (pl. a személyes Gmail fiókodat), ahová a munkatársak és lakók válaszai közvetlenül megérkeznek, és kapcsold be a modern gombos e-mailek automatikus kiküldését."}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 text-xs">
+                      {/* Highlighted Reply-To input (KK's personal / office reply email) */}
+                      <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-1.5">
+                        <label className="block text-xs font-bold text-[#1E3A8A]">
+                          {t.settings_email_reply_to_label || "Saját válasz e-mail cím (Reply-To)"}
+                        </label>
+                        <input
+                          type="email"
+                          value={emailReplyTo}
+                          onChange={(e) => setEmailReplyTo(e.target.value)}
+                          placeholder={t.settings_email_reply_to_placeholder || "pl. sajat.iroda@gmail.com"}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-blue-300 bg-white text-gray-900 font-semibold focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] text-xs"
+                        />
+                        <span className="text-[11px] text-blue-900/80 block leading-relaxed">
+                          {t.settings_email_reply_to_hint || "Erre a címre érkeznek meg a válaszok, amikor a meghívott munkatárs vagy lakó a saját levelezőjében a 'Válasz' (Reply) gombra kattint."}
+                        </span>
+                      </div>
+
+                      {/* Provider selection: Resend vs Brevo */}
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                          {t.settings_email_provider_label || "Tranzakciós e-mail szolgáltató"}
+                        </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => setEmailProvider('resend')}
+                            className={`p-3 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                              emailProvider === 'resend'
+                                ? 'border-[#1E3A8A] bg-blue-50/70 text-[#1E3A8A] font-bold shadow-2xs'
+                                : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 font-medium'
+                            }`}
+                          >
+                            <div>
+                              <div className="text-xs font-bold">Resend</div>
+                              <div className="text-[10px] text-gray-500">{t.settings_email_provider_resend || "Havi 3 000 ingyenes levél"}</div>
+                            </div>
+                            {emailProvider === 'resend' && <Check className="w-4 h-4 text-[#1E3A8A]" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setEmailProvider('brevo')}
+                            className={`p-3 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                              emailProvider === 'brevo'
+                                ? 'border-[#1E3A8A] bg-blue-50/70 text-[#1E3A8A] font-bold shadow-2xs'
+                                : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 font-medium'
+                            }`}
+                          >
+                            <div>
+                              <div className="text-xs font-bold">Brevo</div>
+                              <div className="text-[10px] text-gray-500">{t.settings_email_provider_brevo || "Napi 300 ingyenes levél"}</div>
+                            </div>
+                            {emailProvider === 'brevo' && <Check className="w-4 h-4 text-[#1E3A8A]" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* API Key Input with visibility toggle */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-xs font-bold text-gray-700">
+                            {t.settings_email_api_key_label || "Szolgáltató API kulcs"}
+                          </label>
+                          <a
+                            href={emailProvider === 'resend' ? "https://resend.com/api-keys" : "https://app.brevo.com/settings/keys/api"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-[#1E3A8A] hover:underline flex items-center gap-1 font-semibold"
+                          >
+                            <span>{t.settings_email_api_key_help || "Ingyenes kulcs beszerzése:"} {emailProvider === 'resend' ? "resend.com" : "brevo.com"}</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type={showEmailApiKey ? "text" : "password"}
+                            value={emailApiKey}
+                            onChange={(e) => setEmailApiKey(e.target.value)}
+                            placeholder={emailProvider === 'resend' ? "re_123456789..." : "xkeysib-..."}
+                            className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white text-gray-900 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowEmailApiKey(!showEmailApiKey)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 cursor-pointer p-1"
+                            title={showEmailApiKey ? (isEn ? "Hide API key" : "Kulcs elrejtése") : (isEn ? "Show API key" : "Kulcs megjelenítése")}
+                          >
+                            {showEmailApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Optional Sender Name and Custom From Email */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                            {t.settings_email_sender_name_label || "Megjelenő feladó neve (opcionális)"}
+                          </label>
+                          <input
+                            type="text"
+                            value={emailSenderName}
+                            onChange={(e) => setEmailSenderName(e.target.value)}
+                            placeholder="TarsasApp"
+                            className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-800 text-xs focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                            {t.settings_email_sender_email_label || "Egyedi küldő e-mail cím (opcionális)"}
+                          </label>
+                          <input
+                            type="text"
+                            value={emailSenderEmail}
+                            onChange={(e) => setEmailSenderEmail(e.target.value)}
+                            placeholder={emailProvider === 'resend' ? "onboarding@resend.dev" : "noreply@tarsasapp.hu"}
+                            className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-800 text-xs focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Status Feedback banner if test was run */}
+                      {testEmailStatus && (
+                        <div
+                          className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                            testEmailStatus.success
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                              : 'bg-red-50 text-red-800 border border-red-200'
+                          }`}
+                        >
+                          {testEmailStatus.success ? <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />}
+                          <span className="truncate">{testEmailStatus.message}</span>
+                        </div>
+                      )}
+
+                      {/* Action buttons: Save & Send Test */}
+                      <div className="flex flex-wrap items-center gap-2.5 pt-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveEmailSettings}
+                          className="px-4 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>{t.settings_email_save_btn || "E-mail beállítások mentése"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isSendingTestEmail || !emailApiKey.trim()}
+                          onClick={handleSendTestEmail}
+                          className="px-4 py-2 rounded-xl bg-white hover:bg-gray-50 border border-gray-200 text-gray-800 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {isSendingTestEmail ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1E3A8A]" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                          )}
+                          <span>{t.settings_email_test_btn || "Teszt e-mail küldése"}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 

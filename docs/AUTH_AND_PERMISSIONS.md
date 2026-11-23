@@ -150,3 +150,22 @@ On the Owner card, all four permissions are permanently active with green indica
    - Removed distracting row-end shortcuts (calendar/settings).
    - Single-click row selection; double-click or subtle "Megnyitás" button to enter.
    - Full mouse text selection and copying enabled across all cells (no `select-none`).
+
+---
+
+## 7. Transactional Emails & Custom Reply-To Configuration
+
+### 7.1 Overview
+To prevent generic, raw-link Firebase emails and ensure high deliverability with direct recipient engagement, TarsasApp integrates a pluggable transactional email service (`src/services/emailService.js`) supporting **Resend** (recommended, 3,000 free emails/month) and **Brevo** (300 free emails/day).
+
+### 7.2 Custom Reply-To Email Architecture
+Property managers (KK) can set a custom **`Reply-To` (Válasz e-mail cím)** under **Fiók Rendszerbeállítások -> Alkalmazás-preferenciák**:
+- **Personal / Dedicated Inbox**: The KK can specify their personal Gmail, office email, or dedicated customer service email (e.g. `kk.iroda@gmail.com`).
+- **Direct Communication**: When colleagues or residents receive system invitations, notices, or dunning emails and hit **Reply** in their email client (Gmail, Outlook, Apple Mail), their replies are routed directly to this configured `Reply-To` address, bypassing automated system addresses.
+- **Fallback Hierarchy**: If `emailSettings.replyTo` is empty, the system falls back to the inviting admin's email (`actor.email`), then company central email.
+
+### 7.3 Invitation & Password Setup Emails
+1. **Branded HTML Design**: Omits ugly, 150-character raw URLs in favor of a sleek CTA action button (**[Jelszó beállítása és fiók aktiválása →]**) with clean text link fallbacks.
+2. **Context Transparency**: Explicitly includes the inviter's identity (`name` and `email`), the recipient's assigned login email, and the list of assigned condominiums.
+3. **Separate From Forgot Password**: Completely distinct copy and structure from forgot-password recovery emails.
+4. **Graceful Failover**: If no transactional email API key is configured or if the external service fails, the system safely provisions the Auth identity and dispatches the localized Firebase Auth email so onboarding never stalls.

@@ -16,6 +16,10 @@ import {
   provisionAndSendColleagueInviteEmail,
   sendColleaguePasswordSetupEmail,
 } from '../services/inviteAuthService';
+import {
+  resolveEffectiveEmailSettings,
+  sendColleagueInviteCustomEmail,
+} from '../services/emailService';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -285,33 +289,6 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://tarsashaz-cfe5d.web.app';
     const inviteUrl = `${origin}/?invite=${encodeURIComponent(token)}&email=${encodeURIComponent(cleanEmail)}`;
 
-    // Automatically provision the colleague's Firebase Auth identity (in isolated memory) & send localized password-setup email!
-    const emailResult = await provisionAndSendColleagueInviteEmail({
-      email: cleanEmail,
-      token,
-      lang: state.currentLang || 'hu',
-      origin,
-    });
-
-    // Record email delivery status on the pending invite metadata
-    const emailSentAt = emailResult.sent ? new Date().toISOString() : null;
-    persistState((s) => ({
-      ...s,
-      organizations: (s.organizations || []).map((org) => ({
-        ...org,
-        invites: (org.invites || []).map((inv) =>
-          inv && inv.id === inviteId
-            ? {
-                ...inv,
-                emailDeliveryStatus: emailResult.sent ? 'sent' : 'failed',
-                emailSentAt,
-                emailError: emailResult.sent ? null : (emailResult.errorCode || 'send-failed'),
-              }
-            : inv
-        ),
-      })),
-    }), true);
-
     const assignedBuildingNames = cleanScope === 'all'
       ? []
       : (state.buildings || []).filter((b) => cleanBuildingIds.includes(b.id)).map((b) => b.name).filter(Boolean);
@@ -321,6 +298,57 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       state.repProfile?.name ||
       actor.name ||
       (isEn() ? 'Property Management' : 'Közös Képviselet');
+
+    // 1. Try sending via configured transactional email provider (Resend / Brevo) with custom Reply-To header
+    const emailSettings = resolveEffectiveEmailSettings(state.globalSettings?.emailSettings || state.repProfile?.emailSettings);
+    let customEmailResult = null;
+    if (emailSettings.isConfigured) {
+      customEmailResult = await sendColleagueInviteCustomEmail({
+        recipientName: displayName,
+        recipientEmail: cleanEmail,
+        orgName: orgDisplayName,
+        inviterName: actor.name || actor.email,
+        inviterEmail: actor.email,
+        buildingNames: assignedBuildingNames,
+        buildingScope: cleanScope,
+        actionUrl: inviteUrl,
+        isEn: isEn(),
+        emailSettings,
+      });
+    }
+
+    const wasCustomSent = Boolean(customEmailResult?.success);
+
+    // 2. Automatically provision the colleague's Firebase Auth identity (in isolated memory) & send localized password-setup email if not already sent by custom provider
+    const emailResult = await provisionAndSendColleagueInviteEmail({
+      email: cleanEmail,
+      token,
+      lang: state.currentLang || 'hu',
+      origin,
+      skipFirebaseResetEmail: wasCustomSent,
+    });
+
+    const isEmailSent = wasCustomSent || Boolean(emailResult.sent);
+
+    // Record email delivery status on the pending invite metadata
+    const emailSentAt = isEmailSent ? new Date().toISOString() : null;
+    persistState((s) => ({
+      ...s,
+      organizations: (s.organizations || []).map((org) => ({
+        ...org,
+        invites: (org.invites || []).map((inv) =>
+          inv && inv.id === inviteId
+            ? {
+                ...inv,
+                emailDeliveryStatus: isEmailSent ? 'sent' : 'failed',
+                emailSentAt,
+                emailProvider: wasCustomSent ? emailSettings.provider : 'firebase',
+                emailError: isEmailSent ? null : (customEmailResult?.message || emailResult.errorCode || 'send-failed'),
+              }
+            : inv
+        ),
+      })),
+    }), true);
 
     const mailtoUrl = buildInviteMailtoUrl({
       recipientName: displayName,
@@ -334,13 +362,14 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       isEn: isEn(),
     });
 
-    if (emailResult.sent) {
+    if (isEmailSent) {
+      const replyToNote = wasCustomSent && emailSettings.replyTo ? ` (Válaszcím: ${emailSettings.replyTo})` : '';
       showToast(
         t.team_invite_email_sent_toast
-          ? t.team_invite_email_sent_toast.replace('{email}', cleanEmail)
+          ? `${t.team_invite_email_sent_toast.replace('{email}', cleanEmail)}${replyToNote}`
           : (isEn()
-              ? `Invitation & password setup email sent to ${cleanEmail}!`
-              : `Meghívó és jelszóbeállító e-mail elküldve ide: ${cleanEmail}!`)
+              ? `Invitation & password setup email sent to ${cleanEmail}!${replyToNote}`
+              : `Meghívó és jelszóbeállító e-mail elküldve ide: ${cleanEmail}!${replyToNote}`)
       );
     } else {
       showToast(
@@ -356,13 +385,13 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       member: memberRecord,
       invite: {
         ...inviteRecord,
-        emailDeliveryStatus: emailResult.sent ? 'sent' : 'failed',
+        emailDeliveryStatus: isEmailSent ? 'sent' : 'failed',
         emailSentAt,
       },
       inviteUrl,
       mailtoUrl,
-      emailSent: Boolean(emailResult.sent),
-      emailError: emailResult.errorCode || null,
+      emailSent: isEmailSent,
+      emailError: isEmailSent ? null : (customEmailResult?.message || emailResult.errorCode),
       accountCreated: Boolean(emailResult.accountCreated),
       alreadyExists: Boolean(emailResult.alreadyExists),
     };
@@ -376,7 +405,46 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       return { sent: false, errorCode: 'invalid-email' };
     }
 
+    const actor = state.currentUser || {};
+    const actorCtx = resolveUserOrgContext(actor, state.organizations, state.buildings);
+    const orgDisplayName =
+      actorCtx.org?.name ||
+      state.repProfile?.companyName ||
+      state.repProfile?.name ||
+      actor.name ||
+      (isEn() ? 'Property Management' : 'Közös Képviselet');
+
     const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://tarsashaz-cfe5d.web.app';
+    const inviteUrl = token
+      ? `${origin}/?invite=${encodeURIComponent(token)}&email=${encodeURIComponent(cleanEmail)}`
+      : `${origin}/?email=${encodeURIComponent(cleanEmail)}`;
+
+    const emailSettings = resolveEffectiveEmailSettings(state.globalSettings?.emailSettings || state.repProfile?.emailSettings);
+    let customRes = null;
+    if (emailSettings.isConfigured) {
+      customRes = await sendColleagueInviteCustomEmail({
+        recipientEmail: cleanEmail,
+        orgName: orgDisplayName,
+        inviterName: actor.name || actor.email,
+        inviterEmail: actor.email,
+        actionUrl: inviteUrl,
+        isEn: isEn(),
+        emailSettings,
+      });
+    }
+
+    if (customRes?.success) {
+      const replyToNote = emailSettings.replyTo ? ` (Válaszcím: ${emailSettings.replyTo})` : '';
+      showToast(
+        t.team_invite_email_sent_toast
+          ? `${t.team_invite_email_sent_toast.replace('{email}', cleanEmail)}${replyToNote}`
+          : (isEn()
+              ? `Password setup email sent to ${cleanEmail}!${replyToNote}`
+              : `Jelszóbeállító e-mail elküldve ide: ${cleanEmail}!${replyToNote}`)
+      );
+      return { sent: true, provider: emailSettings.provider };
+    }
+
     const result = await sendColleaguePasswordSetupEmail({
       email: cleanEmail,
       token,

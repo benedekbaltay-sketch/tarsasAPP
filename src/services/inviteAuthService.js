@@ -35,6 +35,7 @@ export async function provisionAndSendColleagueInviteEmail({
   token = '',
   lang = 'hu',
   origin = '',
+  skipFirebaseResetEmail = false,
 }) {
   const cleanEmail = normalizeEmail(email);
   if (!cleanEmail) {
@@ -89,13 +90,25 @@ export async function provisionAndSendColleagueInviteEmail({
     }
   }
 
-  // 2. Dispatch official localized password-setup email via Firebase Auth
   const continueUrl = buildInviteContinueUrl({
     origin: getSafeOrigin(origin),
     token,
     email: cleanEmail,
     passwordSet: true,
   });
+
+  if (skipFirebaseResetEmail) {
+    return {
+      sent: true,
+      accountCreated,
+      alreadyExists,
+      continueUrl,
+      provisionWarning,
+      emailSkipped: true,
+    };
+  }
+
+  // 2. Dispatch official localized password-setup email via Firebase Auth
 
   try {
     auth.languageCode = lang === 'en' ? 'en' : 'hu';
