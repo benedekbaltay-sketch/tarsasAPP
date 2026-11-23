@@ -32,6 +32,7 @@ import {
   CheckCircle2,
   UserCheck,
   Eye,
+  ChevronDown,
 } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 import {
@@ -113,6 +114,16 @@ export function TeamManagementModal({ isOpen, onClose }) {
   // Remove member confirmation state
   const [removeTargetMember, setRemoveTargetMember] = useState(null);
   const [resetPersonalContactsOnRemove, setResetPersonalContactsOnRemove] = useState(true);
+
+  // Per-member accordion expanded state in member cards
+  const [expandedMemberIds, setExpandedMemberIds] = useState({});
+
+  const toggleMemberExpanded = (memberId) => {
+    setExpandedMemberIds((prev) => ({
+      ...prev,
+      [memberId]: !prev[memberId],
+    }));
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -801,75 +812,170 @@ export function TeamManagementModal({ isOpen, onClose }) {
                             )}
                           </div>
 
-                          {/* Assigned Buildings & Explicit Permissions Indicator Bar */}
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-gray-100">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-[#1E3A8A] border border-blue-100 text-[10px] font-bold">
-                              <Building2 className="w-3 h-3" />
-                              {m.buildingScope === 'all'
-                                ? (isEn ? `All buildings (${orgBuildings.length})` : `Összes ház (${orgBuildings.length})`)
-                                : (isEn ? `${assignedBuildings.length} building(s)` : `${assignedBuildings.length} társasház`)}
-                            </span>
+                          {/* Assigned Buildings Bar with Expandable Permissions Details Accordion */}
+                          <div className="pt-1.5 border-t border-gray-100">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-[#1E3A8A] border border-blue-100 text-[10px] font-bold">
+                                <Building2 className="w-3 h-3" />
+                                {m.buildingScope === 'all'
+                                  ? (isEn ? `All buildings (${orgBuildings.length})` : `Összes ház (${orgBuildings.length})`)
+                                  : (isEn ? `${assignedBuildings.length} building(s)` : `${assignedBuildings.length} társasház`)}
+                              </span>
 
-                            {Object.values(m.buildingAssignments || {}).some((a) => a?.showManagerContact) && (
-                              <span
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold"
-                                title={isEn ? 'Colleague contact is visible to residents on assigned buildings' : 'A lakók az ő elérhetőségét látják a kijelölt házakon'}
+                              <button
+                                type="button"
+                                onClick={() => toggleMemberExpanded(m.id)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold text-gray-500 hover:text-[#1E3A8A] hover:bg-blue-50/60 border border-gray-200 transition-colors cursor-pointer"
+                                title={expandedMemberIds[m.id] ? (t.team_perm_hide_btn || (isEn ? 'Hide' : 'Elrejtés')) : (t.team_perm_details_btn || (isEn ? 'Details' : 'Részletek'))}
                               >
-                                <UserCheck className="w-3 h-3 text-purple-600" />
-                                {isEn ? 'Resident Contact' : 'Lakói kapcsolattartó'}
-                              </span>
-                            )}
+                                <span className="text-[10px] font-bold">
+                                  {expandedMemberIds[m.id]
+                                    ? (t.team_perm_hide_btn || (isEn ? 'Hide' : 'Elrejtés'))
+                                    : (t.team_perm_details_btn || (isEn ? 'Details' : 'Részletek'))}
+                                </span>
+                                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedMemberIds[m.id] ? 'rotate-180' : ''}`} />
+                              </button>
+                            </div>
 
-                            {/* 1. Create Buildings Permission */}
-                            {m.permissions?.canCreateBuildings ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                                <Check className="w-3 h-3 text-emerald-600" />
-                                {t.team_perm_create_short || (isEn ? '+ Create buildings' : '+ Új ház létrehozás')}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold">
-                                <Lock className="w-2.5 h-2.5" />
-                                {t.team_perm_create_locked_short || (isEn ? 'Create locked' : 'Új ház zárolt')}
-                              </span>
-                            )}
+                            {/* Expandable Permissions Breakdown */}
+                            {expandedMemberIds[m.id] && (
+                              <div className="mt-2.5 pt-2.5 border-t border-gray-100 space-y-2">
+                                {/* 1. Per-building breakdown */}
+                                <div className="space-y-1.5">
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                    {t.team_perm_by_building_title || (isEn ? 'Permissions breakdown per building:' : 'Házankénti jogosultságok részletezése:')}
+                                  </span>
+                                  {assignedBuildings.length === 0 ? (
+                                    <div className="text-[11px] text-gray-400 italic">
+                                      {isEn ? 'No condominiums assigned.' : 'Nincs társasház hozzárendelve.'}
+                                    </div>
+                                  ) : (
+                                    assignedBuildings.map((b) => {
+                                      const bAssignment = m.buildingAssignments?.[b.id] || {};
+                                      const isViewerOnThis = bAssignment.role === 'viewer';
+                                      const canEditBankOnThis = Boolean(bAssignment.canEditBankAccounts || m.permissions?.canEditBankAccounts);
+                                      const isContactOnThis = Boolean(bAssignment.showManagerContact);
 
-                            {/* 2. Manage Team Permission */}
-                            {m.permissions?.canManageTeam ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                                <Check className="w-3 h-3 text-emerald-600" />
-                                {t.team_perm_manage_short || (isEn ? 'Manage team' : 'Csapat kezelés')}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold">
-                                <Lock className="w-2.5 h-2.5" />
-                                {t.team_perm_manage_locked_short || (isEn ? 'Team locked' : 'Csapat zárolt')}
-                              </span>
-                            )}
+                                      return (
+                                        <div
+                                          key={b.id}
+                                          className={`p-2 rounded-lg border text-xs flex flex-wrap items-center justify-between gap-2 ${
+                                            isViewerOnThis
+                                              ? 'bg-amber-50/50 border-amber-200'
+                                              : 'bg-blue-50/40 border-blue-200'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <Building2 className={`w-3.5 h-3.5 shrink-0 ${isViewerOnThis ? 'text-amber-600' : 'text-[#1E3A8A]'}`} />
+                                            <span className="font-bold text-gray-900 truncate">{b.name}</span>
+                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                                              isViewerOnThis
+                                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                                : 'bg-blue-100 text-[#1E3A8A] border-blue-200'
+                                            }`}>
+                                              {isViewerOnThis ? <Eye className="w-2.5 h-2.5 text-amber-700" /> : <Shield className="w-2.5 h-2.5 text-[#1E3A8A]" />}
+                                              {isViewerOnThis
+                                                ? (t.team_viewer_badge || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő'))
+                                                : (t.team_manager_badge || (isEn ? 'Editor' : 'Szerkesztő'))}
+                                            </span>
+                                          </div>
 
-                            {/* 3. Edit Bank Accounts Permission */}
-                            {m.permissions?.canEditBankAccounts ? (
-                              <span
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold"
-                                title={isEn ? 'Can modify bank account numbers (alerted)' : 'Bankszámlaszámok módosítása (értesítéssel)'}
-                              >
-                                <Check className="w-3 h-3 text-emerald-600" />
-                                {t.team_perm_bank_short || (isEn ? 'Edit IBAN (alerts Owner)' : 'Bankszámla módosítás (értesítéssel)')}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold">
-                                <Lock className="w-2.5 h-2.5" />
-                                {t.team_perm_bank_locked_short || (isEn ? 'IBAN locked' : 'Bankszámla zárolt')}
-                              </span>
-                            )}
+                                          {/* Building-specific permission pills */}
+                                          <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                                            {isViewerOnThis ? (
+                                              <>
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200 font-semibold">
+                                                  <Lock className="w-2.5 h-2.5" />
+                                                  {t.team_perm_edit_disabled || (isEn ? 'Editing locked' : 'Szerkesztés zárolt')}
+                                                </span>
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200 font-semibold">
+                                                  <Lock className="w-2.5 h-2.5" />
+                                                  {t.team_perm_bank_locked_short || (isEn ? 'IBAN locked' : 'Bankszámla zárolt')}
+                                                </span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                                                  <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                  {t.team_perm_edit_allowed || (isEn ? 'Editing allowed' : 'Szerkesztés engedélyezve')}
+                                                </span>
+                                                {canEditBankOnThis ? (
+                                                  <span
+                                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold"
+                                                    title={isEn ? 'Can modify bank account numbers (alerted)' : 'Bankszámlaszámok módosítása (értesítéssel)'}
+                                                  >
+                                                    <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                    {t.team_perm_bank_short || (isEn ? 'Edit IBAN (alerts Owner)' : 'Bankszámla módosítás (értesítéssel)')}
+                                                  </span>
+                                                ) : (
+                                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200 font-semibold">
+                                                    <Lock className="w-2.5 h-2.5" />
+                                                    {t.team_perm_bank_locked_short || (isEn ? 'IBAN locked' : 'Bankszámla zárolt')}
+                                                  </span>
+                                                )}
+                                              </>
+                                            )}
 
-                            {/* 4. Delete Buildings (Always Locked for Staff) */}
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold"
-                              title={t.team_perm_delete_locked_desc || (isEn ? 'Colleagues can never delete condominium buildings.' : 'Munkatársak semmilyen körülmények között nem törölhetnek társasházat.')}
-                            >
-                              <Lock className="w-2.5 h-2.5" />
-                              {t.team_perm_delete_locked_short || (isEn ? 'Delete locked' : 'Ház törlés zárolt')}
-                            </span>
+                                            {isContactOnThis && (
+                                              <span
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 font-bold"
+                                                title={isEn ? 'Colleague contact is visible to residents on this building' : 'A lakók az ő elérhetőségét látják ennél a háznál'}
+                                              >
+                                                <UserCheck className="w-2.5 h-2.5 text-purple-600" />
+                                                {isEn ? 'Resident Contact' : 'Lakói kapcsolattartó'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+
+                                {/* 2. Company-level permissions */}
+                                <div className="pt-2 border-t border-gray-100 space-y-1">
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                    {t.team_perm_org_level_title || (isEn ? 'Company-level permissions:' : 'Cégszintű jogosultságok:')}
+                                  </span>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {/* 1. Create Buildings Permission */}
+                                    {m.permissions?.canCreateBuildings ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                        <Check className="w-3 h-3 text-emerald-600" />
+                                        {t.team_perm_create_short || (isEn ? '+ Create buildings' : '+ Új ház létrehozás')}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold">
+                                        <Lock className="w-2.5 h-2.5" />
+                                        {t.team_perm_create_locked_short || (isEn ? 'Create locked' : 'Új ház zárolt')}
+                                      </span>
+                                    )}
+
+                                    {/* 2. Manage Team Permission */}
+                                    {m.permissions?.canManageTeam ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                        <Check className="w-3 h-3 text-emerald-600" />
+                                        {t.team_perm_manage_short || (isEn ? 'Manage team' : 'Csapat kezelés')}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold">
+                                        <Lock className="w-2.5 h-2.5" />
+                                        {t.team_perm_manage_locked_short || (isEn ? 'Team locked' : 'Csapat zárolt')}
+                                      </span>
+                                    )}
+
+                                    {/* 3. Delete Buildings (Always Locked for Staff) */}
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold"
+                                      title={t.team_perm_delete_locked_desc || (isEn ? 'Colleagues can never delete condominium buildings.' : 'Munkatársak semmilyen körülmények között nem törölhetnek társasházat.')}
+                                    >
+                                      <Lock className="w-2.5 h-2.5" />
+                                      {t.team_perm_delete_locked_short || (isEn ? 'Delete locked' : 'Ház törlés zárolt')}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
