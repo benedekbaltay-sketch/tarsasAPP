@@ -87,6 +87,7 @@ export function ProfileModal({
   const [isEditingCompany, setIsEditingCompany] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [companyRepName, setCompanyRepName] = useState('');
+  const [companyTaxNumber, setCompanyTaxNumber] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
   const [companyPhone, setCompanyPhone] = useState('');
   const [companyEmail, setCompanyEmail] = useState('');
@@ -134,6 +135,7 @@ export function ProfileModal({
       const org = orgCtx.org;
       setCompanyName(org?.name || prof.companyName || '');
       setCompanyRepName(org?.centralContact?.name || prof.companyName || prof.name || '');
+      setCompanyTaxNumber(org?.taxNumber || prof.taxNumber || '');
       setCompanyAddress(org?.centralContact?.address || prof.address || '');
       setCompanyPhone(org?.centralContact?.phone ? formatPhoneNumber(org.centralContact.phone) : (prof.phone ? formatPhoneNumber(prof.phone) : ''));
       setCompanyEmail(org?.centralContact?.email || prof.email || '');
@@ -218,8 +220,9 @@ export function ProfileModal({
 
     updateOrganizationSettings({
       name: companyName.trim(),
+      taxNumber: companyTaxNumber.trim(),
       centralContact: {
-        name: companyRepName.trim(),
+        name: (companyRepName || companyName).trim(),
         phone: formattedPhone,
         email: companyEmail.trim(),
         address: companyAddress.trim(),
@@ -465,35 +468,22 @@ export function ProfileModal({
                     )}
                   </div>
 
-                  {/* Company / Organization Context Box */}
-                  {isStaff && orgCtx.org?.name ? (
-                    <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-100 flex items-center gap-2 text-xs text-gray-700">
-                      <Building2 className="w-4 h-4 text-[#1E3A8A] flex-shrink-0" />
-                      <span>
-                        {t.staff_profile_company_badge || (isEn ? "Central Company:" : "Központi cég:")}{' '}
-                        <strong>{orgCtx.org?.name}</strong>
-                      </span>
-                    </div>
-                  ) : !isStaff && (
-                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-2.5 min-w-0">
+                  {/* Company / Organization Context Box (Staff only) */}
+                  {isStaff && orgCtx.org?.name && (
+                    <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-100 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-700">
+                      <div className="flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-[#1E3A8A] flex-shrink-0" />
-                        <div className="min-w-0">
-                          <span className="text-[10px] uppercase font-bold text-gray-400 block">
-                            {t.team_company_title || (isEn ? "Company Organization" : "Cég / Képviselet")}
-                          </span>
-                          <span className="font-bold text-gray-900 truncate block">
-                            {orgCtx.org?.name || repProfile?.companyName || (isEn ? "No company configured yet" : "Nincs cég konfigurálva")}
-                          </span>
-                        </div>
+                        <span>
+                          {t.staff_profile_company_badge || (isEn ? "Central Company:" : "Központi cég:")}{' '}
+                          <strong>{orgCtx.org?.name}</strong>
+                        </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('company')}
-                        className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-blue-50 hover:border-blue-200 text-[#1E3A8A] font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                      >
-                        <span>{isEn ? "Edit Company Profile →" : "Cégprofil megtekintése / szerkesztése →"}</span>
-                      </button>
+                      {(orgCtx.org?.taxNumber || repProfile?.taxNumber) && (
+                        <span className="text-gray-500 font-medium">
+                          {isEn ? "Tax ID:" : "Adószám:"}{' '}
+                          <strong className="text-gray-800 font-mono">{orgCtx.org?.taxNumber || repProfile?.taxNumber}</strong>
+                        </span>
+                      )}
                     </div>
                   )}
 
@@ -722,24 +712,24 @@ export function ProfileModal({
                         )}
                       </div>
 
-                      {/* Displayed Representative Name */}
+                      {/* Company Tax ID */}
                       <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
                         <div className="min-w-0 mr-2">
                           <span className="text-gray-400 text-[10px] uppercase font-bold block mb-1">
-                            {t.team_central_contact_name || (isEn ? "Displayed Representative Name" : "Megjelenített képviseleti név")}
+                            {t.settings_company_tax_number || (isEn ? "Tax ID / Number" : "Adószám")}
                           </span>
-                          <span className="font-bold text-gray-900 text-sm truncate block">
-                            {companyRepName || "Nincs megadva"}
+                          <span className="font-bold text-gray-900 text-sm truncate block font-mono">
+                            {companyTaxNumber || "Nincs megadva"}
                           </span>
                         </div>
-                        {companyRepName && (
+                        {companyTaxNumber && (
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(companyRepName, 'company-rep')}
+                            onClick={() => copyToClipboard(companyTaxNumber, 'company-tax')}
                             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer flex-shrink-0"
                             title="Másolás"
                           >
-                            {copiedKey === 'company-rep' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                            {copiedKey === 'company-tax' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                           </button>
                         )}
                       </div>
@@ -863,13 +853,13 @@ export function ProfileModal({
 
                         <div>
                           <label className="block font-bold text-gray-700 mb-1">
-                            {t.team_central_contact_name || (isEn ? "Displayed Representative Name" : "Megjelenített képviseleti név")}
+                            {t.settings_company_tax_number || (isEn ? "Tax ID / Number" : "Adószám")}
                           </label>
                           <input
                             type="text"
-                            value={companyRepName}
-                            onChange={(e) => setCompanyRepName(e.target.value)}
-                            placeholder="Kovács János közös képviselő"
+                            value={companyTaxNumber}
+                            onChange={(e) => setCompanyTaxNumber(e.target.value)}
+                            placeholder="12345678-1-42"
                             className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                           />
                         </div>
@@ -935,6 +925,7 @@ export function ProfileModal({
                             const prof = repProfile || {};
                             setCompanyName(org?.name || prof.companyName || '');
                             setCompanyRepName(org?.centralContact?.name || prof.companyName || prof.name || '');
+      setCompanyTaxNumber(org?.taxNumber || prof.taxNumber || '');
                             setCompanyAddress(org?.centralContact?.address || prof.address || '');
                             setCompanyPhone(org?.centralContact?.phone ? formatPhoneNumber(org.centralContact.phone) : (prof.phone ? formatPhoneNumber(prof.phone) : ''));
                             setCompanyEmail(org?.centralContact?.email || prof.email || '');

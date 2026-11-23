@@ -67,6 +67,7 @@ Under Hungarian Tht. and GDPR/NAIH practice, pairing even an apartment number wi
 - **Building-Level Aggregates Only**: Read-only access to building-level finances (total KK/FA balances, utility/maintenance expenses) and an **aggregated building-level arrears total ONLY** (never a unit-by-unit arrears map).
 - **Blocked from Other Units**: Strictly blocked from viewing other flats' owner names, itemized monthly payments, or loan details in `MonthlyDetailModal.jsx` and `LoansModal.jsx`.
 - **Limited Self-Service Write**: May update only their own contact information (`phone`, `emergencyContact`, `notes`) and change their personal password after verifying their current password.
+- **No Calendar Access**: Regular residents/owners have zero access to the calendar, task schedules, and internal building events (Calendar button is restricted to Common Representatives and SuperAdmins).
 
 ### 1.4 System Administrator / SuperAdmin (`role === "superadmin"`)
 - Platform-level administration across managed condominiums.

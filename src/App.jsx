@@ -593,8 +593,10 @@ function MainLayout() {
         if (isAdmin) setIsTeamModalOpen(true);
         break;
       case 'calendar':
-        setCalendarBuildingId(isAdmin && (state.isPortfolioView || !state.currentBuildingId) ? 'all' : state.currentBuildingId);
-        setIsCalendarOpen(true);
+        if (isAdmin) {
+          setCalendarBuildingId(isAdmin && (state.isPortfolioView || !state.currentBuildingId) ? 'all' : state.currentBuildingId);
+          setIsCalendarOpen(true);
+        }
         break;
       case 'switch-to-tenant':
         switchToTenantMode();
@@ -791,12 +793,6 @@ function MainLayout() {
           <TenantView
             onOpenFullscreenTx={(type) => setFullscreenTxData({ type, flatNum: currentUser.flatNum, fromFlatDetail: false })}
             onOpenFinanceModal={() => setIsFinancialSituationOpen(true)}
-            onOpenCalendar={() => {
-              setCalendarBuildingId(state.currentBuildingId);
-              setIsCalendarOpen(true);
-            }}
-            onOpenChangePassword={() => setIsChangePassOpen(true)}
-            onOpenSettings={() => setIsProfileOpen(true)}
           />
         )}
       </main>
@@ -846,7 +842,7 @@ function MainLayout() {
       />
 
       <CalendarModal
-        isOpen={Boolean(currentUser && isCalendarOpen)}
+        isOpen={Boolean(currentUser && isAdmin && isCalendarOpen)}
         onClose={() => setIsCalendarOpen(false)}
         initialBuildingId={calendarBuildingId}
         isReadOnly={!isManagingCurrentBuilding}

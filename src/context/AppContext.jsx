@@ -113,6 +113,7 @@ export function AppProvider({ children }) {
           return {
             ...org,
             name: nextRepProfile.companyName ? nextRepProfile.companyName : org.name,
+            taxNumber: nextRepProfile.taxNumber !== undefined ? nextRepProfile.taxNumber : (org.taxNumber || ''),
             centralContact: {
               ...(org.centralContact || {}),
               name: nextRepProfile.name || org.centralContact?.name || '',

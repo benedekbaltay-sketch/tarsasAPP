@@ -856,7 +856,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
   };
 
   // Update Organization Name & Central Contact Info (Owner / SuperAdmin only)
-  const updateOrganizationSettings = ({ name, centralContact, showCentralContactToResidents }) => {
+  const updateOrganizationSettings = ({ name, taxNumber, centralContact, showCentralContactToResidents }) => {
     const actor = state.currentUser;
     const actorCtx = resolveUserOrgContext(actor, state.organizations, state.buildings);
     if (!actor || (!actorCtx.isOwner && !actorCtx.isSuperAdmin)) {
@@ -872,10 +872,14 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       const updatedShowCentral = showCentralContactToResidents !== undefined
         ? Boolean(showCentralContactToResidents)
         : (org.showCentralContactToResidents !== undefined ? org.showCentralContactToResidents : false);
+      const resolvedTaxNumber = taxNumber !== undefined
+        ? String(taxNumber).trim()
+        : (org.taxNumber || s.repProfile?.taxNumber || '');
 
       orgs[orgIndex] = {
         ...org,
         name: name !== undefined ? String(name).trim() || org.name : org.name,
+        taxNumber: resolvedTaxNumber,
         centralContact: updatedCentralContact,
         showCentralContactToResidents: updatedShowCentral,
         updatedAt: new Date().toISOString(),
@@ -885,6 +889,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       const nextRepProfile = {
         ...(s.repProfile || {}),
         companyName: name !== undefined ? String(name).trim() || s.repProfile?.companyName : s.repProfile?.companyName,
+        taxNumber: resolvedTaxNumber,
         name: updatedCentralContact?.name || s.repProfile?.name,
         phone: updatedCentralContact?.phone || s.repProfile?.phone,
         email: updatedCentralContact?.email || s.repProfile?.email,

@@ -300,8 +300,8 @@ export function Header({
             </div>
           )}
 
-          {/* Quick Calendar button in Header */}
-          {onOpenCalendar && (
+          {/* Quick Calendar button in Header (Admins only, hidden for residents) */}
+          {isCurrentlyAdminMode && onOpenCalendar && (
             <button
               type="button"
               onClick={onOpenCalendar}
