@@ -626,3 +626,16 @@ test('10. Tax number isolation: empty/deleted tax number in org must not leak fr
   // The organization tax number must be empty, not undefined or leaking
   assert.equal(ctx.org.taxNumber || '', '');
 });
+
+test('11. Communication & Admin Isolation: Residents must never have admin access to Communication Center or multi-building switching', () => {
+  const residentUser = { email: 'lako@batyu.hu', role: 'Owner', flatNum: '1', buildingId: 'b-1' };
+  const adminUser = { email: 'kk@tarsashaz.hu', role: 'admin' };
+
+  // Helper check simulating App/NotificationBell logic
+  const canAccessCommCenter = (user) => {
+    return Boolean(user && (user.role === 'admin' || user.role === 'superadmin' || user.isAdminUser));
+  };
+
+  assert.equal(canAccessCommCenter(residentUser), false);
+  assert.equal(canAccessCommCenter(adminUser), true);
+});

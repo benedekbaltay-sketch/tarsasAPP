@@ -36,7 +36,7 @@ import {
   renderEmailTemplate 
 } from '../../utils/dunningRules.js';
 import { formatCurrency } from '../../utils/finances.js';
-import { getNotificationsForUser } from '../../utils/teamPermissions.js';
+import { getNotificationsForUser, getAccessibleBuildings, resolveUserOrgContext } from '../../utils/teamPermissions.js';
 
 function formatTime(iso, isEn) {
   if (!iso) return '';
@@ -74,14 +74,32 @@ export function CommunicationCenterModal({
 
   const { currentUser, currentLang, buildings, notifications, emailRules, emailOutbox, repProfile } = state;
   const isEn = currentLang === 'en';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin' || state.roleMode === 'admin';
+
+  const orgCtx = useMemo(() => {
+    return resolveUserOrgContext(currentUser, state.organizations || [], buildings || []);
+  }, [currentUser, state.organizations, buildings]);
+
+  const accessibleBuildings = useMemo(() => {
+    return getAccessibleBuildings(currentUser, buildings || [], state.organizations || []);
+  }, [currentUser, buildings, state.organizations]);
+
+  const canAccessAll = orgCtx.isOwner || orgCtx.isSuperAdmin || (orgCtx.member && orgCtx.member.buildingScope === 'all');
 
   const [activeTab, setActiveTab] = useState('inbox'); // 'inbox' | 'rules' | 'outbox'
-  const [selectedBuildingId, setSelectedBuildingId] = useState(initialBuildingId || 'all');
+  const [selectedBuildingId, setSelectedBuildingId] = useState(() => {
+    if (initialBuildingId && initialBuildingId !== 'all') return initialBuildingId;
+    if (canAccessAll) return 'all';
+    return accessibleBuildings[0]?.id || 'all';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [editingRule, setEditingRule] = useState(null);
   const [isEditRuleOpen, setIsEditRuleOpen] = useState(false);
   const [viewingLetter, setViewingLetter] = useState(null);
   const [ruleDryRunTarget, setRuleDryRunTarget] = useState(null);
+
+  // Strict permission check: non-admins cannot open Communication & Dunning Center
+  if (!isOpen || !isAdmin) return null;
 
   // Fallback to default dunning rules if not initialized
   const activeRules = useMemo(() => {
@@ -208,8 +226,10 @@ export function CommunicationCenterModal({
                 onChange={(e) => setSelectedBuildingId(e.target.value)}
                 className="bg-transparent text-gray-800 text-xs font-bold focus:outline-none cursor-pointer pr-1"
               >
-                <option value="all">{isEn ? "🌐 All Buildings" : "🌐 Minden társasház"}</option>
-                {(buildings || []).map(b => (
+                {canAccessAll && (
+                  <option value="all">{isEn ? "🌐 All Buildings" : "🌐 Minden társasház"}</option>
+                )}
+                {accessibleBuildings.map(b => (
                   <option key={b.id} value={b.id}>
                     🏢 {b.officialName || b.name}
                   </option>

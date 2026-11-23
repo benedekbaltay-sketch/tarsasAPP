@@ -721,6 +721,7 @@ function MainLayout() {
             setIsCalendarOpen(true);
           }}
           onOpenCommunicationCenter={() => {
+            if (!isAdmin) return;
             setCommunicationBuildingId(state.isPortfolioView || !state.currentBuildingId ? 'all' : state.currentBuildingId);
             setIsCommunicationCenterOpen(true);
           }}
@@ -983,7 +984,7 @@ function MainLayout() {
       />
 
       <CommunicationCenterModal
-        isOpen={isCommunicationCenterOpen}
+        isOpen={Boolean(isAdmin && isCommunicationCenterOpen)}
         initialBuildingId={communicationBuildingId}
         onClose={() => setIsCommunicationCenterOpen(false)}
       />

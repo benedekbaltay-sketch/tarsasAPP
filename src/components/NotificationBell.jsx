@@ -36,6 +36,8 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
   } = useApp();
   const { currentUser, currentLang, notifications } = state;
   const isEn = currentLang === 'en';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin' || state.roleMode === 'admin';
+  const canOpenCommCenter = isAdmin && Boolean(onOpenCommunicationCenter);
 
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef(null);
@@ -135,7 +137,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                   <span className="hidden sm:inline">{t.notif_mark_all_read || (isEn ? 'Mark all' : 'Mind olvasott')}</span>
                 </button>
               )}
-              {onOpenCommunicationCenter && (
+              {canOpenCommCenter && (
                 <button
                   type="button"
                   onClick={() => {
@@ -276,8 +278,8 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
             )}
           </div>
 
-          {/* Footer: Open Full Communication Center */}
-          {onOpenCommunicationCenter && (
+          {/* Footer: Open Full Communication Center (Admin only) */}
+          {canOpenCommCenter && (
             <div className="p-2.5 bg-gray-50/95 border-t border-gray-100 text-center">
               <button
                 type="button"

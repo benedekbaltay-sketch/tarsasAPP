@@ -180,3 +180,14 @@ The `Reply-To` (Válasz e-mail cím) header is resolved completely automatically
 To enable managing multiple accounts simultaneously from a single workstation or browser without accounts interfering or overriding each other:
 1. **Tab-Scoped Firebase App Instances (`session_${tabId}`)**: When "Emlékezzen rám" (Remember Me) is unchecked, `getFirebaseInstance()` spins up a named, tab-scoped Firebase App and Auth instance configured strictly with `browserSessionPersistence`. This prevents Firebase Auth cross-tab broadcasting and avoids overwriting the primary remembered profile in `IndexedDB`.
 2. **Tab-Scoped Initial State Loading (`syncEngine.js`)**: `loadInitialState()` prioritizes `sessionStorage.getItem("tarsashaz_session_user")` over `localStorage`. If tab A signs into User A with Remember Me and tab B signs into User B without Remember Me, tab B operates exclusively in session memory without touching or deleting `localStorage.tarsashaz_remember_me` or `localStorage.tarsashaz_logged_in_user`.
+
+---
+
+## 9. Strict Administrative Feature Isolation from Resident Views
+
+To guarantee resident privacy, role clarity, and prevent non-admin users from accessing management tooling:
+1. **Calendar Access**: Strictly admin/KK only. Residents have no calendar button or modal access.
+2. **Communication & Email Center (`CommunicationCenterModal`)**:
+   - Strictly admin/KK only. Residents are blocked by guards in `App.jsx`, `Header.jsx`, `NotificationBell.jsx`, and `CommunicationCenterModal.jsx`.
+   - Residents only receive personal in-app notifications in the `NotificationBell` popover and never see dunning rules, email templates, SMTP settings, or the outgoing letter log (Outbox).
+   - Multi-building switching ("Minden társasház") is completely blocked and inaccessible in resident mode. Staff members only see buildings in their assigned scope.
