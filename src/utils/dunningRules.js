@@ -7,6 +7,7 @@
 import { formatCurrency, getCurrentFee } from './finances.js';
 
 export const MERGE_VARIABLES = [
+  { key: 'lakas_tulajdonosa', alt: 'flat_owner', labelHu: 'A lakás tulajdonosa', labelEn: 'Flat Owner' },
   { key: 'tulajdonos_neve', alt: 'owner_name', labelHu: 'Tulajdonos neve', labelEn: 'Owner Name' },
   { key: 'lakas_szam', alt: 'flat_num', labelHu: 'Lakásszám', labelEn: 'Flat Number' },
   { key: 'tarsashaz_neve', alt: 'building_name', labelHu: 'Társasház hivatalos neve', labelEn: 'Condominium Name' },
@@ -44,7 +45,7 @@ export const DEFAULT_DUNNING_RULES = [
     crossRuleCooldown: true, // Prevents duplicate notice if another dunning rule triggered within cooldown
     templateSubject: 'Egyenleg-értesítő: {{tarsashaz_neve}}, {{lakas_szam}}. lakás',
     templateSubjectEn: 'Balance Notice: {{tarsashaz_neve}}, Flat #{{lakas_szam}}',
-    templateBody: `Kedves {{tulajdonos_neve}}!
+    templateBody: `Kedves {{lakas_tulajdonosa}}!
 
 Ezúton szeretnénk tájékoztatni, hogy a társasház könyvelése szerint a(z) {{tarsashaz_neve}} alatti {{lakas_szam}}. lakás egyenlegén jelenleg {{hatralek_osszeg}} elmaradás mutatkozik (amely megközelítőleg {{hatralek_honapok}} havi előírásnak felel meg).
 
@@ -59,7 +60,7 @@ Amennyiben az összeget a közelmúltban már kiegyenlítette, kérjük, tekints
 {{kepviselo_neve}}
 {{ceg_neve}}
 E-mail: {{kepviselo_email}} | Tel: {{kepviselo_telefon}}`,
-    templateBodyEn: `Dear {{tulajdonos_neve}},
+    templateBodyEn: `Dear {{flat_owner}},
 
 According to the building ledger for {{tarsashaz_neve}}, Flat #{{lakas_szam}} currently has an outstanding balance of {{hatralek_osszeg}} (equivalent to approximately {{hatralek_honapok}} months of prescribed fees).
 
@@ -94,7 +95,7 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
     crossRuleCooldown: true,
     templateSubject: 'FIZETÉSI FELSZÓLÍTÁS: {{tarsashaz_neve}} – {{lakas_szam}}. lakás',
     templateSubjectEn: 'OVERDUE PAYMENT DEMAND: {{tarsashaz_neve}} – Flat #{{lakas_szam}}',
-    templateBody: `Tisztelt {{tulajdonos_neve}}!
+    templateBody: `Tisztelt {{lakas_tulajdonosa}}!
 
 Hivatalosan értesítjük, hogy a(z) {{tarsashaz_neve}} társasházban található {{lakas_szam}}. számú albetét tekintetében a mai napig nyilvántartott hátraléka:
 {{hatralek_osszeg}}
@@ -112,7 +113,7 @@ Tisztelettel:
 {{kepviselo_neve}}
 {{ceg_neve}}
 E-mail: {{kepviselo_email}} | Tel: {{kepviselo_telefon}}`,
-    templateBodyEn: `Dear {{tulajdonos_neve}},
+    templateBodyEn: `Dear {{flat_owner}},
 
 You are formally notified that Flat #{{lakas_szam}} in {{tarsashaz_neve}} has accumulated an unpaid overdue balance of:
 {{hatralek_osszeg}}
@@ -148,7 +149,7 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
     crossRuleCooldown: true,
     templateSubject: 'VÉGSŐ FIGYELMEZTETÉS JOGI ELJÁRÁS ELŐTT – {{tarsashaz_neve}}, {{lakas_szam}}. lakás',
     templateSubjectEn: 'FINAL WARNING BEFORE LEGAL PROCEEDINGS – {{tarsashaz_neve}}, Flat #{{lakas_szam}}',
-    templateBody: `Tisztelt {{tulajdonos_neve}}!
+    templateBody: `Tisztelt {{lakas_tulajdonosa}}!
 
 A(z) {{tarsashaz_neve}} közös képviselete ezúton küldi az UTOLSÓ FELSZÓLÍTÁST a(z) {{lakas_szam}}. lakás kapcsán felhalmozott {{hatralek_osszeg}} összegű tartozás azonnali rendezésére (elmaradás: {{hatralek_honapok}} hó).
 
@@ -163,7 +164,7 @@ Kérjük, azonnal vegye fel a kapcsolatot a képviselettel!
 {{kepviselo_neve}}
 {{ceg_neve}}
 E-mail: {{kepviselo_email}} | Telefon: {{kepviselo_telefon}}`,
-    templateBodyEn: `Dear {{tulajdonos_neve}},
+    templateBodyEn: `Dear {{flat_owner}},
 
 The property management of {{tarsashaz_neve}} issues this FINAL NOTICE regarding the outstanding debt of {{hatralek_osszeg}} on Flat #{{lakas_szam}} (delinquency: {{hatralek_honapok}} months).
 
@@ -195,6 +196,49 @@ export function extractBankAccountNumber(val) {
     if (typeof val.bankAccount === 'string') return val.bankAccount.trim();
   }
   return String(val || '').trim();
+}
+
+/**
+ * Safely resolves the true owner name of a flat across flat.ownerName, flat.owner, flat.name,
+ * and the flat.owners co-owners array.
+ */
+export function resolveFlatOwnerName(flat = {}, isEn = false) {
+  if (!flat) return '';
+  // 1. flat.ownerName is standard in TarsasApp
+  if (flat.ownerName && typeof flat.ownerName === 'string' && flat.ownerName.trim()) {
+    return flat.ownerName.trim();
+  }
+  // 2. flat.owner or flat.name
+  if (flat.owner && typeof flat.owner === 'string' && flat.owner.trim()) {
+    return flat.owner.trim();
+  }
+  if (flat.name && typeof flat.name === 'string' && flat.name.trim()) {
+    return flat.name.trim();
+  }
+  // 3. flat.owners array
+  if (Array.isArray(flat.owners) && flat.owners.length > 0) {
+    const names = flat.owners.map(o => (o?.name || '').trim()).filter(Boolean);
+    if (names.length > 0) {
+      return names.join(', ');
+    }
+  }
+  // 4. Clean fallback
+  return isEn ? `Owner of Flat ${flat.flatNum || ''}` : `${flat.flatNum || ''}. lakás tulajdonosa`;
+}
+
+/**
+ * Safely resolves the primary contact email for a flat.
+ */
+export function resolveFlatOwnerEmail(flat = {}) {
+  if (!flat) return '';
+  if (flat.email && typeof flat.email === 'string' && flat.email.trim()) {
+    return flat.email.trim();
+  }
+  if (Array.isArray(flat.owners) && flat.owners.length > 0) {
+    const firstWithEmail = flat.owners.find(o => o?.email && String(o.email).trim());
+    if (firstWithEmail) return String(firstWithEmail.email).trim();
+  }
+  return '';
 }
 
 /**
@@ -331,8 +375,12 @@ export function renderEmailTemplate(templateStr = '', context = {}) {
 
   // Direct alias replacements for camelCase UI tags
   const aliasMap = {
-    tulajdonosNeve: context.tulajdonos_neve || context.owner_name || '',
-    ownerName: context.tulajdonos_neve || context.owner_name || '',
+    lakasTulajdonosa: context.lakas_tulajdonosa || context.flat_owner || context.tulajdonos_neve || context.owner_name || '',
+    lakas_tulajdonosa: context.lakas_tulajdonosa || context.flat_owner || context.tulajdonos_neve || context.owner_name || '',
+    flatOwner: context.lakas_tulajdonosa || context.flat_owner || context.tulajdonos_neve || context.owner_name || '',
+    flat_owner: context.lakas_tulajdonosa || context.flat_owner || context.tulajdonos_neve || context.owner_name || '',
+    tulajdonosNeve: context.lakas_tulajdonosa || context.tulajdonos_neve || context.owner_name || '',
+    ownerName: context.lakas_tulajdonosa || context.tulajdonos_neve || context.owner_name || '',
     lakasszam: context.lakas_szam || context.flat_num || '',
     flatNum: context.lakas_szam || context.flat_num || '',
     tarsashazNeve: context.tarsashaz_neve || context.building_name || '',
@@ -487,9 +535,9 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
   }
   const bankAccount = extractBankAccountNumber(rawBank);
 
-  // Primary owner contact
-  const ownerName = flat.owner || flat.name || (options.isEn ? `Owner of Flat ${flat.flatNum}` : `${flat.flatNum}. lakás tulajdonosa`);
-  const ownerEmail = flat.email || (Array.isArray(flat.owners) ? flat.owners.find(o => o.email)?.email : '') || '';
+  // Primary owner contact (safely extracted from flat.ownerName, flat.owner, flat.owners)
+  const ownerName = resolveFlatOwnerName(flat, options.isEn);
+  const ownerEmail = resolveFlatOwnerEmail(flat);
   const buildingName = building.officialName || building.name || (options.isEn ? 'Condominium' : 'Társasház');
   const buildingAddress = building.address || '';
 
@@ -538,9 +586,14 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
   });
 
   const context = {
+    lakas_tulajdonosa: ownerName,
+    lakasTulajdonosa: ownerName,
+    flat_owner: ownerName,
+    flatOwner: ownerName,
     tulajdonos_neve: ownerName,
     owner_name: ownerName,
     tulajdonosNeve: ownerName,
+    ownerName: ownerName,
     lakas_szam: flat.flatNum,
     flat_num: flat.flatNum,
     lakasszam: flat.flatNum,
@@ -716,7 +769,7 @@ export function generateSampleFlatPreview(rule, buildings = [], options = {}) {
     buildingId: u.building.id,
     buildingName: u.building.officialName || u.building.name,
     flatNum: u.flat.flatNum,
-    ownerName: u.flat.owner || u.flat.name || (isEn ? `Flat ${u.flat.flatNum}` : `${u.flat.flatNum}. lakás`)
+    ownerName: resolveFlatOwnerName(u.flat, isEn)
   }));
 
   if (naturalMatch) {

@@ -2,7 +2,7 @@
  * Action creators for email communication, automated dunning rules, direct resident notices, and outbox logs.
  */
 
-import { DEFAULT_DUNNING_RULES, buildPaymentDetailsBlock } from '../utils/dunningRules.js';
+import { DEFAULT_DUNNING_RULES, buildPaymentDetailsBlock, resolveFlatOwnerName } from '../utils/dunningRules.js';
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
 import { sendResidentCustomNoticeEmail } from '../services/emailService.js';
 
@@ -235,9 +235,11 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         ? dueDate.toLocaleDateString('en-GB')
         : `${dueDate.getFullYear()}. ${String(dueDate.getMonth() + 1).padStart(2, '0')}. ${String(dueDate.getDate()).padStart(2, '0')}.`;
 
+      const resolvedOwner = r.name || resolveFlatOwnerName(rFlat, isEn());
+
       // Personalize body for tags
       const personalizedBody = body
-        .replace(/\{tulajdonosNeve\}|\{ownerName\}|\{\{\s*tulajdonos_neve\s*\}\}|\{\{\s*owner_name\s*\}\}/gi, r.name || '')
+        .replace(/\{lakasTulajdonosa\}|\{flatOwner\}|\{tulajdonosNeve\}|\{ownerName\}|\{\{\s*lakas_tulajdonosa\s*\}\}|\{\{\s*flat_owner\s*\}\}|\{\{\s*tulajdonos_neve\s*\}\}|\{\{\s*owner_name\s*\}\}/gi, resolvedOwner)
         .replace(/\{lakasszam\}|\{flatNum\}|\{\{\s*lakas_szam\s*\}\}|\{\{\s*flat_num\s*\}\}/gi, r.flatNum || '')
         .replace(/\{tarsashazNeve\}|\{buildingName\}|\{\{\s*tarsashaz_neve\s*\}\}|\{\{\s*building_name\s*\}\}/gi, bldName)
         .replace(/\{aktualisEgyenleg\}|\{egyenleg\}|\{balance\}|\{\{\s*hatralek_osszeg\s*\}\}|\{\{\s*arrears_amount\s*\}\}/gi, r.balanceFormatted || '')

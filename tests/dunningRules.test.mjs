@@ -6,7 +6,8 @@ import {
   runDunningDryRun, 
   generateSampleFlatPreview,
   DEFAULT_DUNNING_RULES,
-  MERGE_VARIABLES 
+  MERGE_VARIABLES,
+  resolveFlatOwnerName
 } from '../src/utils/dunningRules.js';
 
 test('1. Template variable substitution works for Hungarian and English tags', () => {
@@ -435,3 +436,45 @@ test('14. Representative personal name and company name are cleanly separated in
   const renderedAliases = renderEmailTemplate('Üdv, {kepviseloNeve} ({cegNeve})', match.context);
   assert.equal(renderedAliases, 'Üdv, Kovács Béla (Napfény Társasházkezelő Kft.)');
 });
+
+test('15. resolveFlatOwnerName resolves ownerName, flat.owners array and lakas_tulajdonosa tag', () => {
+  // Case A: flat.ownerName
+  const flatA = { flatNum: '10', ownerName: 'Nagy Anna', balance: -20000, monthlyFee: 10000 };
+  assert.equal(resolveFlatOwnerName(flatA), 'Nagy Anna');
+
+  // Case B: flat.owners array
+  const flatB = { flatNum: '11', owners: [{ name: 'Kiss Péter' }, { name: 'Kiss Éva' }], balance: -20000, monthlyFee: 10000 };
+  assert.equal(resolveFlatOwnerName(flatB), 'Kiss Péter, Kiss Éva');
+
+  // Case C: Fallback
+  const flatC = { flatNum: '12', balance: -20000, monthlyFee: 10000 };
+  assert.equal(resolveFlatOwnerName(flatC), '12. lakás tulajdonosa');
+  assert.equal(resolveFlatOwnerName(flatC, true), 'Owner of Flat 12');
+
+  // Evaluate against rule using lakas_tulajdonosa tag
+  const rule = {
+    id: 'r-owner-tag',
+    monthThreshold: 1.0,
+    templateSubject: 'Felszólítás: {{lakas_tulajdonosa}}',
+    templateBody: 'Kedves {{lakas_tulajdonosa}}! ({lakasTulajdonosa})'
+  };
+
+  const matchA = evaluateFlatAgainstRule(rule, flatA, { name: 'Minta Ház' });
+  assert.ok(matchA);
+  assert.equal(matchA.context.lakas_tulajdonosa, 'Nagy Anna');
+  assert.equal(matchA.context.lakasTulajdonosa, 'Nagy Anna');
+  assert.equal(matchA.renderedSubject, 'Felszólítás: Nagy Anna');
+  assert.equal(matchA.renderedBody, 'Kedves Nagy Anna! (Nagy Anna)');
+
+  // Backward compatibility with {{tulajdonos_neve}}
+  const legacyRule = {
+    id: 'r-legacy-tag',
+    monthThreshold: 1.0,
+    templateSubject: 'Subj',
+    templateBody: 'Kedves {{tulajdonos_neve}}! ({tulajdonosNeve})'
+  };
+  const matchB = evaluateFlatAgainstRule(legacyRule, flatB, { name: 'Minta Ház' });
+  assert.ok(matchB);
+  assert.equal(matchB.renderedBody, 'Kedves Kiss Péter, Kiss Éva! (Kiss Péter, Kiss Éva)');
+});
+

@@ -38,7 +38,8 @@ import { ImpersonationBanner } from '../ImpersonationBanner';
 import { EditEmailRuleModal } from './EditEmailRuleModal';
 import { 
   DEFAULT_DUNNING_RULES, 
-  runDunningDryRun 
+  runDunningDryRun,
+  resolveFlatOwnerName
 } from '../../utils/dunningRules.js';
 import { formatCurrency } from '../../utils/finances.js';
 import { 
@@ -169,7 +170,7 @@ export function CommunicationCenterModal({
 
       targetFlats.forEach(flat => {
         const pEmail = (flat.email || '').trim();
-        const pName = (flat.ownerName || `${flat.flatNum}. ${isEn ? "Flat" : "lakás"}`).trim();
+        const pName = resolveFlatOwnerName(flat, isEn);
         const debt = (Number(flat.balance) || 0) + (Number(flat.renovationBalance) || 0);
 
         recList.push({
@@ -1353,7 +1354,7 @@ export function CommunicationCenterModal({
                   </p>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     {[
-                      { tag: '{tulajdonosNeve}', label: isEn ? "Owner Name" : "Címzett neve", icon: "👤" },
+                      { tag: '{lakasTulajdonosa}', label: isEn ? "Flat Owner" : "A lakás tulajdonosa", icon: "👤" },
                       { tag: '{lakasszam}', label: isEn ? "Flat #" : "Lakásszám", icon: "🚪" },
                       { tag: '{tarsashazNeve}', label: isEn ? "Building Name" : "Társasház neve", icon: "🏢" },
                       { tag: '{egyenleg}', label: isEn ? "Current Balance" : "Aktuális egyenleg", icon: "💰" },
@@ -1401,8 +1402,8 @@ export function CommunicationCenterModal({
                     value={composeBody}
                     onChange={(e) => setComposeBody(e.target.value)}
                     placeholder={isEn 
-                      ? "Dear {tulajdonosNeve},\n\nPlease be informed that your current balance is {egyenleg}.\n\n{fizetesiAdatok}\nDue date: {fizetesiHatarido}" 
-                      : "Tisztelt {tulajdonosNeve}!\n\nEzúton tájékoztatjuk a {lakasszam}. lakás egyenlegéről: {egyenleg}.\n\n{fizetesiAdatok}\nFizetési határidő: {fizetesiHatarido}"}
+                      ? "Dear {lakasTulajdonosa},\n\nPlease be informed that your current balance is {egyenleg}.\n\n{fizetesiAdatok}\nDue date: {fizetesiHatarido}" 
+                      : "Tisztelt {lakasTulajdonosa}!\n\nEzúton tájékoztatjuk a {lakasszam}. lakás egyenlegéről: {egyenleg}.\n\n{fizetesiAdatok}\nFizetési határidő: {fizetesiHatarido}"}
                     className="w-full p-3.5 text-xs font-mono bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#1E3A8A] leading-relaxed resize-y"
                   />
                 </div>
@@ -1428,7 +1429,7 @@ export function CommunicationCenterModal({
                       </div>
                       <div className="text-xs font-mono text-gray-700 whitespace-pre-wrap bg-white p-3.5 rounded-xl border border-gray-200">
                         {(composeBody || '')
-                          .replace(/\{tulajdonosNeve\}|\{ownerName\}/g, resolvedRecipients[0]?.name || "Minta János")
+                          .replace(/\{lakasTulajdonosa\}|\{flatOwner\}|\{tulajdonosNeve\}|\{ownerName\}|\{\{\s*lakas_tulajdonosa\s*\}\}|\{\{\s*flat_owner\s*\}\}|\{\{\s*tulajdonos_neve\s*\}\}|\{\{\s*owner_name\s*\}\}/gi, resolvedRecipients[0]?.name || "Minta János")
                           .replace(/\{lakasszam\}|\{flatNum\}/g, resolvedRecipients[0]?.flatNum || "12")
                           .replace(/\{tarsashazNeve\}|\{buildingName\}/g, resolvedRecipients[0]?.buildingName || composeTargetBuildings[0]?.name || "Minta Társasház")
                           .replace(/\{egyenleg\}|\{balance\}/g, formatCurrency(resolvedRecipients[0]?.balance || -25000))
