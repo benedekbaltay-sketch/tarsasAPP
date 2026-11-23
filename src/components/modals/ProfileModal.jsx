@@ -114,7 +114,7 @@ export function ProfileModal({
   const myFlats = getUserFlats ? getUserFlats(currentUser, buildings) : [];
   const profileLabel = isAdmin 
     ? (t.settings_title || "Fiók / Rendszerbeállítások") 
-    : (myFlats.length > 1 ? (t.menu_my_flats || "Lakásaim") : (t.menu_my_flat || "Lakásom"));
+    : (myFlats.length > 1 ? (t.menu_my_flats || "Profilom / Lakásaim") : (t.menu_my_flat || "Profilom / Lakásom"));
   const ProfileIcon = isAdmin ? Settings : Home;
 
   useEffect(() => {

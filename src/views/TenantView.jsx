@@ -22,8 +22,6 @@ import {
   Smartphone,
   ExternalLink,
   CheckCircle2,
-  Settings,
-  Key,
   Building2,
   Clock
 } from 'lucide-react';
@@ -203,31 +201,6 @@ export function TenantView({
                 {copiedKey === 'repEmail' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>
-
-            {/* Quick Settings & Change Password buttons */}
-            {onOpenSettings && (
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                className="flex items-center gap-1.5 bg-gray-50 border border-gray-200/80 hover:bg-gray-100 rounded-xl px-3.5 py-2 text-xs font-semibold text-gray-800 transition-colors cursor-pointer"
-                title={t.menu_account_settings || (isEn ? "Settings" : "Beállítások")}
-              >
-                <Settings className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                <span>{t.nav_settings || (isEn ? "Settings" : "Beállítások")}</span>
-              </button>
-            )}
-
-            {onOpenChangePassword && (
-              <button
-                type="button"
-                onClick={onOpenChangePassword}
-                className="flex items-center gap-1.5 bg-blue-50 border border-blue-200/80 hover:bg-blue-100 rounded-xl px-3.5 py-2 text-xs font-bold text-[#1E3A8A] transition-colors cursor-pointer"
-                title={t.change_password || (isEn ? "Change Password" : "Jelszó módosítása")}
-              >
-                <Key className="w-3.5 h-3.5" />
-                <span>{t.change_password || (isEn ? "Change Password" : "Jelszó módosítása")}</span>
-              </button>
-            )}
           </div>
         </div>
 

@@ -37,7 +37,7 @@ export function IosSideDrawer({
   const myFlats = getUserFlats ? getUserFlats(currentUser, buildings) : [];
   const profileLabel = isAdmin 
     ? (t.menu_account_settings || "Fiók / Rendszerbeállítások") 
-    : (myFlats.length > 1 ? (t.menu_my_flats || "Lakásaim") : (t.menu_my_flat || "Lakásom"));
+    : (myFlats.length > 1 ? (t.menu_my_flats || "Profilom / Lakásaim") : (t.menu_my_flat || "Profilom / Lakásom"));
   const ProfileIcon = isAdmin ? Settings : (myFlats.length > 1 ? Home : User);
 
   useEffect(() => {
