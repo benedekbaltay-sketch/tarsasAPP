@@ -941,6 +941,8 @@ export const translations = {
     comm_viewer_action_blocked: "Ehhez a művelethez szerkesztési jogosultság szükséges.",
     comm_tab_rules: "Felszólítási Szabályok (Dunning)",
     comm_tab_outbox: "Kiküldési Napló & Várólista",
+    comm_target_all_buildings: "🌐 Minden kezelt társasház (Körlevél mindenhova)",
+    comm_target_all_buildings_hint: "A körlevél az összes általad kezelt épület lakóinak kiküldésre kerül.",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Csapat & Jogosultságok",
     team_modal_subtitle: "Munkatársak e-mail csatolása, társasházak kiosztása és jogosultságok kezelése.",
@@ -2065,6 +2067,8 @@ export const translations = {
     comm_viewer_action_blocked: "This action requires manager permissions.",
     comm_tab_rules: "Dunning & Reminder Rules",
     comm_tab_outbox: "Outbox & Delivery Logs",
+    comm_target_all_buildings: "🌐 All Managed Buildings (Broadcast to all)",
+    comm_target_all_buildings_hint: "The circular letter will be dispatched to residents across all buildings you manage.",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Team & Access Permissions",
     team_modal_subtitle: "Attach colleagues by email, assign condominiums, and manage security permissions.",

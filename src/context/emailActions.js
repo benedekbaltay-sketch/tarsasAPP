@@ -212,18 +212,21 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       return { success: false, error: 'missing-content' };
     }
 
-    const bld = (state?.buildings || []).find((b) => b.id === buildingId) || null;
-    const buildingName = bld?.officialName || bld?.name || (isEn() ? 'Condominium' : 'Társasház');
+    const defaultBld = buildingId !== 'all' ? ((state?.buildings || []).find((b) => b.id === buildingId) || null) : null;
 
     const newNotifications = [];
     const newOutboxEntries = [];
 
     for (const r of recipients) {
+      const rBuilding = (state?.buildings || []).find((b) => b.id === (r.buildingId || buildingId)) || defaultBld;
+      const bldName = rBuilding?.officialName || rBuilding?.name || r.buildingName || (isEn() ? 'Condominium' : 'Társasház');
+      const bldId = r.buildingId || buildingId || rBuilding?.id || 'general';
+
       // Personalize body for tags
       const personalizedBody = body
         .replace(/\{tulajdonosNeve\}|\{ownerName\}/g, r.name || '')
         .replace(/\{lakasszam\}|\{flatNum\}/g, r.flatNum || '')
-        .replace(/\{tarsashazNeve\}|\{buildingName\}/g, buildingName)
+        .replace(/\{tarsashazNeve\}|\{buildingName\}/g, bldName)
         .replace(/\{aktualisEgyenleg\}|\{egyenleg\}|\{balance\}/g, r.balanceFormatted || '');
 
       // 1. In-app notification
@@ -234,8 +237,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
             severity: category === 'urgent' ? 'critical' : category === 'finance' ? 'warning' : 'info',
             recipientEmail: r.email || '',
             recipientScope: 'flat',
-            buildingId,
-            buildingName,
+            buildingId: bldId,
+            buildingName: bldName,
             actorUser: state.currentUser,
             titleHu: subject,
             titleEn: subject,
@@ -256,11 +259,12 @@ export function createEmailActions(optionsOrState, maybeSetState) {
           subject,
           messageBody: personalizedBody,
           category,
-          targetBuilding: bld,
+          targetBuilding: rBuilding,
           repProfile: state?.repProfile || {},
           organizations: state?.organizations || [],
+          senderUser: state?.currentUser,
           isEn: isEn(),
-          emailSettings: bld?.emailSettings || {},
+          emailSettings: rBuilding?.emailSettings || state?.emailSettings || {},
         }).catch((err) => {
           console.warn('sendResidentCustomNoticeEmail async error:', err.message);
         });
@@ -269,8 +273,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       // 3. Outbox log entry for representative
       newOutboxEntries.push({
         id: `outbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        buildingId,
-        buildingName,
+        buildingId: bldId,
+        buildingName: bldName,
         flatNum: r.flatNum,
         recipientName: r.name,
         recipientEmail: r.email || '',
@@ -279,6 +283,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         subject,
         body: personalizedBody,
         category,
+        debt: r.balance,
         status: (sendEmail && r.email) ? 'sent' : 'in-app-only',
         queuedAt: new Date().toISOString(),
       });
