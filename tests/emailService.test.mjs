@@ -4,32 +4,51 @@ import assert from 'node:assert/strict';
 import {
   sendTransactionalEmail,
   resolveEffectiveEmailSettings,
+  resolveBuildingResidentEmail,
   sendColleagueInviteCustomEmail,
 } from '../src/services/emailService.js';
 
-test('1. resolveEffectiveEmailSettings returns defaults when empty', () => {
+test('1. resolveEffectiveEmailSettings defaults strictly to Resend provider', () => {
   const resolved = resolveEffectiveEmailSettings({});
   assert.equal(resolved.isConfigured, false);
   assert.equal(resolved.provider, 'resend');
   assert.equal(resolved.apiKey, '');
-  assert.equal(resolved.replyTo, '');
   assert.equal(resolved.senderName, 'TarsasApp');
 });
 
-test('2. resolveEffectiveEmailSettings picks explicit settings', () => {
-  const resolved = resolveEffectiveEmailSettings({
-    provider: 'brevo',
-    apiKey: 'xkeysib-test-12345',
-    replyTo: 'kk.bela@gmail.com',
-    senderName: 'Alfa Ház Kft.',
-    senderEmail: 'ertesito@alfa.hu',
-  });
-  assert.equal(resolved.isConfigured, true);
-  assert.equal(resolved.provider, 'brevo');
-  assert.equal(resolved.apiKey, 'xkeysib-test-12345');
-  assert.equal(resolved.replyTo, 'kk.bela@gmail.com');
-  assert.equal(resolved.senderName, 'Alfa Ház Kft.');
-  assert.equal(resolved.senderEmail, 'ertesito@alfa.hu');
+test('2. resolveBuildingResidentEmail dynamically extracts building resident contact email', () => {
+  const sampleOrg = {
+    id: 'org-1',
+    centralContact: {
+      name: 'Alfa Kft.',
+      email: 'kozpont@alfa.hu',
+    },
+  };
+
+  // Case A: Building with personal manager contact
+  const buildingWithManager = {
+    id: 'b-1',
+    organizationId: 'org-1',
+    contactDisplayMode: 'manager',
+    managerContact: {
+      name: 'Kovács Gábor',
+      email: 'Gabor.Kezelo@Alfa.hu',
+    },
+  };
+  const emailA = resolveBuildingResidentEmail(buildingWithManager, {}, [sampleOrg]);
+  assert.equal(emailA, 'gabor.kezelo@alfa.hu');
+
+  // Case B: Building with central company contact mode
+  const buildingWithCompany = {
+    id: 'b-2',
+    organizationId: 'org-1',
+    contactDisplayMode: 'company',
+  };
+  const emailB = resolveBuildingResidentEmail(buildingWithCompany, {}, [sampleOrg]);
+  assert.equal(emailB, 'kozpont@alfa.hu');
+
+  // Case C: Missing building
+  assert.equal(resolveBuildingResidentEmail(null), '');
 });
 
 test('3. sendTransactionalEmail validates recipient and API key', async () => {
@@ -50,18 +69,7 @@ test('3. sendTransactionalEmail validates recipient and API key', async () => {
   assert.equal(res2.error, 'missing-api-key');
 });
 
-test('4. sendColleagueInviteCustomEmail skips when not configured', async () => {
-  const res = await sendColleagueInviteCustomEmail({
-    recipientName: 'Kovács Anna',
-    recipientEmail: 'anna@example.com',
-    emailSettings: {},
-  });
-  assert.equal(res.success, false);
-  assert.equal(res.skipped, true);
-  assert.equal(res.error, 'not-configured');
-});
-
-test('5. Resend and Brevo payloads include custom replyTo address', async () => {
+test('4. sendColleagueInviteCustomEmail automatically sets reply_to to building manager contact', async () => {
   const originalFetch = globalThis.fetch;
   let capturedUrl = null;
   let capturedHeaders = null;
@@ -75,56 +83,66 @@ test('5. Resend and Brevo payloads include custom replyTo address', async () => 
       return {
         ok: true,
         status: 200,
-        json: async () => ({ id: 'resend-msg-123' }),
+        json: async () => ({ id: 'resend-msg-999' }),
       };
     };
 
-    // Test Resend with custom replyTo
-    const resendRes = await sendTransactionalEmail({
-      to: 'kollega@alfa.hu',
-      subject: 'Teszt meghívó',
-      html: '<b>Hello</b>',
-      text: 'Hello',
-      replyTo: 'kk.personal@gmail.com',
-      provider: 'resend',
-      apiKey: 're_test_key_abc',
+    const targetBuilding = {
+      id: 'b-petofi',
+      name: 'Petőfi u. 12.',
+      contactDisplayMode: 'manager',
+      managerContact: {
+        name: 'Varga Tamás',
+        email: 'varga.tamas@gmail.com',
+      },
+    };
+
+    const res = await sendColleagueInviteCustomEmail({
+      recipientName: 'Kovács Anna',
+      recipientEmail: 'anna@alfa.hu',
+      orgName: 'Alfa Ház Kft.',
+      inviterName: 'Kovács Béla',
+      inviterEmail: 'bela@alfa.hu',
+      targetBuilding,
+      emailSettings: { apiKey: 're_mock_key_123' },
     });
 
-    assert.equal(resendRes.success, true);
-    assert.equal(resendRes.messageId, 'resend-msg-123');
+    assert.equal(res.success, true);
+    assert.equal(res.messageId, 'resend-msg-999');
     assert.equal(capturedUrl, 'https://api.resend.com/emails');
-    assert.equal(capturedHeaders.Authorization, 'Bearer re_test_key_abc');
-    assert.equal(capturedBody.reply_to, 'kk.personal@gmail.com');
-    assert.deepEqual(capturedBody.to, ['kollega@alfa.hu']);
+    assert.equal(capturedHeaders.Authorization, 'Bearer re_mock_key_123');
+    // Reply-To matches the condominium's active resident contact email automatically!
+    assert.equal(capturedBody.reply_to, 'varga.tamas@gmail.com');
+    assert.deepEqual(capturedBody.to, ['anna@alfa.hu']);
+    assert.match(capturedBody.subject, /TarsasApp meghívó/);
+    assert.match(capturedBody.html, /Jelszó beállítása és fiók aktiválása/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
-    // Test Brevo with custom replyTo
+test('5. sendColleagueInviteCustomEmail falls back to inviterEmail if no building contact', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  try {
     globalThis.fetch = async (url, options) => {
-      capturedUrl = url;
-      capturedHeaders = options.headers;
       capturedBody = JSON.parse(options.body);
       return {
         ok: true,
-        status: 201,
-        json: async () => ({ messageId: 'brevo-msg-456' }),
+        status: 200,
+        json: async () => ({ id: 'resend-msg-fallback' }),
       };
     };
 
-    const brevoRes = await sendTransactionalEmail({
-      to: 'kollega@alfa.hu',
-      subject: 'Teszt meghívó Brevo',
-      html: '<b>Hello Brevo</b>',
-      text: 'Hello Brevo',
-      replyTo: 'kk.personal@gmail.com',
-      provider: 'brevo',
-      apiKey: 'xkeysib_test_key_123',
+    await sendColleagueInviteCustomEmail({
+      recipientEmail: 'uj.kollega@alfa.hu',
+      inviterEmail: 'fonok@alfa.hu',
+      targetBuilding: null,
+      emailSettings: { apiKey: 're_mock_key_123' },
     });
 
-    assert.equal(brevoRes.success, true);
-    assert.equal(brevoRes.messageId, 'brevo-msg-456');
-    assert.equal(capturedUrl, 'https://api.brevo.com/v3/smtp/email');
-    assert.equal(capturedHeaders['api-key'], 'xkeysib_test_key_123');
-    assert.deepEqual(capturedBody.replyTo, { email: 'kk.personal@gmail.com' });
-    assert.deepEqual(capturedBody.to, [{ email: 'kollega@alfa.hu' }]);
+    assert.equal(capturedBody.reply_to, 'fonok@alfa.hu');
   } finally {
     globalThis.fetch = originalFetch;
   }

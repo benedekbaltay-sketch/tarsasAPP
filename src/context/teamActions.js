@@ -299,8 +299,12 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       actor.name ||
       (isEn() ? 'Property Management' : 'Közös Képviselet');
 
-    // 1. Try sending via configured transactional email provider (Resend / Brevo) with custom Reply-To header
+    // 1. Try sending via central Resend service with dynamically resolved building resident Reply-To header
     const emailSettings = resolveEffectiveEmailSettings(state.globalSettings?.emailSettings || state.repProfile?.emailSettings);
+    const targetBuilding = cleanBuildingIds.length > 0
+      ? (state.buildings || []).find((b) => cleanBuildingIds.includes(b.id))
+      : null;
+
     let customEmailResult = null;
     if (emailSettings.isConfigured) {
       customEmailResult = await sendColleagueInviteCustomEmail({
@@ -312,6 +316,9 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         buildingNames: assignedBuildingNames,
         buildingScope: cleanScope,
         actionUrl: inviteUrl,
+        targetBuilding,
+        repProfile: state.repProfile,
+        organizations: state.organizations,
         isEn: isEn(),
         emailSettings,
       });
@@ -420,6 +427,11 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       : `${origin}/?email=${encodeURIComponent(cleanEmail)}`;
 
     const emailSettings = resolveEffectiveEmailSettings(state.globalSettings?.emailSettings || state.repProfile?.emailSettings);
+    const existingMember = (actorCtx.org?.members || []).find((m) => normalizeEmail(m.email) === cleanEmail);
+    const existingInvite = (actorCtx.org?.invites || []).find((inv) => normalizeEmail(inv.email) === cleanEmail);
+    const bIds = existingMember?.buildingIds || existingInvite?.buildingIds || [];
+    const targetBuilding = bIds.length > 0 ? (state.buildings || []).find((b) => bIds.includes(b.id)) : null;
+
     let customRes = null;
     if (emailSettings.isConfigured) {
       customRes = await sendColleagueInviteCustomEmail({
@@ -428,13 +440,16 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         inviterName: actor.name || actor.email,
         inviterEmail: actor.email,
         actionUrl: inviteUrl,
+        targetBuilding,
+        repProfile: state.repProfile,
+        organizations: state.organizations,
         isEn: isEn(),
         emailSettings,
       });
     }
 
     if (customRes?.success) {
-      const replyToNote = emailSettings.replyTo ? ` (Válaszcím: ${emailSettings.replyTo})` : '';
+      const replyToNote = customRes.replyTo ? (isEn() ? ` (Reply-To: ${customRes.replyTo})` : ` (Válaszcím: ${customRes.replyTo})`) : '';
       showToast(
         t.team_invite_email_sent_toast
           ? `${t.team_invite_email_sent_toast.replace('{email}', cleanEmail)}${replyToNote}`
@@ -442,7 +457,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
               ? `Password setup email sent to ${cleanEmail}!${replyToNote}`
               : `Jelszóbeállító e-mail elküldve ide: ${cleanEmail}!${replyToNote}`)
       );
-      return { sent: true, provider: emailSettings.provider };
+      return { sent: true, provider: emailSettings.provider, replyTo: customRes.replyTo };
     }
 
     const result = await sendColleaguePasswordSetupEmail({
