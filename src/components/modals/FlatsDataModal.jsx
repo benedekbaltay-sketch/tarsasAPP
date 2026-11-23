@@ -232,64 +232,40 @@ export function FlatsDataModal({
               </span>
               <strong className="text-gray-900 font-bold text-sm">{totalTenants} fő</strong>
             </div>
-            <div className={`px-3 py-2 rounded-xl border transition-colors ${
-              isExactShareMatch && totalFlats > 0
-                ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
-                : isOverShare
-                  ? 'bg-red-50/80 border-red-300 text-red-950'
-                  : 'bg-indigo-50/60 border-indigo-200 text-indigo-950'
-            }`}>
-              <div className="flex items-center justify-between gap-1.5 mb-0.5">
-                <span className="text-gray-500 text-[10px] uppercase font-bold block">
-                  {t.total_ownership_share || (isEn ? "Total Ownership Share" : "Összes Tulajdoni Hányad")}
+            <div className="bg-gray-50 px-3 py-2 rounded-xl border border-gray-200">
+              <div className="flex items-center justify-between gap-1.5">
+                <span className="text-gray-400 text-[10px] uppercase font-bold block">
+                  {isEn ? "Ownership Share" : "Tulajdoni Hányad"}
                 </span>
-                <div className="flex items-center gap-1">
-                  <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
-                    isExactShareMatch && totalFlats > 0
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : isOverShare
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    {sharePct.toFixed(1)}%
-                  </span>
-                  {onOpenBuildingSettings && (
-                    <button
-                      type="button"
-                      onClick={onOpenBuildingSettings}
-                      className="p-0.5 rounded text-gray-400 hover:text-[#1E3A8A] hover:bg-white/80 transition-colors cursor-pointer"
-                      title={isEn ? "Edit building total share" : "Ház teljes tulajdoni hányadának szerkesztése"}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
+                {onOpenBuildingSettings && (
+                  <button
+                    type="button"
+                    onClick={onOpenBuildingSettings}
+                    className="p-0.5 -mr-1 rounded text-gray-400 hover:text-[#1E3A8A] transition-colors cursor-pointer"
+                    title={isEn ? "Edit building total share" : "Ház teljes tulajdoni hányadának szerkesztése"}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                )}
               </div>
-              <div className="flex items-baseline gap-1">
-                <strong className="text-gray-900 font-bold text-sm">
-                  {totalShareSum.toLocaleString('hu-HU')}
-                </strong>
-                <span className="text-xs text-gray-500 font-medium">
-                  / {buildingTotalShare.toLocaleString('hu-HU')}
-                </span>
-              </div>
+              <strong className="text-gray-900 font-bold text-sm block">
+                {totalShareSum.toLocaleString('hu-HU')} / {buildingTotalShare.toLocaleString('hu-HU')}
+              </strong>
               {totalFlats > 0 && !isExactShareMatch && (
-                <div className="text-[10px] font-semibold mt-0.5">
+                <div className="text-[10px] font-semibold text-red-600 mt-0.5">
                   {isUnderShare ? (
-                    <span className="text-amber-700">
-                      {t.missing_share || (isEn ? "Missing:" : "Hiányzó:")} {shareDiff.toLocaleString('hu-HU')}
+                    <span>
+                      {isEn 
+                        ? `Mismatch (missing: ${shareDiff.toLocaleString('hu-HU')})` 
+                        : `Nem egyezik (hiány: ${shareDiff.toLocaleString('hu-HU')})`}
                     </span>
                   ) : (
-                    <span className="text-red-700">
-                      {t.surplus_share || (isEn ? "Surplus:" : "Többlet:")} {Math.abs(shareDiff).toLocaleString('hu-HU')}
+                    <span>
+                      {isEn 
+                        ? `Mismatch (surplus: +${Math.abs(shareDiff).toLocaleString('hu-HU')})` 
+                        : `Nem egyezik (többlet: +${Math.abs(shareDiff).toLocaleString('hu-HU')})`}
                     </span>
                   )}
-                </div>
-              )}
-              {totalFlats > 0 && isExactShareMatch && (
-                <div className="text-[10px] font-semibold text-emerald-700 mt-0.5 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600 inline" />
-                  <span>{t.share_sum_ok || (isEn ? "100% - Complete" : "100% - Összegzés rendben")}</span>
                 </div>
               )}
             </div>
