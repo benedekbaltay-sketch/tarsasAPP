@@ -312,19 +312,18 @@ export function buildPaymentDetailsBlock(flat = {}, building = {}, options = {})
     const lines = [];
     lines.push(isEn ? 'Bank Transfer Details for Settlement:' : 'Átutalási adatok az elmaradás rendezéséhez:');
 
-    if (singleBankForAll) {
+    if (singleBankForAll && debts.length === 1) {
       const commonBank = uniqueBanks[0] || bankKK || (isEn ? 'Not specified' : 'Nincs megadva');
-      debts.forEach(d => {
-        lines.push(`• ${d.title}: ${formatCurrency(d.amount)}`);
-      });
+      const d = debts[0];
+      lines.push(`• ${d.title}: ${formatCurrency(d.amount)}`);
       lines.push(`  ${isEn ? 'Beneficiary' : 'Kedvezményezett'}: ${buildingName}`);
       lines.push(`  ${isEn ? 'Bank Account' : 'Bankszámlaszám'}: ${commonBank}`);
-      const combinedRef = debts.length === 1 
-        ? debts[0].reference 
-        : (isEn ? `Flat #${flatNum} arrears` : `${flatNum}. lakás elmaradás`);
-      lines.push(`  ${isEn ? 'Reference' : 'Közlemény'}: ${combinedRef}`);
+      lines.push(`  ${isEn ? 'Reference' : 'Közlemény'}: ${d.reference}`);
     } else {
-      debts.forEach(d => {
+      debts.forEach((d, idx) => {
+        if (idx > 0) {
+          lines.push(''); // Empty line between accounts
+        }
         lines.push(`• ${d.title} (${isEn ? 'Arrears' : 'Elmaradás'}: ${formatCurrency(d.amount)}):`);
         lines.push(`  ${isEn ? 'Beneficiary' : 'Kedvezményezett'}: ${buildingName}`);
         lines.push(`  ${isEn ? 'Bank Account' : 'Bankszámlaszám'}: ${d.bankAccount || (isEn ? 'Not specified' : 'Nincs megadva')}`);
@@ -345,6 +344,7 @@ export function buildPaymentDetailsBlock(flat = {}, building = {}, options = {})
   } else {
     lines.push(`• ${isEn ? 'Common Cost Account' : 'Közös költség számla'}: ${bankKK}`);
     lines.push(`  ${isEn ? 'Reference' : 'Közlemény'}: ${isEn ? `Flat #${flatNum} Common Cost` : `${flatNum}. lakás közös költség`}`);
+    lines.push(''); // Empty line between accounts
     lines.push(`• ${isEn ? 'Renovation Fund Account' : 'Felújítási alap számla'}: ${bankFA}`);
     lines.push(`  ${isEn ? 'Reference' : 'Közlemény'}: ${isEn ? `Flat #${flatNum} Renovation Fund` : `${flatNum}. lakás felújítási alap`}`);
   }

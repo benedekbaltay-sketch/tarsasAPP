@@ -346,6 +346,8 @@ test('11. buildPaymentDetailsBlock accurately formats multi-account transfer inf
   assert.match(paymentBlockA.renderedBody, /11605008-22222222/);
   assert.match(paymentBlockA.renderedBody, /15\. lakás közös költség/);
   assert.match(paymentBlockA.renderedBody, /15\. lakás felújítási alap/);
+  // Verify empty line between multiple accounts
+  assert.match(paymentBlockA.renderedBody, /15\. lakás közös költség\n\n• Felújítási alap/);
 
   // Sub-case B: Single bank account for both
   const buildingSingleBank = {
