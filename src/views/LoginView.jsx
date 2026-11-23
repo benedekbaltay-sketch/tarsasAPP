@@ -247,7 +247,7 @@ export function LoginView({
             </div>
           </div>
 
-          <div className="space-y-1 pt-1">
+          <div className="pt-1">
             <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-gray-700">
               <input
                 type="checkbox"
@@ -257,11 +257,6 @@ export function LoginView({
               />
               <span className="font-semibold">{t.remember_me || (isEn ? 'Remember me on this device' : 'Emlékezzen rám ezen a számítógépen')}</span>
             </label>
-            <p className="text-[11px] text-gray-500 pl-6 leading-tight">
-              {isEn
-                ? 'Keep unchecked to use this account only in this tab while keeping your saved profile active on other tabs.'
-                : 'Hagyd kikapcsolva, ha csak ezen a lapon szeretnéd használni a fiókot a másik mentett profilod mellett.'}
-            </p>
           </div>
 
           <button

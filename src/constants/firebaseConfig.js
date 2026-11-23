@@ -82,7 +82,7 @@ export function getFirebaseInstance(forceSessionApp = false) {
 
     if (!app) {
       if (appName === '[DEFAULT]') {
-        app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+        app = initializeApp(firebaseConfig);
       } else {
         app = initializeApp(firebaseConfig, appName);
       }
