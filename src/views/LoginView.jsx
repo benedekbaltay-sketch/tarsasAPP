@@ -62,6 +62,7 @@ export function LoginView({
   }, [lockoutSeconds]);
 
   const isHu = state.currentLang === 'hu' || !state.currentLang;
+  const isEn = !isHu;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
