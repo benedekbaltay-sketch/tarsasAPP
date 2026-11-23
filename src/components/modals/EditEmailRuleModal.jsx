@@ -33,7 +33,7 @@ export function EditEmailRuleModal({
   const { buildings, currentLang, repProfile } = state;
   const isEn = currentLang === 'en';
 
-  const [name, setName] = useState(rule?.name || rule?.nameEn || '');
+  const [name, setName] = useState(String(rule?.name || rule?.nameEn || ''));
   const [buildingId, setBuildingId] = useState(rule?.buildingId || defaultBuildingId || 'all');
   const [targetAccount, setTargetAccount] = useState(rule?.targetAccount || 'per_account');
   const [conditionType, setConditionType] = useState(rule?.conditionType || 'months');

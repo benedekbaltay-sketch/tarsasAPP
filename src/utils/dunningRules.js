@@ -181,6 +181,22 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
 ];
 
 /**
+ * Safely extracts a clean bank account number string whether the input is a string,
+ * a legacy string, or an object structured like { account, bank, name, ... }.
+ */
+export function extractBankAccountNumber(val) {
+  if (!val) return '';
+  if (typeof val === 'string') return val.trim();
+  if (typeof val === 'object') {
+    if (typeof val.account === 'string') return val.account.trim();
+    if (typeof val.number === 'string') return val.number.trim();
+    if (typeof val.iban === 'string') return val.iban.trim();
+    if (typeof val.bankAccount === 'string') return val.bankAccount.trim();
+  }
+  return String(val || '').trim();
+}
+
+/**
  * Builds a clear, multi-account payment details block tailored to the flat's exact delinquent accounts.
  * If the condominium has separate accounts (e.g. KK vs FA), it lists each separately with the correct bank account and reference.
  * If accounts share the same bank number, it formats a clean combined summary.
@@ -194,8 +210,8 @@ export function buildPaymentDetailsBlock(flat = {}, building = {}, options = {})
   const customAccounts = Array.isArray(flat?.customAccounts) ? flat.customAccounts : [];
 
   const buildingName = building?.officialName || building?.name || (isEn ? 'Condominium' : 'Társasház');
-  const bankKK = (building?.bankKK || building?.bankAccount || '').trim();
-  const bankFA = (building?.bankFA || bankKK || '').trim();
+  const bankKK = extractBankAccountNumber(building?.bankKK || building?.bankAccount);
+  const bankFA = extractBankAccountNumber(building?.bankFA) || bankKK;
 
   const flatNum = flat?.flatNum || '';
 
@@ -236,7 +252,7 @@ export function buildPaymentDetailsBlock(flat = {}, building = {}, options = {})
           type: 'CUSTOM',
           title: c.name || (isEn ? 'Custom Account' : 'Egyedi számla'),
           amount: Math.abs(cBal),
-          bankAccount: (c.bankAccount || bankKK || '').trim(),
+          bankAccount: extractBankAccountNumber(c.bankAccount || c.account || bankKK),
           reference: isEn ? `Flat #${flatNum} ${c.name || 'Custom'}` : `${flatNum}. lakás ${c.name || 'egyedi'}`
         });
       }
@@ -458,10 +474,11 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
   }
 
   // Resolve building bank account based on target account
-  let bankAccount = building.bankKK || building.bankAccount || '';
+  let rawBank = building.bankKK || building.bankAccount || '';
   if (targetAccount === 'FA' && building.bankFA) {
-    bankAccount = building.bankFA;
+    rawBank = building.bankFA;
   }
+  const bankAccount = extractBankAccountNumber(rawBank);
 
   // Primary owner contact
   const ownerName = flat.owner || flat.name || (options.isEn ? `Owner of Flat ${flat.flatNum}` : `${flat.flatNum}. lakás tulajdonosa`);

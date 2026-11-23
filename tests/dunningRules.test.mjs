@@ -380,3 +380,32 @@ test('12. Zero monthly fee safety guard prevents division by zero without error'
   const match = evaluateFlatAgainstRule(rule, zeroFeeFlat);
   assert.equal(match, null, 'Cannot evaluate months when fee is 0');
 });
+
+test('13. Structured bank account objects ({ account, bank, name }) do not crash and extract IBAN', () => {
+  const buildingWithObjBanks = {
+    name: 'Tölgyfa Társasház',
+    bankKK: {
+      account: '11705008-20456789-00000000',
+      bank: 'OTP Bank',
+      name: 'Tölgyfa Társasház'
+    },
+    bankFA: {
+      account: '11605008-20456789-00000000',
+      bank: 'Erste Bank',
+      name: 'Tölgyfa FA'
+    }
+  };
+
+  const flat = { flatNum: '4', balance: -20000, monthlyFee: 10000 };
+  const rule = {
+    id: 'r-obj-bank',
+    targetAccount: 'per_account',
+    monthThreshold: 1.0,
+    templateSubject: 'Subj',
+    templateBody: '{{fizetesi_adatok}} {{szamlaszam}}'
+  };
+
+  const match = evaluateFlatAgainstRule(rule, flat, buildingWithObjBanks);
+  assert.ok(match);
+  assert.match(match.renderedBody, /11705008-20456789-00000000/);
+});
