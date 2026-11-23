@@ -200,11 +200,9 @@ export function TeamManagementModal({ isOpen, onClose }) {
         showCentralContact: Boolean(b.showCentralContactToResidents),
       };
     });
-    const existingRoles = Object.values(member.buildingAssignments || {}).map((a) => a?.role).filter(Boolean);
-    const initialRole = existingRoles.length > 0 && existingRoles.every((r) => r === 'viewer') ? 'viewer' : 'manager';
     setAllScopeDefaults({
-      role: initialRole,
-      canEditBankAccounts: Boolean(member.permissions?.canEditBankAccounts),
+      role: 'manager',
+      canEditBankAccounts: false,
       showManagerContact: false,
       showCentralContact: false,
     });
