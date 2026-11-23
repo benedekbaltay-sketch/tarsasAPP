@@ -242,7 +242,9 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         .replace(/\{tarsashazNeve\}|\{buildingName\}|\{\{\s*tarsashaz_neve\s*\}\}|\{\{\s*building_name\s*\}\}/gi, bldName)
         .replace(/\{aktualisEgyenleg\}|\{egyenleg\}|\{balance\}|\{\{\s*hatralek_osszeg\s*\}\}|\{\{\s*arrears_amount\s*\}\}/gi, r.balanceFormatted || '')
         .replace(/\{fizetesiAdatok\}|\{paymentDetails\}|\{\{\s*fizetesi_adatok\s*\}\}|\{\{\s*payment_details\s*\}\}/gi, paymentDetails)
-        .replace(/\{fizetesiHatarido\}|\{dueDate\}|\{\{\s*fizetesi_hatarido\s*\}\}|\{\{\s*due_date\s*\}\}/gi, dueDateFormatted);
+        .replace(/\{fizetesiHatarido\}|\{dueDate\}|\{\{\s*fizetesi_hatarido\s*\}\}|\{\{\s*due_date\s*\}\}/gi, dueDateFormatted)
+        .replace(/\{kepviseloNeve\}|\{managerName\}|\{\{\s*kepviselo_neve\s*\}\}|\{\{\s*manager_name\s*\}\}/gi, rBuilding?.managerContact?.name || state?.repProfile?.name || state?.currentUser?.name || '')
+        .replace(/\{cegNeve\}|\{companyName\}|\{\{\s*ceg_neve\s*\}\}|\{\{\s*company_name\s*\}\}/gi, state?.repProfile?.companyName || '');
 
       // 1. In-app notification
       if (sendInAppNotification) {

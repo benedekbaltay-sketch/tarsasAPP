@@ -18,7 +18,8 @@ export const MERGE_VARIABLES = [
   { key: 'fizetesi_hatarido', alt: 'due_date', labelHu: 'Fizetési határidő (pl. 8 nap)', labelEn: 'Payment Due Date' },
   { key: 'szamlaszam', alt: 'bank_account', labelHu: 'Ház elsődleges bankszámlája', labelEn: 'Primary Bank Account' },
   { key: 'kozlemeny', alt: 'payment_reference', labelHu: 'Ajánlott banki közlemény', labelEn: 'Payment Reference' },
-  { key: 'kepviselo_neve', alt: 'manager_name', labelHu: 'Közös képviselő neve / cége', labelEn: 'Property Manager Name' },
+  { key: 'kepviselo_neve', alt: 'manager_name', labelHu: 'Közös képviselő neve (személy)', labelEn: 'Property Manager Personal Name' },
+  { key: 'ceg_neve', alt: 'company_name', labelHu: 'Cégnév / Vállalkozás neve', labelEn: 'Company / Business Name' },
   { key: 'kepviselo_email', alt: 'manager_email', labelHu: 'Közös képviselő e-mailje', labelEn: 'Manager Email' },
   { key: 'kepviselo_telefon', alt: 'manager_phone', labelHu: 'Közös képviselő telefonszáma', labelEn: 'Manager Phone' }
 ];
@@ -56,7 +57,7 @@ Amennyiben az összeget a közelmúltban már kiegyenlítette, kérjük, tekints
 
 Üdvözlettel:
 {{kepviselo_neve}}
-Közös Képviselet
+{{ceg_neve}}
 E-mail: {{kepviselo_email}} | Tel: {{kepviselo_telefon}}`,
     templateBodyEn: `Dear {{tulajdonos_neve}},
 
@@ -71,7 +72,7 @@ If you have already settled this balance recently, please disregard this notice.
 
 Kind regards,
 {{kepviselo_neve}}
-Property Management
+{{company_name}}
 Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
   },
   {
@@ -109,7 +110,7 @@ Kérjük, működjön együtt a tartozás mielőbbi rendezésében!
 
 Tisztelettel:
 {{kepviselo_neve}}
-Közös Képviselet
+{{ceg_neve}}
 E-mail: {{kepviselo_email}} | Tel: {{kepviselo_telefon}}`,
     templateBodyEn: `Dear {{tulajdonos_neve}},
 
@@ -125,7 +126,7 @@ Please note that failure to pay within this timeframe will result in immediate l
 
 Respectfully,
 {{kepviselo_neve}}
-Property Management
+{{company_name}}
 Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
   },
   {
@@ -160,7 +161,7 @@ A társasház ügyvédje útján fizetési meghagyásos (FMH) eljárást indít 
 Kérjük, azonnal vegye fel a kapcsolatot a képviselettel!
 
 {{kepviselo_neve}}
-Közös Képviselet
+{{ceg_neve}}
 E-mail: {{kepviselo_email}} | Telefon: {{kepviselo_telefon}}`,
     templateBodyEn: `Dear {{tulajdonos_neve}},
 
@@ -175,7 +176,7 @@ The condominium will initiate formal court enforcement (FMH order for payment) t
 Please contact the management immediately.
 
 {{kepviselo_neve}}
-Property Management
+{{company_name}}
 Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
   }
 ];
@@ -342,7 +343,13 @@ export function renderEmailTemplate(templateStr = '', context = {}) {
     fizetesiAdatok: context.fizetesi_adatok || context.payment_details || '',
     paymentDetails: context.fizetesi_adatok || context.payment_details || '',
     fizetesiHatarido: context.fizetesi_hatarido || context.due_date || '',
-    dueDate: context.fizetesi_hatarido || context.due_date || ''
+    dueDate: context.fizetesi_hatarido || context.due_date || '',
+    kepviseloNeve: context.kepviselo_neve || context.manager_name || '',
+    managerName: context.kepviselo_neve || context.manager_name || '',
+    cegNeve: context.ceg_neve || context.company_name || '',
+    companyName: context.ceg_neve || context.company_name || '',
+    ceg_neve: context.ceg_neve || context.company_name || '',
+    company_name: context.ceg_neve || context.company_name || ''
   };
 
   Object.entries(aliasMap).forEach(([tag, val]) => {
@@ -487,9 +494,34 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
   const buildingAddress = building.address || '';
 
   const repProfile = options.repProfile || {};
-  const managerName = repProfile.companyName || repProfile.name || (options.isEn ? 'Property Management' : 'Közös Képviselet');
-  const managerEmail = repProfile.email || 'info@tarsasapp.hu';
-  const managerPhone = repProfile.phone || '';
+
+  // Prioritize the representative person's personal name for kepviselo_neve:
+  const managerPersonalName = 
+    building.managerContact?.name ||
+    building.repName ||
+    repProfile.name ||
+    repProfile.companyRepName ||
+    options.senderUser?.name ||
+    (options.isEn ? 'Property Manager' : 'Közös Képviselő');
+
+  // Company / Organization business name for ceg_neve:
+  const companyName = 
+    repProfile.companyName || 
+    options.organization?.name || 
+    (options.isEn ? 'Property Management' : 'Közös Képviselet');
+
+  const managerEmail = 
+    building.managerContact?.email || 
+    building.email || 
+    repProfile.email || 
+    options.senderUser?.email || 
+    'info@tarsasapp.hu';
+
+  const managerPhone = 
+    building.managerContact?.phone || 
+    building.phone || 
+    repProfile.phone || 
+    '';
 
   // Payment reference
   const paymentRef = `${flat.flatNum}. ${targetAccount === 'FA' ? 'felújítási alap' : 'közös költség'}`;
@@ -534,8 +566,14 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
     fizetesi_hatarido: dueDateFormatted,
     due_date: dueDateFormatted,
     fizetesiHatarido: dueDateFormatted,
-    kepviselo_neve: managerName,
-    manager_name: managerName,
+    kepviselo_neve: managerPersonalName,
+    manager_name: managerPersonalName,
+    kepviseloNeve: managerPersonalName,
+    managerName: managerPersonalName,
+    ceg_neve: companyName,
+    company_name: companyName,
+    cegNeve: companyName,
+    companyName: companyName,
     kepviselo_email: managerEmail,
     manager_email: managerEmail,
     kepviselo_telefon: managerPhone,

@@ -409,3 +409,29 @@ test('13. Structured bank account objects ({ account, bank, name }) do not crash
   assert.ok(match);
   assert.match(match.renderedBody, /11705008-20456789-00000000/);
 });
+
+test('14. Representative personal name and company name are cleanly separated in tags', () => {
+  const flat = { flatNum: '1', balance: -20000, monthlyFee: 10000 };
+  const building = { id: 'bld-1', name: 'Minta Ház' };
+  const rule = {
+    id: 'r-rep-sep',
+    monthThreshold: 1.0,
+    templateSubject: 'Subj',
+    templateBody: 'Képviselő: {{kepviselo_neve}} | Cég: {{ceg_neve}}'
+  };
+
+  const repProfile = {
+    name: 'Kovács Béla',
+    companyName: 'Napfény Társasházkezelő Kft.'
+  };
+
+  const match = evaluateFlatAgainstRule(rule, flat, building, { repProfile });
+  assert.ok(match);
+  assert.equal(match.context.kepviselo_neve, 'Kovács Béla');
+  assert.equal(match.context.ceg_neve, 'Napfény Társasházkezelő Kft.');
+  assert.equal(match.renderedBody, 'Képviselő: Kovács Béla | Cég: Napfény Társasházkezelő Kft.');
+
+  // Test camelCase tags alias replacement: {kepviseloNeve} and {cegNeve}
+  const renderedAliases = renderEmailTemplate('Üdv, {kepviseloNeve} ({cegNeve})', match.context);
+  assert.equal(renderedAliases, 'Üdv, Kovács Béla (Napfény Társasházkezelő Kft.)');
+});

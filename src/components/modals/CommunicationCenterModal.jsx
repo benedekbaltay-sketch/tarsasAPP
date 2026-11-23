@@ -1358,7 +1358,9 @@ export function CommunicationCenterModal({
                       { tag: '{tarsashazNeve}', label: isEn ? "Building Name" : "Társasház neve", icon: "🏢" },
                       { tag: '{egyenleg}', label: isEn ? "Current Balance" : "Aktuális egyenleg", icon: "💰" },
                       { tag: '{fizetesiAdatok}', label: isEn ? "Payment Details" : "Fizetési adatok", icon: "🏦" },
-                      { tag: '{fizetesiHatarido}', label: isEn ? "Due Date (+8d)" : "Fizetési határidő", icon: "📅" }
+                      { tag: '{fizetesiHatarido}', label: isEn ? "Due Date (+8d)" : "Fizetési határidő", icon: "📅" },
+                      { tag: '{kepviseloNeve}', label: isEn ? "Manager Name" : "Képviselő neve (személy)", icon: "✍️" },
+                      { tag: '{cegNeve}', label: isEn ? "Company Name" : "Cégnév / Vállalkozás", icon: "🏛️" }
                     ].map(item => (
                       <button
                         key={item.tag}
@@ -1433,7 +1435,9 @@ export function CommunicationCenterModal({
                           .replace(/\{fizetesiAdatok\}|\{paymentDetails\}/g, isEn 
                             ? "Bank Transfer Details for Settlement:\n• Common Cost: 25,000 Ft\n  Beneficiary: Sunflower Condominium\n  Bank Account: 11705008-20456789-00000000\n  Reference: Flat #12 Common Cost" 
                             : "Átutalási adatok az elmaradás rendezéséhez:\n• Közös költség tartozás: 25 000 Ft\n  Kedvezményezett: Napfény Társasház\n  Bankszámlaszám: 11705008-20456789-00000000\n  Közlemény: 12. lakás közös költség")
-                          .replace(/\{fizetesiHatarido\}|\{dueDate\}/g, new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toLocaleDateString(isEn ? 'en-GB' : 'hu-HU'))}
+                          .replace(/\{fizetesiHatarido\}|\{dueDate\}/g, new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toLocaleDateString(isEn ? 'en-GB' : 'hu-HU'))
+                          .replace(/\{kepviseloNeve\}|\{managerName\}/g, state?.repProfile?.name || state?.currentUser?.name || (isEn ? "John Smith" : "Kovács Béla"))
+                          .replace(/\{cegNeve\}|\{companyName\}/g, state?.repProfile?.companyName || (isEn ? "Sunflower Management LLC" : "Napfény Képviselet Kft."))}
                       </div>
                     </div>
                   )}

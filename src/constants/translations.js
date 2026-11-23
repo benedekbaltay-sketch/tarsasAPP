@@ -951,6 +951,8 @@ export const translations = {
     comm_dynamic_tags_desc: "Kattints bármelyik változóra a levélbe illesztéshez. Kiküldéskor minden lakó a saját albetétjének adatait kapja meg:",
     comm_tag_payment_details: "Fizetési adatok (alszámlánként)",
     comm_tag_due_date: "Fizetési határidő (+8 nap)",
+    comm_tag_manager_name: "Közös képviselő neve (személy)",
+    comm_tag_company_name: "Cégnév / Vállalkozás",
     comm_cross_cooldown_label: "Kereszt-türelmi védelem",
     comm_per_account_badge: "Alszámlánként",
     // Self-Service Team Delegation & Organization Permissions
@@ -2087,6 +2089,8 @@ export const translations = {
     comm_dynamic_tags_desc: "Click any tag to insert it into the message body. When sent, each recipient will receive their personalized unit values:",
     comm_tag_payment_details: "Payment Details (by account)",
     comm_tag_due_date: "Payment Due Date (+8 days)",
+    comm_tag_manager_name: "Property Manager Name (Person)",
+    comm_tag_company_name: "Company / Business Name",
     comm_cross_cooldown_label: "Cross-Rule Cooldown",
     comm_per_account_badge: "Per-Account",
     // Self-Service Team Delegation & Organization Permissions
