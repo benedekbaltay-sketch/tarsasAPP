@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, Building2, Plus } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
+import { formatTaxNumber } from '../../utils/taxNumber';
 
 export function AddBuildingModal({ isOpen, onClose }) {
   const { state, t, addBuilding } = useApp();
@@ -34,7 +35,7 @@ export function AddBuildingModal({ isOpen, onClose }) {
       name: name.trim(),
       officialName: officialName.trim(),
       address: address.trim(),
-      taxNumber: taxNumber.trim(),
+      taxNumber: formatTaxNumber(taxNumber).trim(),
       bankKK: {
         name: bankKKName.trim() || officialName.trim() || name.trim(),
         bank: bankKKBank.trim() || 'OTP',
@@ -119,7 +120,7 @@ export function AddBuildingModal({ isOpen, onClose }) {
             <input
               type="text"
               value={taxNumber}
-              onChange={(e) => setTaxNumber(e.target.value)}
+              onChange={(e) => setTaxNumber(formatTaxNumber(e.target.value))}
               placeholder="pl. 12345678-1-42"
               className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
             />

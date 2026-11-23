@@ -20,6 +20,7 @@ import {
   resolveEffectiveEmailSettings,
   sendColleagueInviteCustomEmail,
 } from '../services/emailService';
+import { formatTaxNumber } from '../utils/taxNumber';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -873,8 +874,8 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         ? Boolean(showCentralContactToResidents)
         : (org.showCentralContactToResidents !== undefined ? org.showCentralContactToResidents : false);
       const resolvedTaxNumber = taxNumber !== undefined
-        ? String(taxNumber).trim()
-        : (org.taxNumber || s.repProfile?.taxNumber || '');
+        ? formatTaxNumber(taxNumber)
+        : formatTaxNumber(org.taxNumber || s.repProfile?.taxNumber || '');
 
       orgs[orgIndex] = {
         ...org,

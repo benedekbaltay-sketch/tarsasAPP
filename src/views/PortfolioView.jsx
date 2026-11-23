@@ -20,6 +20,7 @@ import {
   List
 } from 'lucide-react';
 import { formatCurrency, getBuildingReserve, getBuildingRenovationFund } from '../utils/finances';
+import { formatTaxNumber } from '../utils/taxNumber';
 import {
   getAccessibleBuildings,
   canUserCreateBuilding,
@@ -346,7 +347,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                       <td className="py-3 px-3 whitespace-nowrap">
                         {b.taxNumber ? (
                           <span className="font-mono text-gray-700 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200">
-                            {b.taxNumber}
+                            {formatTaxNumber(b.taxNumber)}
                           </span>
                         ) : (
                           <span className="text-gray-400 text-[11px]">—</span>
@@ -454,7 +455,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
                       {b.taxNumber && (
                         <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
-                          {isEn ? "Tax:" : "Adószám:"} {b.taxNumber}
+                          {isEn ? "Tax:" : "Adószám:"} {formatTaxNumber(b.taxNumber)}
                         </span>
                       )}
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-[#1E3A8A] border border-blue-200">

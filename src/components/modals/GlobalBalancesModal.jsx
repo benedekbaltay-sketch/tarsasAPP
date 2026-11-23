@@ -32,6 +32,7 @@ import {
 } from '../../utils/finances';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 import { formatPhoneNumber } from '../../utils/phone';
+import { formatTaxNumber } from '../../utils/taxNumber';
 import {
   resolveUserOrgContext,
   canUserEditBankAccountNumbers,
@@ -111,7 +112,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
       setBuildingName(targetBuilding.name || '');
       setBuildingOfficialName(targetBuilding.officialName || '');
       setBuildingAddress(targetBuilding.address || '');
-      setBuildingTaxNumber(targetBuilding.taxNumber || '');
+      setBuildingTaxNumber(formatTaxNumber(targetBuilding.taxNumber || ''));
 
       setContactDisplayMode(targetBuilding.contactDisplayMode === 'manager' ? 'manager' : 'company');
       setManagerName(targetBuilding.managerContact?.name || '');
@@ -366,7 +367,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
               name: buildingName.trim() || b.name,
               officialName: buildingOfficialName.trim(),
               address: buildingAddress.trim() || b.address,
-              taxNumber: buildingTaxNumber.trim(),
+              taxNumber: formatTaxNumber(buildingTaxNumber).trim(),
               contactDisplayMode: b.contactDisplayMode || 'company',
               managerContact: b.managerContact || null,
               showCentralContactToResidents: b.showCentralContactToResidents !== undefined ? b.showCentralContactToResidents : false,
@@ -542,7 +543,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={buildingTaxNumber}
-                          onChange={(e) => setBuildingTaxNumber(e.target.value)}
+                          onChange={(e) => setBuildingTaxNumber(formatTaxNumber(e.target.value))}
                           placeholder="12345678-1-42"
                           className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A]"
                         />

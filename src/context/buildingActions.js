@@ -21,6 +21,7 @@ import {
   slugifyUnitId,
 } from '../services/firestoreAdapter';
 import { sanitizeFileName, readFileAsDataUrl } from '../utils/fileSecurity';
+import { formatTaxNumber } from '../utils/taxNumber';
 import { planExplorerMove, planExplorerDelete, planFolderTreeCopy } from '../utils/docExplorer';
 import {
   resolveUserOrgContext,
@@ -1299,7 +1300,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
         const fsUpdate = {};
         if (sanitizedData.name !== undefined) fsUpdate.name = sanitizedData.name;
         if (sanitizedData.address !== undefined) fsUpdate.address = sanitizedData.address;
-        if (sanitizedData.taxNumber !== undefined) fsUpdate.taxNumber = sanitizedData.taxNumber;
+        if (sanitizedData.taxNumber !== undefined) fsUpdate.taxNumber = formatTaxNumber(sanitizedData.taxNumber);
         if (sanitizedData.defaultBank !== undefined) fsUpdate.defaultBank = sanitizedData.defaultBank;
         if (sanitizedData.bankApi !== undefined) fsUpdate.bankApi = sanitizedData.bankApi;
         if (Object.keys(fsUpdate).length > 0) {
@@ -1322,7 +1323,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
             ...b,
             ...sanitizedData,
             name: sanitizedData.name !== undefined ? sanitizedData.name : b.name,
-            taxNumber: sanitizedData.taxNumber !== undefined ? sanitizedData.taxNumber : b.taxNumber,
+            taxNumber: sanitizedData.taxNumber !== undefined ? formatTaxNumber(sanitizedData.taxNumber) : b.taxNumber,
             defaultBank: sanitizedData.defaultBank !== undefined ? sanitizedData.defaultBank : b.defaultBank
           };
         }

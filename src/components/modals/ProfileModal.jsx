@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { resolveUserOrgContext } from '../../utils/teamPermissions';
 import { formatPhoneNumber } from '../../utils/phone';
+import { formatTaxNumber } from '../../utils/taxNumber';
 import { formatAnnexItem } from '../../utils/annex';
 import { ProfileSwitcherButton } from '../ProfileSwitcherButton';
 import { NavLogoButton } from '../NavLogoButton';
@@ -135,7 +136,7 @@ export function ProfileModal({
       const org = orgCtx.org;
       setCompanyName(org?.name || prof.companyName || '');
       setCompanyRepName(org?.centralContact?.name || prof.companyName || prof.name || '');
-      setCompanyTaxNumber(org?.taxNumber || prof.taxNumber || '');
+      setCompanyTaxNumber(formatTaxNumber(org?.taxNumber || prof.taxNumber || ''));
       setCompanyAddress(org?.centralContact?.address || prof.address || '');
       setCompanyPhone(org?.centralContact?.phone ? formatPhoneNumber(org.centralContact.phone) : (prof.phone ? formatPhoneNumber(prof.phone) : ''));
       setCompanyEmail(org?.centralContact?.email || prof.email || '');
@@ -220,7 +221,7 @@ export function ProfileModal({
 
     updateOrganizationSettings({
       name: companyName.trim(),
-      taxNumber: companyTaxNumber.trim(),
+      taxNumber: formatTaxNumber(companyTaxNumber).trim(),
       centralContact: {
         name: (companyRepName || companyName).trim(),
         phone: formattedPhone,
@@ -481,7 +482,7 @@ export function ProfileModal({
                       {(orgCtx.org?.taxNumber || repProfile?.taxNumber) && (
                         <span className="text-gray-500 font-medium">
                           {isEn ? "Tax ID:" : "Adószám:"}{' '}
-                          <strong className="text-gray-800 font-mono">{orgCtx.org?.taxNumber || repProfile?.taxNumber}</strong>
+                          <strong className="text-gray-800 font-mono">{formatTaxNumber(orgCtx.org?.taxNumber || repProfile?.taxNumber)}</strong>
                         </span>
                       )}
                     </div>
@@ -719,7 +720,7 @@ export function ProfileModal({
                             {t.settings_company_tax_number || (isEn ? "Tax ID / Number" : "Adószám")}
                           </span>
                           <span className="font-bold text-gray-900 text-sm truncate block font-mono">
-                            {companyTaxNumber || "Nincs megadva"}
+                            {formatTaxNumber(companyTaxNumber) || "Nincs megadva"}
                           </span>
                         </div>
                         {companyTaxNumber && (
@@ -858,9 +859,9 @@ export function ProfileModal({
                           <input
                             type="text"
                             value={companyTaxNumber}
-                            onChange={(e) => setCompanyTaxNumber(e.target.value)}
+                            onChange={(e) => setCompanyTaxNumber(formatTaxNumber(e.target.value))}
                             placeholder="12345678-1-42"
-                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                           />
                         </div>
 
@@ -925,7 +926,7 @@ export function ProfileModal({
                             const prof = repProfile || {};
                             setCompanyName(org?.name || prof.companyName || '');
                             setCompanyRepName(org?.centralContact?.name || prof.companyName || prof.name || '');
-      setCompanyTaxNumber(org?.taxNumber || prof.taxNumber || '');
+      setCompanyTaxNumber(formatTaxNumber(org?.taxNumber || prof.taxNumber || ''));
                             setCompanyAddress(org?.centralContact?.address || prof.address || '');
                             setCompanyPhone(org?.centralContact?.phone ? formatPhoneNumber(org.centralContact.phone) : (prof.phone ? formatPhoneNumber(prof.phone) : ''));
                             setCompanyEmail(org?.centralContact?.email || prof.email || '');
