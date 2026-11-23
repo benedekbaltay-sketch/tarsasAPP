@@ -705,13 +705,9 @@ export function TeamManagementModal({ isOpen, onClose }) {
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-bold text-gray-900 text-xs">{m.name}</span>
-                                  {isSuspended ? (
+                                  {isSuspended && (
                                     <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-bold">
                                       {t.team_status_suspended || (isEn ? 'Suspended' : 'Felfüggesztve')}
-                                    </span>
-                                  ) : (
-                                    <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 text-[10px] font-bold">
-                                      {t.team_status_active || (isEn ? 'Active' : 'Aktív')}
                                     </span>
                                   )}
 
@@ -728,7 +724,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                   ) : (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-[#1E3A8A] text-[10px] font-bold border border-blue-200">
                                       <Shield className="w-3 h-3 text-[#1E3A8A]" />
-                                      {t.team_manager_badge || (isEn ? 'Manager' : 'Kezelő')}
+                                      {t.team_manager_badge || (isEn ? 'Editor' : 'Szerkesztő')}
                                     </span>
                                   )}
                                 </div>
@@ -805,54 +801,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
                             )}
                           </div>
 
-                          {/* Primary Operational Role & Permission Banner */}
-                          <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 ${
-                            isAllViewer
-                              ? 'bg-amber-50/90 border-amber-300 text-amber-950'
-                              : isMixedRole
-                                ? 'bg-purple-50/90 border-purple-300 text-purple-950'
-                                : 'bg-blue-50/90 border-blue-300 text-[#1E3A8A]'
-                          }`}>
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${
-                                isAllViewer
-                                  ? 'bg-amber-200/90 text-amber-900 border border-amber-300'
-                                  : isMixedRole
-                                    ? 'bg-purple-200/90 text-purple-900 border border-purple-300'
-                                    : 'bg-blue-200/90 text-blue-900 border border-blue-300'
-                              }`}>
-                                {isAllViewer ? <Eye className="w-4 h-4" /> : isMixedRole ? <ShieldAlert className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-xs font-bold leading-tight flex items-center gap-1.5 flex-wrap">
-                                  <span>
-                                    {isAllViewer
-                                      ? (t.team_role_viewer_full_title || (isEn ? 'Read-only Viewer (Cannot edit)' : 'Csak Megtekintő (Nem szerkeszthet)'))
-                                      : isMixedRole
-                                        ? (t.team_role_mixed_full_title || (isEn ? 'Mixed Permissions (Building-specific)' : 'Vegyes jogosultság (Házanként eltérő)'))
-                                        : (t.team_role_manager_full_title || (isEn ? 'Editor / Manager (Can edit)' : 'Szerkesztő / Kezelő (Szerkeszthet)'))}
-                                  </span>
-                                </div>
-                                <div className="text-[11px] opacity-80 leading-tight truncate mt-0.5">
-                                  {isAllViewer
-                                    ? (t.team_role_viewer_full_desc || (isEn ? 'Can only view balances, reports and documents — editing is disabled.' : 'Kizárólag olvasási jog — egyenlegek és kimutatások ellenőrzése módosítás nélkül.'))
-                                    : isMixedRole
-                                      ? (t.team_role_mixed_full_desc || (isEn ? 'Can edit on some condominiums, read-only on others.' : 'Egyes házaknál szerkeszthet, más házaknál csak megtekintő.'))
-                                      : (t.team_role_manager_full_desc || (isEn ? 'Full operational editing and accounting rights on assigned condominiums.' : 'Teljes körű operatív szerkesztési és könyvelési jog a kijelölt házakon.'))}
-                                </div>
-                              </div>
-                            </div>
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 border shadow-2xs ${
-                              isAllViewer
-                                ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                : isMixedRole
-                                  ? 'bg-purple-100 text-purple-900 border-purple-300'
-                                  : 'bg-blue-100 text-[#1E3A8A] border-blue-300'
-                            }`}>
-                              {isAllViewer ? (isEn ? 'Read-Only' : 'Megtekintő') : isMixedRole ? (isEn ? 'Mixed' : 'Vegyes') : (isEn ? 'Editor' : 'Szerkesztő')}
-                            </span>
-                          </div>
-
                           {/* Assigned Buildings & Explicit Permissions Indicator Bar */}
                           <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-gray-100">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-[#1E3A8A] border border-blue-100 text-[10px] font-bold">
@@ -923,41 +871,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
                               {t.team_perm_delete_locked_short || (isEn ? 'Delete locked' : 'Ház törlés zárolt')}
                             </span>
                           </div>
-
-                          {/* Preview assigned building names with explicit role badge */}
-                          {assignedBuildings.length > 0 && (
-                            <div className="space-y-1 pt-1 border-t border-gray-100">
-                              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                                {isEn ? 'Assigned Condominiums & Roles:' : 'Hozzárendelt társasházak és jogosultság:'}
-                              </span>
-                              <div className="flex flex-wrap gap-1.5">
-                                {assignedBuildings.map((b) => {
-                                  const isViewerOnThis = m.buildingAssignments?.[b.id]?.role === 'viewer';
-                                  return (
-                                    <span
-                                      key={b.id}
-                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border shadow-2xs ${
-                                        isViewerOnThis
-                                          ? 'bg-amber-50 text-amber-950 border-amber-300'
-                                          : 'bg-blue-50/80 text-blue-950 border-blue-300'
-                                      }`}
-                                    >
-                                      <Building2 className={`w-3.5 h-3.5 ${isViewerOnThis ? 'text-amber-600' : 'text-[#1E3A8A]'}`} />
-                                      <span className="font-bold">{b.name}</span>
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold inline-flex items-center gap-1 border ${
-                                        isViewerOnThis 
-                                          ? 'bg-amber-200/90 text-amber-950 border-amber-300' 
-                                          : 'bg-blue-200/90 text-blue-950 border-blue-300'
-                                      }`}>
-                                        {isViewerOnThis ? <Eye className="w-2.5 h-2.5 text-amber-700" /> : <Shield className="w-2.5 h-2.5 text-[#1E3A8A]" />}
-                                        {isViewerOnThis ? (t.team_role_viewer_pill || (isEn ? 'Viewer (Cannot edit)' : 'Megtekintő (Nem szerkeszthet)')) : (t.team_role_manager_pill || (isEn ? 'Editor (Can edit)' : 'Szerkesztő / Kezelő'))}
-                                      </span>
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -994,7 +907,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                   : 'bg-blue-100 text-[#1E3A8A] border-blue-200'
                               }`}>
                                 {isInvViewer ? <Eye className="w-3 h-3 text-amber-600" /> : <Shield className="w-3 h-3 text-[#1E3A8A]" />}
-                                {isInvViewer ? (t.team_viewer_badge || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő')) : (t.team_manager_badge || (isEn ? 'Manager' : 'Kezelő'))}
+                                {isInvViewer ? (t.team_viewer_badge || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő')) : (t.team_manager_badge || (isEn ? 'Editor' : 'Szerkesztő'))}
                               </span>
                             </div>
 
@@ -1003,22 +916,11 @@ export function TeamManagementModal({ isOpen, onClose }) {
                               {inv.buildingScope === 'all' ? (
                                 <span className="font-bold text-gray-800">{isEn ? 'All buildings' : 'Minden céges ház'}</span>
                               ) : invAssignedBlds.length > 0 ? (
-                                invAssignedBlds.map((b) => {
-                                  const isViewerInv = inv.buildingAssignments?.[b.id]?.role === 'viewer';
-                                  return (
-                                    <span key={b.id} className={`font-bold px-2 py-0.5 rounded border inline-flex items-center gap-1 ${
-                                      isViewerInv
-                                        ? 'bg-amber-100 text-amber-950 border-amber-300'
-                                        : 'bg-blue-100 text-[#1E3A8A] border-blue-200'
-                                    }`}>
-                                      {isViewerInv ? <Eye className="w-2.5 h-2.5 text-amber-700" /> : <Shield className="w-2.5 h-2.5 text-[#1E3A8A]" />}
-                                      <span>{b.name}</span>
-                                      <span className="text-[9px] font-extrabold uppercase ml-0.5 opacity-90">
-                                        [{isViewerInv ? (t.team_role_viewer_pill || (isEn ? 'Viewer' : 'Megtekintő (Nem szerkeszthet)')) : (t.team_role_manager_pill || (isEn ? 'Editor' : 'Szerkesztő / Kezelő'))}]
-                                      </span>
-                                    </span>
-                                  );
-                                })
+                                invAssignedBlds.map((b) => (
+                                  <span key={b.id} className="font-semibold text-gray-800 bg-white px-2 py-0.5 rounded border border-gray-200">
+                                    {b.name}
+                                  </span>
+                                ))
                               ) : (
                                 <span className="text-gray-400">—</span>
                               )}
