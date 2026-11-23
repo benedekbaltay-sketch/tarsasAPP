@@ -672,7 +672,9 @@ A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhe
        - 🏢 **„Központi cégadatok megjelenítése a lakóknak (eszkaláció)”** (`showCentralContact`): szabályozza, hogy a cég központi ügyfélszolgálata megjelenjen-e másodlagos minőségbiztosítási pontként a lakóknak.
        - 🔒 **„Bankszámlaszám (IBAN) módosítása ezen a házon”** (`canEditBankAccounts`): házankénti felülbírálat a folyószámla és megtakarítási számlaszámok védelmére.
        - 📋 **„Jogosultság ezen a házon”** (`role`): `manager` (Teljes kezelő: rögzítés, könyvelés, módosítás) vagy `viewer` (Csak megtekintő: olvasási jog).
-     - Kényelmi funkció: *„Beállítások másolása a többi kijelölt házra”* gomb segíti a több társasházzal rendelkező kollégák gyors konfigurálását.
+     - **Egységes, nagy kártyás megjelenítés (`Jogosultságok és lakói megjelenítés`)**: A korábbi apró, görgetősávba ágyazott almenük helyett minden beállítás egységes stílusú, tágas, jól olvasható fehér kártyaként jelenik meg azonos térközzel, Lucide ikonokkal és részletes súgószöveggel.
+     - **Több házas hatókör-választó**: Ha több ház van kijelölve, a jogosultságok fejlécében található hatókör-választóval (`selectedBuildingConfigTab`) egyetlen kattintással egyszerre lehet az összes kijelölt házra módosítani a beállításokat, vagy kiválasztva egy konkrét házat egyedi jogosultság adható meg neki, és az *„Alkalmazás az összes kijelölt házra”* gombbal bármikor átmásolható a többi házra is.
+     - **Prominens Szerepkör választó**: A *Teljes kezelő* (`manager`) és *Csak megtekintő* (`viewer`) két különálló, nagy méretű kártyagombbal választható ki a jogosultságlista legelején.
 
 4. **Lakói Felület Megjelenítés (`TenantView.jsx`)**:
    - Ha egy épület kapcsolattartási módja **Házkezelő** (`contactDisplayMode === 'manager'`), az elsődleges kiemelt kártyán a kijelölt házkezelő közvetlen neve, telefonja, e-mailje és fogadóórája jelenik meg.
