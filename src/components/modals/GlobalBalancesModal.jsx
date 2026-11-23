@@ -360,6 +360,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
             if (isAccountsOnly) {
               return {
                 ...b,
+                totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || b.totalOwnershipShare || 10000,
                 ...bankUpdates,
               };
             }

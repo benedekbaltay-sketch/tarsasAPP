@@ -331,9 +331,8 @@ export function AddFlatModal({ isOpen, onClose }) {
               </label>
               <div className="relative flex items-center">
                 <input
-                  type="number"
-                  step="any"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={ownershipShare}
                   onChange={(e) => setOwnershipShare(e.target.value)}
                   placeholder={`pl. ${Math.round(buildingTotalShare * 0.025)}`}

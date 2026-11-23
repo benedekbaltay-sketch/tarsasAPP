@@ -815,6 +815,13 @@ function MainLayout() {
         onOpenEditFlatMaster={(bId, fNum) => {
           if (isAdmin) setEditFlatMasterData({ buildingId: bId, flatNum: fNum });
         }}
+        onOpenBuildingSettings={() => {
+          if (isAdmin) {
+            setBuildingSettingsTargetId(state.currentBuildingId);
+            setGlobalBalancesMode('full');
+            setIsGlobalBalancesOpen(true);
+          }
+        }}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}
       />

@@ -1166,8 +1166,8 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
                       <div>
                         <div className="relative flex items-center">
                           <input
-                            type="number"
-                            step="any"
+                            type="text"
+                            inputMode="decimal"
                             value={ownershipShare}
                             onChange={(e) => setOwnershipShare(e.target.value)}
                             placeholder={`pl. ${Math.round(buildingTotalShare * 0.025)}`}

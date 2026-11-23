@@ -63,6 +63,8 @@ export function createBuildingActions({ state, setState, persistState, showToast
     return true;
   };
 
+  const requireBuildingManage = requireAdmin;
+
   // Switch Building
   const switchBuilding = (buildingId) => {
     const curB = (state.buildings || []).find(b => b.id === buildingId);
@@ -223,7 +225,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
       if (updatedData?.emergencyContact !== undefined) safeUpdate.emergencyContact = updatedData.emergencyContact;
       if (updatedData?.notes !== undefined) safeUpdate.notes = updatedData.notes;
     } else {
-      if (!requireBuildingManage()) return;
+      if (!requireAdmin()) return;
       const { pass, password, resetToken, resetTokenExpiry, ...clean } = updatedData || {};
       safeUpdate = clean;
     }

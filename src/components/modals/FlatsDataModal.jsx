@@ -15,7 +15,8 @@ import {
   Briefcase,
   Layers,
   UserCheck,
-  CheckCircle2
+  CheckCircle2,
+  Pencil
 } from 'lucide-react';
 import { formatPhoneNumber } from '../../utils/phone';
 import { formatAnnexItem } from '../../utils/annex';
@@ -28,6 +29,7 @@ export function FlatsDataModal({
   onClose, 
   onOpenFlatDetail,
   onOpenEditFlatMaster,
+  onOpenBuildingSettings,
   onOpenDrawer,
   onOpenProfileSelector 
 }) {
@@ -241,15 +243,27 @@ export function FlatsDataModal({
                 <span className="text-gray-500 text-[10px] uppercase font-bold block">
                   {t.total_ownership_share || (isEn ? "Total Ownership Share" : "Összes Tulajdoni Hányad")}
                 </span>
-                <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
-                  isExactShareMatch && totalFlats > 0
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : isOverShare
-                      ? 'bg-red-100 text-red-800'
-                      : 'bg-amber-100 text-amber-800'
-                }`}>
-                  {sharePct.toFixed(1)}%
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
+                    isExactShareMatch && totalFlats > 0
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : isOverShare
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {sharePct.toFixed(1)}%
+                  </span>
+                  {onOpenBuildingSettings && (
+                    <button
+                      type="button"
+                      onClick={onOpenBuildingSettings}
+                      className="p-0.5 rounded text-gray-400 hover:text-[#1E3A8A] hover:bg-white/80 transition-colors cursor-pointer"
+                      title={isEn ? "Edit building total share" : "Ház teljes tulajdoni hányadának szerkesztése"}
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex items-baseline gap-1">
                 <strong className="text-gray-900 font-bold text-sm">
