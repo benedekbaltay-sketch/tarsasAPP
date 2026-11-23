@@ -243,7 +243,7 @@ export function CommunicationCenterModal({
 
   // Fallback to default dunning rules if not initialized
   const activeRules = useMemo(() => {
-    return Array.isArray(emailRules) && emailRules.length > 0
+    return Array.isArray(emailRules)
       ? emailRules
       : DEFAULT_DUNNING_RULES;
   }, [emailRules]);

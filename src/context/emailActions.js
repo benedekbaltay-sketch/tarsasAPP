@@ -5,6 +5,7 @@
 import { DEFAULT_DUNNING_RULES, buildPaymentDetailsBlock, resolveFlatOwnerName } from '../utils/dunningRules.js';
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
 import { sendResidentCustomNoticeEmail } from '../services/emailService.js';
+import { getPermanentVault, savePermanentVault } from './syncEngine.js';
 
 export function createEmailActions(optionsOrState, maybeSetState) {
   let state, setState, persistState, showToast, t;
@@ -37,6 +38,14 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       return false;
     }
 
+    if (ruleData.id) {
+      const currentVault = getPermanentVault();
+      if (currentVault.deletedIds && currentVault.deletedIds.includes(ruleData.id)) {
+        currentVault.deletedIds = currentVault.deletedIds.filter(x => x !== ruleData.id);
+        savePermanentVault(currentVault);
+      }
+    }
+
     const updater = (prev) => {
       const currentRules = Array.isArray(prev.emailRules) && prev.emailRules.length > 0 
         ? prev.emailRules 
@@ -56,6 +65,11 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       return {
         ...prev,
         emailRules: updatedRules,
+        vault: {
+          ...(prev.vault || {}),
+          deletedIds: ((prev.vault?.deletedIds) || []).filter(x => x !== ruleData.id),
+          lastUpdated: Date.now()
+        },
         lastUpdated: Date.now(),
         revision: (prev.revision || 0) + 1
       };
@@ -80,11 +94,24 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       return false;
     }
 
+    // Register tombstone in permanent vault so other browsers/sessions never resurrect it
+    const vault = getPermanentVault();
+    vault.deletedIds = vault.deletedIds || [];
+    if (!vault.deletedIds.includes(ruleId)) {
+      vault.deletedIds.push(ruleId);
+      savePermanentVault(vault);
+    }
+
     const updater = (prev) => {
       const rules = Array.isArray(prev.emailRules) ? prev.emailRules : [];
       return {
         ...prev,
         emailRules: rules.filter((r) => r.id !== ruleId),
+        vault: {
+          ...(prev.vault || {}),
+          deletedIds: Array.from(new Set([...(prev.vault?.deletedIds || []), ruleId])),
+          lastUpdated: Date.now()
+        },
         lastUpdated: Date.now(),
         revision: (prev.revision || 0) + 1
       };

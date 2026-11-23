@@ -6,11 +6,11 @@ import {
   DEFAULT_CALENDAR_EVENTS,
   DEFAULT_REP_PROFILE,
   DEFAULT_GLOBAL_SETTINGS
-} from '../constants/defaultData';
-import { DEFAULT_DUNNING_RULES } from '../utils/dunningRules';
-import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
-import { purgeSensitiveLocalStorage } from '../services/firestoreAdapter';
-import { recalculateFlatBalances } from '../utils/finances';
+} from '../constants/defaultData.js';
+import { DEFAULT_DUNNING_RULES } from '../utils/dunningRules.js';
+import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig.js';
+import { purgeSensitiveLocalStorage } from '../services/firestoreAdapter.js';
+import { recalculateFlatBalances } from '../utils/finances.js';
 
 export function stripSensitiveUserFields(user) {
   if (!user || typeof user !== 'object') return user;
@@ -344,11 +344,27 @@ export function mergeStateWithCloud(local, cloud) {
     };
   });
 
-  // 8. Merge email dunning rules
-  merged.emailRules = mergeItemArray(
-    ensureArray(local.emailRules && local.emailRules.length > 0 ? local.emailRules : DEFAULT_DUNNING_RULES),
-    ensureArray(cloud.emailRules && cloud.emailRules.length > 0 ? cloud.emailRules : DEFAULT_DUNNING_RULES)
-  );
+  // 8. Merge email dunning rules (authoritative cloud wins when cloud is authoritative; deletedIds tombstone enforced)
+  const cloudRules = Array.isArray(cloud.emailRules) ? cloud.emailRules : null;
+  const localRules = Array.isArray(local.emailRules) ? local.emailRules : null;
+
+  let mergedRules;
+  if (isCloudAuthoritative && cloudRules !== null) {
+    // Cloud is authoritative: respect cloud state directly (including deletions)
+    mergedRules = cloudRules;
+  } else if (!isCloudAuthoritative && localRules !== null) {
+    // Local has pending uncommitted offline edits
+    mergedRules = localRules;
+  } else {
+    // Fallback union
+    mergedRules = mergeItemArray(
+      ensureArray(localRules || DEFAULT_DUNNING_RULES),
+      ensureArray(cloudRules || DEFAULT_DUNNING_RULES)
+    );
+  }
+
+  // Strictly filter out any deleted rule IDs present in tombstones
+  merged.emailRules = (mergedRules || []).filter(r => r && r.id && !deletedTxIds.has(String(r.id)));
 
   // 9. Merge email outbox / logs
   merged.emailOutbox = mergeItemArray(

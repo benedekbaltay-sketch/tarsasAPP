@@ -9,6 +9,8 @@ import {
   MERGE_VARIABLES,
   resolveFlatOwnerName
 } from '../src/utils/dunningRules.js';
+import { mergeStateWithCloud } from '../src/context/syncEngine.js';
+import { createEmailActions } from '../src/context/emailActions.js';
 
 test('1. Template variable substitution works for Hungarian and English tags', () => {
   const tpl = 'Tisztelt {{tulajdonos_neve}}! A(z) {{lakas_szam}}. lakás tartozása {{hatralek_osszeg}} ({{hatralek_honapok}} hó). Ház: {{tarsashaz_neve}}, számla: {{szamlaszam}}.';
@@ -486,5 +488,63 @@ test('16. DEFAULT_DUNNING_RULES presets are all disabled (enabled: false) by def
     assert.equal(rule.enabled, false, `Preset rule ${rule.id} must be disabled by default so users can opt-in`);
   });
 });
+
+test('17. deleteEmailRule updates vault.deletedIds and mergeStateWithCloud prevents resurrecting deleted rules', () => {
+  let state = {
+    currentUser: { id: 'u-owner', email: 'owner@test.hu', role: 'admin' },
+    emailRules: [
+      { id: 'rule-keep', name: 'Megtartandó szabály', enabled: false },
+      { id: 'rule-delete', name: 'Törlendő szabály', enabled: false }
+    ],
+    revision: 5
+  };
+
+  const persistState = (updater) => {
+    state = typeof updater === 'function' ? updater(state) : updater;
+  };
+
+  const { deleteEmailRule } = createEmailActions({
+    state,
+    persistState
+  });
+
+  // Delete the rule
+  const deleted = deleteEmailRule('rule-delete');
+  assert.equal(deleted, true);
+  assert.equal(state.emailRules.length, 1);
+  assert.equal(state.emailRules[0].id, 'rule-keep');
+  assert.ok(state.vault.deletedIds.includes('rule-delete'), 'vault.deletedIds must contain the deleted ruleId');
+
+  // Simulate another browser session (local) that still has the deleted rule in cache
+  const staleLocalSession = {
+    revision: 3,
+    lastUpdated: 1000,
+    currentUser: { id: 'u-staff', email: 'staff@test.hu', role: 'admin' },
+    buildings: [{ id: 'b1', name: 'Ház 1' }],
+    emailRules: [
+      { id: 'rule-keep', name: 'Megtartandó szabály', enabled: false },
+      { id: 'rule-delete', name: 'Törlendő szabály', enabled: false } // Stale copy in another session
+    ]
+  };
+
+  // Authoritative cloud received owner deletion
+  const authoritativeCloud = {
+    revision: 6,
+    lastUpdated: '2026-11-23T20:30:00Z',
+    buildings: [{ id: 'b1', name: 'Ház 1' }],
+    emailRules: [
+      { id: 'rule-keep', name: 'Megtartandó szabály', enabled: false }
+    ],
+    vault: {
+      deletedIds: ['rule-delete']
+    }
+  };
+
+  const merged = mergeStateWithCloud(staleLocalSession, authoritativeCloud);
+  assert.equal(merged.emailRules.length, 1, 'Merged rules must have only 1 rule');
+  assert.equal(merged.emailRules[0].id, 'rule-keep');
+  assert.equal(merged.emailRules.some(r => r.id === 'rule-delete'), false, 'Deleted rule must NOT be resurrected by stale local cache');
+});
+
 
 
