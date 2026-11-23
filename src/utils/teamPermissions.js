@@ -1102,3 +1102,93 @@ export function buildInviteMailtoUrl(options = {}) {
   const { subject, textBody } = buildInviteWelcomeEmailContent(options);
   return `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textBody)}`;
 }
+
+/**
+ * Safely resolves the human display name of a user across currentUser, repProfile,
+ * organization members, and users lists, avoiding raw email prefixes where a real name exists.
+ */
+export function resolveUserDisplayName(currentUser = {}, state = {}) {
+  if (!currentUser) return '';
+  const email = (currentUser.email || '').toLowerCase().trim();
+  const emailPrefix = email.includes('@') ? email.split('@')[0].toLowerCase() : '';
+
+  const isRealName = (str) => {
+    if (!str || typeof str !== 'string') return false;
+    const clean = str.trim();
+    if (!clean || clean.includes('@')) return false;
+    if (emailPrefix && clean.toLowerCase() === emailPrefix) return false;
+    return true;
+  };
+
+  // 1. currentUser.name if it's a real name (not an email or email-prefix)
+  if (isRealName(currentUser.name)) {
+    return currentUser.name.trim();
+  }
+
+  // 2. Organization members list
+  if (email && Array.isArray(state?.organizations)) {
+    for (const org of state.organizations) {
+      if (Array.isArray(org.members)) {
+        const m = org.members.find(item => item && (item.email || '').toLowerCase().trim() === email);
+        if (m && isRealName(m.name)) {
+          return m.name.trim();
+        }
+      }
+      if (org.ownerEmail && (org.ownerEmail || '').toLowerCase().trim() === email && isRealName(org.centralContact?.name)) {
+        return org.centralContact.name.trim();
+      }
+    }
+  }
+
+  // 3. Representative profile name
+  if (isRealName(state?.repProfile?.name)) {
+    return state.repProfile.name.trim();
+  }
+
+  // 4. Users list
+  if (email && Array.isArray(state?.users)) {
+    const u = state.users.find(item => item && (item.email || '').toLowerCase().trim() === email);
+    if (u && isRealName(u.name)) {
+      return u.name.trim();
+    }
+  }
+
+  // 5. Flat owners list (if resident / owner)
+  if (email && Array.isArray(state?.buildings)) {
+    for (const b of state.buildings) {
+      for (const f of (b.flats || [])) {
+        if (Array.isArray(f.owners)) {
+          const o = f.owners.find(item => item && (item.email || '').toLowerCase().trim() === email);
+          if (o && isRealName(o.name)) {
+            return o.name.trim();
+          }
+        }
+        if ((f.email || '').toLowerCase().trim() === email && isRealName(f.ownerName)) {
+          return f.ownerName.trim();
+        }
+      }
+    }
+  }
+
+  // 6. Fallback to currentUser.name (even if prefix), or formatted name from email prefix, or email
+  if (currentUser.name && currentUser.name.trim()) {
+    const raw = currentUser.name.trim();
+    if (raw.includes('.') && !raw.includes(' ') && !raw.includes('@')) {
+      const parts = raw.split('.').filter(Boolean);
+      if (parts.length > 0) {
+        return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+      }
+    }
+    return raw;
+  }
+
+  // If email has dots like "john.doe", format as "John Doe"
+  if (emailPrefix && emailPrefix.includes('.')) {
+    const parts = emailPrefix.split('.').filter(Boolean);
+    if (parts.length > 0) {
+      return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+    }
+  }
+
+  return emailPrefix || email || (state?.currentLang === 'en' ? 'Property Manager' : 'Közös Képviselő');
+}

@@ -6,7 +6,7 @@ import { ImpersonationBanner } from './ImpersonationBanner';
 import { CloudSyncBadge } from './CloudSyncBadge';
 import { FlagIcon } from './FlagIcon';
 import { NotificationBell } from './NotificationBell';
-import { getAccessibleBuildings, isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
+import { getAccessibleBuildings, isUserBuildingViewer, canUserManageBuilding, resolveUserDisplayName } from '../utils/teamPermissions';
 
 export function Header({ 
   onOpenDrawer, 
@@ -82,7 +82,7 @@ export function Header({
     !canUserManageBuilding(currentUser, currentBuilding, organizations, buildings)
   );
 
-  const userDisplayName = currentUser?.name || repProfile?.name || currentUser?.email || (isHu ? 'Közös Képviselő' : 'Property Manager');
+  const userDisplayName = resolveUserDisplayName(currentUser, state);
 
   // Primary header title: active condominium name when inside a building; portfolio/app title otherwise
   const headerTitle = isInBuilding

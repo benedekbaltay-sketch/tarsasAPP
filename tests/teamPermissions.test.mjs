@@ -26,6 +26,7 @@ import {
   buildInviteWelcomeEmailContent,
   buildInviteMailtoUrl,
   buildForgotPasswordEmailContent,
+  resolveUserDisplayName,
 } from '../src/utils/teamPermissions.js';
 
 const BUILDINGS = [
@@ -708,4 +709,32 @@ test('12. Viewers must NOT be able to manage email rules or send circular letter
   assert.equal(isUserBuildingViewer(ownerUser, 'b-test-1', [viewerOrg], [testBuilding]), false);
   assert.equal(canUserManageBuilding(ownerUser, 'b-test-1', [viewerOrg], [testBuilding]), true);
 });
+
+test('13. resolveUserDisplayName prefers real human names over email prefixes and formats dot-emails', () => {
+  // Case A: Real name present on currentUser
+  const userA = { email: 'kovacs.bela@test.hu', name: 'Kovács Béla' };
+  assert.equal(resolveUserDisplayName(userA), 'Kovács Béla');
+
+  // Case B: currentUser has email prefix, but repProfile has real name
+  const userB = { email: 'baltay.benedek@test.hu', name: 'baltay.benedek' };
+  const stateB = { repProfile: { name: 'Baltay Benedek' } };
+  assert.equal(resolveUserDisplayName(userB, stateB), 'Baltay Benedek');
+
+  // Case C: currentUser has email prefix, but org member record has real name
+  const userC = { email: 'staff@test.hu', name: 'staff' };
+  const stateC = {
+    organizations: [{
+      members: [{ email: 'staff@test.hu', name: 'Nagy Anna' }]
+    }]
+  };
+  assert.equal(resolveUserDisplayName(userC, stateC), 'Nagy Anna');
+
+  // Case D: User only has email with dots ("kiss.peter@test.hu") and no explicit name anywhere
+  const userD = { email: 'kiss.peter@test.hu' };
+  assert.equal(resolveUserDisplayName(userD), 'Kiss Peter');
+
+  // Case E: Fallback when completely empty
+  assert.equal(resolveUserDisplayName(null), '');
+});
+
 

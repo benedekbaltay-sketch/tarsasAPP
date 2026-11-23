@@ -109,13 +109,45 @@ export function AppProvider({ children }) {
     }
     persistState(s => {
       const userEmail = (s.currentUser?.email || '').toLowerCase().trim();
+      const updatedName = profileData.name ? String(profileData.name).trim() : (nextRepProfile.name || '');
+
+      let nextCurrentUser = s.currentUser;
+      if (nextCurrentUser && updatedName) {
+        nextCurrentUser = { ...nextCurrentUser, name: updatedName };
+        try {
+          localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(nextCurrentUser));
+          sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(nextCurrentUser));
+        } catch (e) {}
+      }
+
+      let nextUsers = s.users;
+      if (Array.isArray(s.users) && userEmail && updatedName) {
+        nextUsers = s.users.map(u => {
+          if (u && (u.email || '').toLowerCase().trim() === userEmail) {
+            return { ...u, name: updatedName };
+          }
+          return u;
+        });
+      }
+
       let nextOrgs = s.organizations;
       if (Array.isArray(s.organizations) && s.organizations.length > 0) {
         nextOrgs = s.organizations.map(org => {
+          let updatedMembers = org.members;
+          if (Array.isArray(org.members) && userEmail && updatedName) {
+            updatedMembers = org.members.map(m => {
+              if (m && (m.email || '').toLowerCase().trim() === userEmail) {
+                return { ...m, name: updatedName };
+              }
+              return m;
+            });
+          }
+
           const orgOwnerEmail = (org.ownerEmail || '').toLowerCase().trim();
           if (userEmail && orgOwnerEmail === userEmail) {
             return {
               ...org,
+              members: updatedMembers,
               ...(profileData.companyName !== undefined ? { name: String(profileData.companyName).trim() } : {}),
               ...(profileData.taxNumber !== undefined ? { taxNumber: formatTaxNumber(profileData.taxNumber).trim() } : {}),
               centralContact: {
@@ -130,11 +162,13 @@ export function AppProvider({ children }) {
                 : org.showCentralContactToResidents
             };
           }
-          return org;
+          return { ...org, members: updatedMembers };
         });
       }
       return {
         ...s,
+        currentUser: nextCurrentUser,
+        users: nextUsers,
         repProfile: nextRepProfile,
         organizations: nextOrgs
       };

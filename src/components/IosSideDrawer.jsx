@@ -16,7 +16,7 @@ import {
   Settings,
   Users
 } from 'lucide-react';
-import { canUserManageTeam } from '../utils/teamPermissions';
+import { canUserManageTeam, resolveUserDisplayName } from '../utils/teamPermissions';
 
 export function IosSideDrawer({ 
   isOpen, 
@@ -29,7 +29,7 @@ export function IosSideDrawer({
   const isHu = currentLang === 'hu' || !currentLang;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const canManageTeam = canUserManageTeam(currentUser, organizations, buildings);
-  const userDisplayName = currentUser?.name || repProfile?.name || currentUser?.email || (isHu ? 'Közös Képviselő' : 'Property Manager');
+  const userDisplayName = resolveUserDisplayName(currentUser, state);
 
   // Determine dynamic mode: Portfolio Mode (All buildings aggregated) vs. Building-Specific Mode
   const isPortfolioMode = isAdmin && (Boolean(state.isPortfolioView) || !currentBuildingId);

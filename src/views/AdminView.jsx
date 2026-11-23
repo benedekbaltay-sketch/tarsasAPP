@@ -22,8 +22,7 @@ import {
   Shield,
   Filter,
   Minus,
-  Calendar,
-  Eye
+  Calendar
 } from 'lucide-react';
 import { 
   formatCurrency, 
@@ -268,31 +267,6 @@ export function AdminView({
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 md:py-8 space-y-6">
-      
-      {/* Read-Only Viewer Status Banner */}
-      {isEffectiveReadOnly && (
-        <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 flex flex-wrap items-center justify-between gap-3 text-amber-950 shadow-2xs">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0">
-              <Eye className="w-4 h-4 text-amber-700" />
-            </div>
-            <div className="min-w-0">
-              <div className="font-bold text-xs flex items-center gap-1.5">
-                <span>{t.team_viewer_banner_title || (isEn ? "Read-Only Viewer Access:" : "Megtekintő jogosultság:")}</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-amber-200/80 text-amber-900 text-[10px] font-extrabold">
-                  {t.team_viewer_badge || (isEn ? "Viewer" : "Csak megtekintő")}
-                </span>
-              </div>
-              <p className="text-[11px] text-amber-800/90 mt-0.5 leading-relaxed">
-                {t.team_viewer_banner_desc || (isEn
-                  ? "You have read-only access to this condominium. Data, balances, and documents can be viewed and exported, but editing is locked."
-                  : "Ezen a társasházon kizárólag olvasási joggal rendelkezel. Az adatok és kimutatások megtekinthetők és exportálhatók, de módosítás nem végezhető.")}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 1. Top KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         
