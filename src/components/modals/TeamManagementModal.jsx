@@ -520,7 +520,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     >
       <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden my-auto">
         {/* Header */}
-        <div className="p-4 px-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/80 flex-shrink-0">
+        <div className="p-4 px-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/80 flex-shrink-0 gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center flex-shrink-0 shadow-2xs">
               <Users className="w-5 h-5" />
@@ -539,70 +539,60 @@ export function TeamManagementModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-500 hover:text-gray-800 flex items-center justify-center transition-colors cursor-pointer flex-shrink-0"
-            title={t.close || (isEn ? 'Close' : 'Bezárás')}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Top Header Action Bar */}
-        <div className="px-5 pt-3 pb-2.5 border-b border-gray-100 bg-gray-50/40 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
-          {activeTab === 'members' ? (
-            <>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-[#1E3A8A] font-bold text-xs border border-blue-100 shadow-2xs">
-                  <Users className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                  <span>{t.team_tab_members || (isEn ? 'Team Members' : 'Munkatársak')}</span>
-                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-[#1E3A8A] text-white">
-                    {1 + staffMembers.length}
-                  </span>
-                </div>
-              </div>
-
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {activeTab === 'members' && (
               <button
                 type="button"
                 onClick={openNewInviteForm}
-                className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-all cursor-pointer active:scale-95"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-all cursor-pointer active:scale-95"
                 title={isEn ? 'Attach colleague by email and assign permissions' : 'Munkatárs csatolása e-mail címmel és jogosultságok kiosztása'}
               >
                 <UserPlus className="w-4 h-4" />
                 <span>{t.team_add_colleague_btn || (isEn ? '+ Add Colleague & Assign Rights' : '+ Új munkatárs & Jogosultságok')}</span>
               </button>
-            </>
-          ) : (
-            <div className="flex items-center justify-between w-full">
-              <button
-                type="button"
-                onClick={() => {
-                  resetInviteForm();
-                  setActiveTab('members');
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-100 text-gray-700 hover:text-gray-900 font-bold text-xs transition-all cursor-pointer shadow-2xs"
-              >
-                <ArrowLeft className="w-4 h-4 text-[#1E3A8A]" />
-                <span>{t.team_back_to_members || (isEn ? 'Back to Colleagues' : 'Vissza a munkatársakhoz')}</span>
-              </button>
+            )}
 
-              <div className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                {editingMemberId ? (
-                  <>
-                    <Edit3 className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                    <span>{t.team_editing_title || (isEn ? 'Edit Colleague & Permissions' : 'Munkatárs és jogkörök szerkesztése')}</span>
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{t.team_new_invite_title || (isEn ? 'Add Colleague & Assign Rights' : 'Új munkatárs hozzáadása & Jogosultságok megadása')}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-500 hover:text-gray-800 flex items-center justify-center transition-colors cursor-pointer flex-shrink-0"
+              title={t.close || (isEn ? 'Close' : 'Bezárás')}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
+
+        {/* Back / Mode Bar when inside Invite / Edit form */}
+        {activeTab === 'invite' && (
+          <div className="px-5 pt-3 pb-2.5 border-b border-gray-100 bg-gray-50/40 flex items-center justify-between gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                resetInviteForm();
+                setActiveTab('members');
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-100 text-gray-700 hover:text-gray-900 font-bold text-xs transition-all cursor-pointer shadow-2xs"
+            >
+              <ArrowLeft className="w-4 h-4 text-[#1E3A8A]" />
+              <span>{t.team_back_to_members || (isEn ? 'Back to Colleagues' : 'Vissza a munkatársakhoz')}</span>
+            </button>
+
+            <div className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+              {editingMemberId ? (
+                <>
+                  <Edit3 className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                  <span>{t.team_editing_title || (isEn ? 'Edit Colleague & Permissions' : 'Munkatárs és jogkörök szerkesztése')}</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{t.team_new_invite_title || (isEn ? 'Add Colleague & Assign Rights' : 'Új munkatárs hozzáadása & Jogosultságok megadása')}</span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
