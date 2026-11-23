@@ -327,6 +327,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       recipientEmail: cleanEmail,
       orgName: orgDisplayName,
       inviterName: actor.name || actor.email,
+      inviterEmail: actor.email,
       buildingNames: assignedBuildingNames,
       buildingScope: cleanScope,
       actionUrl: inviteUrl,

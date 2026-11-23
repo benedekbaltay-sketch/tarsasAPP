@@ -814,21 +814,30 @@ function escapeHtmlForEmail(str) {
 
 /**
  * Builds concise, polite Hungarian or English welcome invitation copy (subject, plain text, HTML)
- * containing a short introduction, assigned building(s), and password-setup / login link.
+ * containing who invited the colleague (name + email), the assigned buildings, and an elegant
+ * CTA button to set their password (hiding raw ugly URLs in HTML).
  */
 export function buildInviteWelcomeEmailContent({
   recipientName = '',
   recipientEmail = '',
   orgName = '',
   inviterName = '',
+  inviterEmail = '',
   buildingNames = [],
   buildingScope = 'selected',
   actionUrl = 'https://tarsashaz-cfe5d.web.app/',
   isEn = false,
 } = {}) {
-  const cleanRecipient = String(recipientName || recipientEmail || '').trim();
+  const cleanRecipientName = String(recipientName || '').trim();
+  const cleanRecipientEmail = String(recipientEmail || '').trim().toLowerCase();
+  const cleanRecipient = cleanRecipientName || cleanRecipientEmail || (isEn ? 'Colleague' : 'Kolléga');
   const cleanOrg = String(orgName || (isEn ? 'Property Management' : 'Közös Képviselet')).trim();
-  const cleanInviter = String(inviterName || cleanOrg).trim();
+  const cleanInviterName = String(inviterName || '').trim();
+  const cleanInviterEmail = String(inviterEmail || '').trim().toLowerCase();
+  const inviterDisplay = cleanInviterName && cleanInviterEmail
+    ? `${cleanInviterName} (${cleanInviterEmail})`
+    : cleanInviterName || cleanInviterEmail || cleanOrg;
+
   const bList = Array.isArray(buildingNames) ? buildingNames.filter(Boolean) : [];
   const buildingsTextHu =
     buildingScope === 'all'
@@ -848,36 +857,43 @@ export function buildInviteWelcomeEmailContent({
     const textBody = [
       `Hello ${cleanRecipient},`,
       '',
-      `${cleanInviter} (${cleanOrg}) has granted you property management access in TarsasApp for: ${buildingsTextEn}.`,
+      `${inviterDisplay} has granted you property management access in TarsasApp for ${cleanOrg}.`,
+      `Assigned condominium(s): ${buildingsTextEn}`,
+      `Your login email: ${cleanRecipientEmail || cleanRecipient}`,
       '',
-      'Please open the link below to set your own password. Once saved, you will be redirected to the login page where you can sign in immediately with your email address:',
+      'Please click the link below to set your password and activate your account:',
       actionUrl,
+      '',
+      'After setting your password, you will be automatically redirected to the login page.',
       '',
       'Best regards,',
       cleanOrg,
     ].join('\n');
 
     const htmlBody = `
-      <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111827;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;">
-        <h2 style="margin:0 0 12px;color:#1E3A8A;font-size:20px;">Welcome to TarsasApp!</h2>
-        <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:580px;margin:0 auto;padding:32px 24px;color:#1e293b;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 4px 12px rgba(0,0,0,0.04);">
+        <div style="display:flex;align-items:center;margin-bottom:20px;border-bottom:2px solid #f1f5f9;padding-bottom:16px;">
+          <h2 style="margin:0;color:#1E3A8A;font-size:20px;font-weight:800;letter-spacing:-0.02em;">TarsasApp</h2>
+          <span style="margin-left:auto;font-size:11px;font-weight:700;color:#64748b;background:#f8fafc;padding:4px 10px;border-radius:20px;border:1px solid #e2e8f0;">${escapeHtmlForEmail(cleanOrg)}</span>
+        </div>
+        <h3 style="margin:0 0 14px;color:#0f172a;font-size:17px;font-weight:700;">Welcome to the Team!</h3>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">
           Hello <strong>${escapeHtmlForEmail(cleanRecipient)}</strong>,
         </p>
-        <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">
-          <strong>${escapeHtmlForEmail(cleanInviter)}</strong> (${escapeHtmlForEmail(cleanOrg)}) has granted you condominium management access for:
-          <strong>${escapeHtmlForEmail(buildingsTextEn)}</strong>.
+        <p style="font-size:14px;line-height:1.6;margin:0 0 16px;color:#334155;">
+          <strong>${escapeHtmlForEmail(inviterDisplay)}</strong> invited you to manage condominiums in TarsasApp.
         </p>
-        <p style="font-size:14px;line-height:1.6;margin:0 0 20px;">
-          Click the button below to set your own password. Once confirmed, you will be redirected straight to the login page where you can sign in immediately.
-        </p>
-        <p style="margin:0 0 20px;">
-          <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;font-size:14px;">
-            Set Password &amp; Activate Account
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:0 0 24px;font-size:13px;line-height:1.7;">
+          <div><strong style="color:#475569;">Assigned properties:</strong> <span style="color:#0f172a;font-weight:600;">${escapeHtmlForEmail(buildingsTextEn)}</span></div>
+          <div><strong style="color:#475569;">Login email address:</strong> <span style="color:#1E3A8A;font-weight:700;">${escapeHtmlForEmail(cleanRecipientEmail || cleanRecipient)}</span></div>
+        </div>
+        <div style="text-align:center;margin:28px 0;">
+          <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:12px;font-size:14px;box-shadow:0 2px 6px rgba(30,58,138,0.25);">
+            Set Password &amp; Activate Account &rarr;
           </a>
-        </p>
-        <p style="font-size:12px;color:#6b7280;line-height:1.5;margin:0;">
-          If the button does not work, copy this link into your browser:<br/>
-          <a href="${escapeHtmlForEmail(actionUrl)}" style="color:#1E3A8A;word-break:break-all;">${escapeHtmlForEmail(actionUrl)}</a>
+        </div>
+        <p style="font-size:12px;color:#64748b;line-height:1.5;margin:24px 0 0;text-align:center;">
+          If the button above does not work, <a href="${escapeHtmlForEmail(actionUrl)}" style="color:#1E3A8A;font-weight:600;text-decoration:underline;">click here to set your password</a>.
         </p>
       </div>
     `.trim();
@@ -889,37 +905,148 @@ export function buildInviteWelcomeEmailContent({
   const textBody = [
     `Kedves ${cleanRecipient}!`,
     '',
-    `${cleanInviter} (${cleanOrg}) hozzáférést adott számodra a TarsasApp társasházkezelő rendszerhez a következő társasház(ak) kezelésére: ${buildingsTextHu}.`,
+    `${inviterDisplay} társasházkezelői hozzáférést adott számodra a TarsasApp rendszerben (${cleanOrg}).`,
+    `Kezelt társasház(ak): ${buildingsTextHu}`,
+    `Belépési e-mail címed: ${cleanRecipientEmail || cleanRecipient}`,
     '',
-    'Az alábbi linkre kattintva tudsz magadnak saját jelszót beállítani. A jelszó mentése után a rendszer automatikusan a bejelentkezési felületre irányít, ahol az e-mail címeddel azonnal beléphetsz:',
+    'Kattints az alábbi hivatkozásra a saját jelszavad beállításához és a fiók aktiválásához:',
     actionUrl,
+    '',
+    'A jelszó megadása után a rendszer automatikusan a bejelentkezési oldalra irányít.',
     '',
     'Üdvözlettel,',
     cleanOrg,
   ].join('\n');
 
   const htmlBody = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111827;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;">
-      <h2 style="margin:0 0 12px;color:#1E3A8A;font-size:20px;">Meghívó a TarsasApp rendszerbe</h2>
-      <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:580px;margin:0 auto;padding:32px 24px;color:#1e293b;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 4px 12px rgba(0,0,0,0.04);">
+      <div style="display:flex;align-items:center;margin-bottom:20px;border-bottom:2px solid #f1f5f9;padding-bottom:16px;">
+        <h2 style="margin:0;color:#1E3A8A;font-size:20px;font-weight:800;letter-spacing:-0.02em;">TarsasApp</h2>
+        <span style="margin-left:auto;font-size:11px;font-weight:700;color:#64748b;background:#f8fafc;padding:4px 10px;border-radius:20px;border:1px solid #e2e8f0;">${escapeHtmlForEmail(cleanOrg)}</span>
+      </div>
+      <h3 style="margin:0 0 14px;color:#0f172a;font-size:17px;font-weight:700;">Meghívó a csapatba</h3>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">
         Kedves <strong>${escapeHtmlForEmail(cleanRecipient)}</strong>!
       </p>
-      <p style="font-size:14px;line-height:1.6;margin:0 0 12px;">
-        <strong>${escapeHtmlForEmail(cleanInviter)}</strong> (${escapeHtmlForEmail(cleanOrg)}) társasházkezelői hozzáférést adott számodra:
-        <strong>${escapeHtmlForEmail(buildingsTextHu)}</strong>.
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;color:#334155;">
+        <strong>${escapeHtmlForEmail(inviterDisplay)}</strong> hozzáférést adott számodra a <strong>${escapeHtmlForEmail(cleanOrg)}</strong> kezelésében lévő társasházakhoz.
       </p>
-      <p style="font-size:14px;line-height:1.6;margin:0 0 20px;">
-        Kattints az alábbi gombra a saját jelszavad beállításához. A mentés után a rendszer automatikusan a bejelentkezési felületre irányít, ahol azonnal be tudsz lépni.
-      </p>
-      <p style="margin:0 0 20px;">
-        <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;font-size:14px;">
-          Jelszó beállítása és aktiválás
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:0 0 24px;font-size:13px;line-height:1.7;">
+        <div><strong style="color:#475569;">Kezelt társasház(ak):</strong> <span style="color:#0f172a;font-weight:600;">${escapeHtmlForEmail(buildingsTextHu)}</span></div>
+        <div><strong style="color:#475569;">Belépési e-mail címed:</strong> <span style="color:#1E3A8A;font-weight:700;">${escapeHtmlForEmail(cleanRecipientEmail || cleanRecipient)}</span></div>
+      </div>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:12px;font-size:14px;box-shadow:0 2px 6px rgba(30,58,138,0.25);">
+          Jelszó beállítása és fiók aktiválása &rarr;
         </a>
+      </div>
+      <p style="font-size:12px;color:#64748b;line-height:1.5;margin:24px 0 0;text-align:center;">
+        Ha a fenti gomb nem kattintható, <a href="${escapeHtmlForEmail(actionUrl)}" style="color:#1E3A8A;font-weight:600;text-decoration:underline;">kattints ide a jelszavad beállításához</a>.
       </p>
-      <p style="font-size:12px;color:#6b7280;line-height:1.5;margin:0;">
-        Ha a gomb nem működik, másold be ezt a hivatkozást a böngésződbe:<br/>
-        <a href="${escapeHtmlForEmail(actionUrl)}" style="color:#1E3A8A;word-break:break-all;">${escapeHtmlForEmail(actionUrl)}</a>
+    </div>
+  `.trim();
+
+  return { subject, textBody, htmlBody };
+}
+
+/**
+ * Builds professional Hungarian or English forgot-password copy (subject, plain text, HTML)
+ * with a clean CTA button ("Új jelszó megadása") and security notices, omitting ugly raw URLs in HTML.
+ */
+export function buildForgotPasswordEmailContent({
+  recipientEmail = '',
+  actionUrl = 'https://tarsashaz-cfe5d.web.app/',
+  isEn = false,
+} = {}) {
+  const cleanEmail = normalizeEmail(recipientEmail);
+
+  if (isEn) {
+    const subject = 'TarsasApp – Password Reset Request';
+    const textBody = [
+      'Hello,',
+      '',
+      `We received a request to reset the password for your TarsasApp account (${cleanEmail || 'your email'}).`,
+      '',
+      'Please click the link below to set a new password:',
+      actionUrl,
+      '',
+      'If you did not request this password reset, you can safely ignore this email. Your password will remain unchanged.',
+      'For security reasons, this link is valid for 1 hour.',
+      '',
+      'Best regards,',
+      'The TarsasApp Team',
+    ].join('\n');
+
+    const htmlBody = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:580px;margin:0 auto;padding:32px 24px;color:#1e293b;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 4px 12px rgba(0,0,0,0.04);">
+        <div style="display:flex;align-items:center;margin-bottom:20px;border-bottom:2px solid #f1f5f9;padding-bottom:16px;">
+          <h2 style="margin:0;color:#1E3A8A;font-size:20px;font-weight:800;letter-spacing:-0.02em;">TarsasApp</h2>
+          <span style="margin-left:auto;font-size:11px;font-weight:700;color:#b45309;background:#fef3c7;padding:4px 10px;border-radius:20px;">Security Notice</span>
+        </div>
+        <h3 style="margin:0 0 14px;color:#0f172a;font-size:17px;font-weight:700;">Password Reset</h3>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 16px;color:#334155;">
+          We received a request to reset the password for your account: <strong style="color:#1E3A8A;">${escapeHtmlForEmail(cleanEmail)}</strong>.
+        </p>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 24px;color:#334155;">
+          Click the button below to choose a new, secure password:
+        </p>
+        <div style="text-align:center;margin:28px 0;">
+          <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:12px;font-size:14px;box-shadow:0 2px 6px rgba(30,58,138,0.25);">
+            Set New Password &rarr;
+          </a>
+        </div>
+        <p style="font-size:12px;color:#64748b;line-height:1.5;margin:24px 0 0;text-align:center;">
+          If the button above does not work, <a href="${escapeHtmlForEmail(actionUrl)}" style="color:#1E3A8A;font-weight:600;text-decoration:underline;">click here to reset your password</a>.
+        </p>
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid #f1f5f9;font-size:12px;color:#94a3b8;line-height:1.5;">
+          If you did not request this change, please ignore this email. Your current password remains secure.
+        </div>
+      </div>
+    `.trim();
+
+    return { subject, textBody, htmlBody };
+  }
+
+  const subject = 'TarsasApp – Jelszó visszaállítása';
+  const textBody = [
+    'Kedves Felhasználónk!',
+    '',
+    `Jelszó-visszaállítást kezdeményeztek a TarsasApp rendszerben a(z) ${cleanEmail || 'fiókodhoz'} tartozó profilhoz.`,
+    '',
+    'Az új jelszavad megadásához kattints az alábbi hivatkozásra:',
+    actionUrl,
+    '',
+    'Amennyiben nem te kérted a jelszó módosítását, ezt az e-mailt nyugodtan figyelmen kívül hagyhatod, a fiókod és jelenlegi jelszavad biztonságban marad.',
+    'A hivatkozás biztonsági okokból 1 órán keresztül érvényes.',
+    '',
+    'Üdvözlettel,',
+    'A TarsasApp Csapata',
+  ].join('\n');
+
+  const htmlBody = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:580px;margin:0 auto;padding:32px 24px;color:#1e293b;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 4px 12px rgba(0,0,0,0.04);">
+      <div style="display:flex;align-items:center;margin-bottom:20px;border-bottom:2px solid #f1f5f9;padding-bottom:16px;">
+        <h2 style="margin:0;color:#1E3A8A;font-size:20px;font-weight:800;letter-spacing:-0.02em;">TarsasApp</h2>
+        <span style="margin-left:auto;font-size:11px;font-weight:700;color:#b45309;background:#fef3c7;padding:4px 10px;border-radius:20px;">Biztonsági értesítés</span>
+      </div>
+      <h3 style="margin:0 0 14px;color:#0f172a;font-size:17px;font-weight:700;">Jelszó visszaállítása</h3>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;color:#334155;">
+        Jelszó-visszaállítást kezdeményeztél a(z) <strong style="color:#1E3A8A;">${escapeHtmlForEmail(cleanEmail)}</strong> e-mail címhez tartozó TarsasApp fiókodhoz.
       </p>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 24px;color:#334155;">
+        Kattints az alábbi gombra új jelszavad megadásához:
+      </p>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:12px;font-size:14px;box-shadow:0 2px 6px rgba(30,58,138,0.25);">
+          Új jelszó megadása &rarr;
+        </a>
+      </div>
+      <p style="font-size:12px;color:#64748b;line-height:1.5;margin:24px 0 0;text-align:center;">
+        Ha a fenti gomb nem kattintható, <a href="${escapeHtmlForEmail(actionUrl)}" style="color:#1E3A8A;font-weight:600;text-decoration:underline;">kattints ide az új jelszavad beállításához</a>.
+      </p>
+      <div style="margin-top:24px;padding-top:16px;border-top:1px solid #f1f5f9;font-size:12px;color:#94a3b8;line-height:1.5;">
+        Amennyiben nem te kérted ezt a módosítást, kérjük, hagyd figyelmen kívül ezt a levelet. A fiókod és jelenlegi jelszavad biztonságban marad.
+      </div>
     </div>
   `.trim();
 

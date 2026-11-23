@@ -24,6 +24,7 @@ import {
   extractInviteContextFromUrl,
   buildInviteWelcomeEmailContent,
   buildInviteMailtoUrl,
+  buildForgotPasswordEmailContent,
 } from '../src/utils/teamPermissions.js';
 
 const BUILDINGS = [
@@ -436,30 +437,50 @@ test('8. Colleague invite password-setup URL, nested continueUrl extraction, str
   assert.equal(extracted.passwordSet, true);
   assert.equal(extracted.isInvitePasswordReset, true);
 
-  // Welcome email content (HU + EN) escapes HTML and includes building names & action URL
+  // Welcome email content (HU + EN) escapes HTML and includes inviter details, recipient email, building names & action URL
   const huEmail = buildInviteWelcomeEmailContent({
     recipientName: 'Kovács <Anna>',
     recipientEmail: 'anna@alfa.hu',
     orgName: 'Alfa Kft.',
     inviterName: 'Főnök Péter',
+    inviterEmail: 'peter@alfa.hu',
     buildingNames: ['Batyu u. 21.'],
     actionUrl: continueUrl,
     isEn: false,
   });
   assert.match(huEmail.subject, /TarsasApp meghívó/);
   assert.match(huEmail.textBody, /Batyu u\. 21\./);
+  assert.match(huEmail.textBody, /Főnök Péter \(peter@alfa\.hu\)/);
+  assert.match(huEmail.textBody, /anna@alfa\.hu/);
   assert.match(huEmail.htmlBody, /Kovács &lt;Anna&gt;/);
+  assert.match(huEmail.htmlBody, /Főnök Péter \(peter@alfa\.hu\)/);
+  assert.match(huEmail.htmlBody, /anna@alfa\.hu/);
+  assert.match(huEmail.htmlBody, /Jelszó beállítása és fiók aktiválása/);
   assert.ok(!huEmail.htmlBody.includes('<Anna>'));
 
   const mailto = buildInviteMailtoUrl({
     recipientName: 'Anna',
     recipientEmail: 'anna@alfa.hu',
     orgName: 'Alfa Kft.',
+    inviterName: 'Főnök Péter',
+    inviterEmail: 'peter@alfa.hu',
     buildingNames: ['Batyu u. 21.'],
     actionUrl: continueUrl,
     isEn: true,
   });
   assert.ok(mailto.startsWith('mailto:anna%40alfa.hu?subject='));
+
+  // Dedicated professional Forgot Password email content (distinct from invite email)
+  const forgotHu = buildForgotPasswordEmailContent({
+    recipientEmail: 'anna@alfa.hu',
+    actionUrl: 'https://tarsashaz-cfe5d.web.app/?mode=resetPassword&oobCode=123',
+    isEn: false,
+  });
+  assert.equal(forgotHu.subject, 'TarsasApp – Jelszó visszaállítása');
+  assert.match(forgotHu.textBody, /Jelszó-visszaállítást kezdeményeztek/);
+  assert.match(forgotHu.htmlBody, /Új jelszó megadása/);
+  assert.match(forgotHu.htmlBody, /anna@alfa\.hu/);
+  assert.notEqual(forgotHu.subject, huEmail.subject);
 });
 
 test('9. Per-building assignments: different roles & permissions on different buildings for same colleague', () => {
