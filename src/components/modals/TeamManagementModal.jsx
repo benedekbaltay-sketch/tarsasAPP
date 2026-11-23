@@ -200,6 +200,14 @@ export function TeamManagementModal({ isOpen, onClose }) {
         showCentralContact: Boolean(b.showCentralContactToResidents),
       };
     });
+    const existingRoles = Object.values(member.buildingAssignments || {}).map((a) => a?.role).filter(Boolean);
+    const initialRole = existingRoles.length > 0 && existingRoles.every((r) => r === 'viewer') ? 'viewer' : 'manager';
+    setAllScopeDefaults({
+      role: initialRole,
+      canEditBankAccounts: Boolean(member.permissions?.canEditBankAccounts),
+      showManagerContact: false,
+      showCentralContact: false,
+    });
     setFormBuildingAssignments(initialAssignments);
     setSelectedBuildingConfigTab('all');
     setActiveTab('invite');
@@ -238,6 +246,14 @@ export function TeamManagementModal({ isOpen, onClose }) {
         };
       }
     });
+    const existingRoles = Object.values(member.buildingAssignments || {}).map((a) => a?.role).filter(Boolean);
+    const initialRole = existingRoles.length > 0 && existingRoles.every((r) => r === 'viewer') ? 'viewer' : 'manager';
+    setAllScopeDefaults({
+      role: initialRole,
+      canEditBankAccounts: Boolean(member.permissions?.canEditBankAccounts),
+      showManagerContact: false,
+      showCentralContact: false,
+    });
     setFormBuildingAssignments(initialAssignments);
     setSelectedBuildingConfigTab('all');
     setActiveTab('invite');
@@ -258,10 +274,12 @@ export function TeamManagementModal({ isOpen, onClose }) {
       return {
         ...prev,
         [bId]: {
-          role: 'manager',
-          canEditBankAccounts: permEditBankAccounts,
-          showManagerContact: false,
-          showCentralContact: Boolean(targetB?.showCentralContactToResidents),
+          role: allScopeDefaults.role || 'manager',
+          canEditBankAccounts: Boolean(allScopeDefaults.canEditBankAccounts || permEditBankAccounts),
+          showManagerContact: Boolean(allScopeDefaults.showManagerContact),
+          showCentralContact: allScopeDefaults.showCentralContact !== undefined
+            ? Boolean(allScopeDefaults.showCentralContact)
+            : Boolean(targetB?.showCentralContactToResidents),
         },
       };
     });
@@ -271,7 +289,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     setFormBuildingAssignments((prev) => ({
       ...prev,
       [bId]: {
-        role: 'manager',
+        role: allScopeDefaults.role || 'manager',
         canEditBankAccounts: false,
         showManagerContact: false,
         showCentralContact: false,
@@ -283,7 +301,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
 
   const copyAssignmentToAllSelected = (sourceBId) => {
     const src = formBuildingAssignments[sourceBId] || {
-      role: 'manager',
+      role: allScopeDefaults.role || 'manager',
       canEditBankAccounts: false,
       showManagerContact: false,
       showCentralContact: false,
@@ -311,9 +329,9 @@ export function TeamManagementModal({ isOpen, onClose }) {
     if (!targetBId || !formBuildingAssignments[targetBId]) {
       return {
         role: allScopeDefaults.role || 'manager',
-        canEditBankAccounts: Boolean(permEditBankAccounts),
-        showManagerContact: false,
-        showCentralContact: false,
+        canEditBankAccounts: Boolean(allScopeDefaults.canEditBankAccounts || permEditBankAccounts),
+        showManagerContact: Boolean(allScopeDefaults.showManagerContact),
+        showCentralContact: Boolean(allScopeDefaults.showCentralContact),
       };
     }
     if (selectedBuildingConfigTab !== 'all') {
@@ -326,28 +344,29 @@ export function TeamManagementModal({ isOpen, onClose }) {
     const allSameBank = formBuildingIds.every((id) => Boolean(formBuildingAssignments[id]?.canEditBankAccounts) === Boolean(first.canEditBankAccounts));
 
     return {
-      role: allSameRole ? (first.role || 'manager') : 'manager',
-      showManagerContact: allSameManager ? Boolean(first.showManagerContact) : false,
-      showCentralContact: allSameCentral ? Boolean(first.showCentralContact) : false,
-      canEditBankAccounts: allSameBank ? Boolean(first.canEditBankAccounts) : false,
+      role: allSameRole ? (first.role || 'manager') : (allScopeDefaults.role || 'manager'),
+      showManagerContact: allSameManager ? Boolean(first.showManagerContact) : Boolean(allScopeDefaults.showManagerContact),
+      showCentralContact: allSameCentral ? Boolean(first.showCentralContact) : Boolean(allScopeDefaults.showCentralContact),
+      canEditBankAccounts: allSameBank ? Boolean(first.canEditBankAccounts) : Boolean(allScopeDefaults.canEditBankAccounts),
     };
   };
 
   const setUnifiedAssignmentValue = (key, value) => {
-    if (formScope === 'all') {
-      setAllScopeDefaults((prev) => ({ ...prev, [key]: value }));
-      if (key === 'canEditBankAccounts') {
-        setPermEditBankAccounts(Boolean(value));
-      }
-      return;
+    // 1. Always update allScopeDefaults so defaults for any unselected or future building are kept
+    setAllScopeDefaults((prev) => ({ ...prev, [key]: value }));
+
+    if (key === 'canEditBankAccounts') {
+      setPermEditBankAccounts(Boolean(value));
     }
 
-    if (selectedBuildingConfigTab === 'all') {
-      setFormBuildingAssignments((prev) => {
-        const next = { ...prev };
-        formBuildingIds.forEach((bId) => {
+    // 2. Always update all buildings when editing 'all' or formScope === 'all'
+    setFormBuildingAssignments((prev) => {
+      const next = { ...prev };
+      if (selectedBuildingConfigTab === 'all' || formScope === 'all') {
+        const targetIds = formBuildingIds.length > 0 ? formBuildingIds : orgBuildings.map((b) => b.id);
+        targetIds.forEach((bId) => {
           next[bId] = {
-            role: 'manager',
+            role: allScopeDefaults.role || 'manager',
             canEditBankAccounts: false,
             showManagerContact: false,
             showCentralContact: false,
@@ -355,17 +374,19 @@ export function TeamManagementModal({ isOpen, onClose }) {
             [key]: value,
           };
         });
-        return next;
-      });
-      if (key === 'canEditBankAccounts') {
-        setPermEditBankAccounts(Boolean(value));
+      } else {
+        const targetB = orgBuildings.find((b) => b.id === selectedBuildingConfigTab);
+        next[selectedBuildingConfigTab] = {
+          role: allScopeDefaults.role || 'manager',
+          canEditBankAccounts: false,
+          showManagerContact: false,
+          showCentralContact: Boolean(targetB?.showCentralContactToResidents),
+          ...(next[selectedBuildingConfigTab] || {}),
+          [key]: value,
+        };
       }
-    } else {
-      updateBuildingAssignment(selectedBuildingConfigTab, key, value);
-      if (key === 'canEditBankAccounts' && value) {
-        setPermEditBankAccounts(true);
-      }
-    }
+      return next;
+    });
   };
 
   const handleSaveMember = async (e) => {
