@@ -101,8 +101,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const [permManageTeam, setPermManageTeam] = useState(false);
   const [permEditBankAccounts, setPermEditBankAccounts] = useState(false);
 
-  // Latest generated invite URL & automatic email status banner
-  const [generatedInviteBanner, setGeneratedInviteBanner] = useState(null); // { email, url, token, mailtoUrl, emailSent, emailError }
   const [copiedInviteKey, setCopiedInviteKey] = useState(null);
   const [isSubmittingInvite, setIsSubmittingInvite] = useState(false);
   const [resendingKey, setResendingKey] = useState(null);
@@ -119,7 +117,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
     if (isOpen) {
       setActiveTab('members');
       setEditingMemberId(null);
-      setGeneratedInviteBanner(null);
       setHandoverFromMember(null);
       setRemoveTargetMember(null);
     }
@@ -448,14 +445,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
       });
 
       if (res?.success) {
-        setGeneratedInviteBanner({
-          email: res.member?.email || formEmail,
-          url: res.inviteUrl,
-          token: res.invite?.token || '',
-          mailtoUrl: res.mailtoUrl || '',
-          emailSent: Boolean(res.emailSent),
-          emailError: res.emailError || null,
-        });
         resetInviteForm();
         setActiveTab('members');
       }
@@ -468,12 +457,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     if (!resendTeamInviteEmail || resendingKey) return;
     setResendingKey(key || email);
     try {
-      const res = await resendTeamInviteEmail(email, token);
-      if (generatedInviteBanner && normalizeEmail(generatedInviteBanner.email) === normalizeEmail(email)) {
-        setGeneratedInviteBanner((prev) =>
-          prev ? { ...prev, emailSent: Boolean(res?.sent), emailError: res?.errorCode || null } : prev
-        );
-      }
+      await resendTeamInviteEmail(email, token);
     } finally {
       setResendingKey(null);
     }
@@ -622,101 +606,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
-          {/* Automatic Invite Email Delivery & Link Banner */}
-          {generatedInviteBanner && (
-            <div
-              className={`p-3.5 rounded-xl border space-y-2.5 animate-fadeIn ${
-                generatedInviteBanner.emailSent
-                  ? 'bg-emerald-50 border-emerald-200'
-                  : 'bg-amber-50 border-amber-200'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div
-                  className={`flex items-center gap-2 font-bold text-xs ${
-                    generatedInviteBanner.emailSent ? 'text-emerald-900' : 'text-amber-900'
-                  }`}
-                >
-                  {generatedInviteBanner.emailSent ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  ) : (
-                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                  )}
-                  <span>
-                    {generatedInviteBanner.emailSent
-                      ? (isEn
-                          ? `Invitation & password setup email sent to ${generatedInviteBanner.email}`
-                          : `Meghívó és jelszóbeállító e-mail elküldve: ${generatedInviteBanner.email}`)
-                      : (isEn
-                          ? `Colleague attached, but email delivery failed (${generatedInviteBanner.email})`
-                          : `Munkatárs csatolva, de az automatikus e-mail küldése sikertelen (${generatedInviteBanner.email})`)}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setGeneratedInviteBanner(null)}
-                  className="text-gray-500 hover:text-gray-800 p-0.5 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <p
-                className={`text-[11px] leading-relaxed ${
-                  generatedInviteBanner.emailSent ? 'text-emerald-800' : 'text-amber-900'
-                }`}
-              >
-                {generatedInviteBanner.emailSent
-                  ? (t.team_invite_email_sent_desc || (
-                      isEn
-                        ? 'Your colleague received a password-setup link by email. After setting their own password, they are redirected directly to the login page. (Please check Spam/Promotions if it does not arrive within a minute.)'
-                        : 'A munkatárs e-mailben megkapta a jelszóbeállító linket. Miután megadta a saját jelszavát és leokézta, a rendszer automatikusan a bejelentkezési felületre irányítja. (Ha pár percen belül nem látja, érdemes a Spam / Promóciók mappát is ellenőrizni.)'
-                    ))
-                  : (t.team_invite_email_failed_desc || (
-                      isEn
-                        ? 'You can retry sending the password-setup email below, or open your own email client with a pre-filled welcome message.'
-                        : 'Az alábbi gombbal újrapróbálhatod az automatikus e-mail küldését, vagy megnyithatsz egy előre kitöltött tájékoztató levelet a saját leveleződben.'
-                    ))}
-              </p>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={resendingKey === 'banner'}
-                  onClick={() =>
-                    handleResendEmail(generatedInviteBanner.email, generatedInviteBanner.token, 'banner')
-                  }
-                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-gray-50 border border-gray-200 text-gray-800 font-bold text-[11px] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {resendingKey === 'banner' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1E3A8A]" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                  )}
-                  <span>{t.team_resend_email_btn || (isEn ? 'Resend password email' : 'Jelszó e-mail újraküldése')}</span>
-                </button>
-
-                {generatedInviteBanner.mailtoUrl && (
-                  <a
-                    href={generatedInviteBanner.mailtoUrl}
-                    className="px-3 py-1.5 rounded-lg bg-white hover:bg-blue-50 border border-blue-200 text-[#1E3A8A] font-bold text-[11px] flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>{t.team_open_mailto_btn || (isEn ? 'Send welcome intro email' : 'Saját tájékoztató levél küldése')}</span>
-                  </a>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => handleCopyText(generatedInviteBanner.url, 'banner')}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1.5 cursor-pointer"
-                >
-                  {copiedInviteKey === 'banner' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{t.team_copy_invite_link || (isEn ? 'Copy invite link' : 'Meghívó link másolása')}</span>
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* ============================================================== */}
           {/* TAB 1: MEMBERS & PENDING INVITES                               */}
           {/* ============================================================== */}
