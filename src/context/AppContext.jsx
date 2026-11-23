@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { translations } from '../constants/translations';
-import { getFirebaseInstance, IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
+import { getFirebaseInstance, IS_FIRESTORE_MODE, isCurrentTabSessionOnly } from '../constants/firebaseConfig';
 import { ref, onValue, set, get } from 'firebase/database';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { recalculateFlatBalances } from '../utils/finances';
@@ -443,9 +443,20 @@ export function AppProvider({ children }) {
         // Legacy RTDB LocalStorage write - lightweight synchronous save without binaries, passwords, or banking API secrets
         if (nextState.currentUser) {
           try {
+            const isTabSession = isCurrentTabSessionOnly();
+            let savedLocalUser = null;
+            if (isTabSession) {
+              const rawRem = localStorage.getItem("tarsashaz_logged_in_user");
+              if (rawRem) {
+                try { savedLocalUser = JSON.parse(rawRem); } catch {}
+              }
+            } else {
+              savedLocalUser = stripSensitiveUserFields(nextState.currentUser);
+            }
+
             const cleanStateForLocal = {
               ...nextState,
-              currentUser: stripSensitiveUserFields(nextState.currentUser),
+              currentUser: savedLocalUser,
               users: (nextState.users || []).map(stripSensitiveUserFields),
               buildings: stripSensitiveBuildingFields(stripLargeBinaries(nextState.buildings || [], { stripInlineAttachments: true }))
             };
@@ -729,10 +740,15 @@ export function AppProvider({ children }) {
             unsubscribeRtdb();
             unsubscribeRtdb = null;
           }
+          const isTabSession = isCurrentTabSessionOnly();
+          if (!isTabSession) {
+            try {
+              localStorage.removeItem("tarsashaz_logged_in_user");
+              localStorage.removeItem("tarsashaz_remember_me");
+              localStorage.removeItem("tarsashaz_state");
+            } catch (e) {}
+          }
           try {
-            localStorage.removeItem("tarsashaz_logged_in_user");
-            localStorage.removeItem("tarsashaz_remember_me");
-            localStorage.removeItem("tarsashaz_state");
             sessionStorage.removeItem("tarsashaz_session_user");
           } catch (e) {}
           setState(prev => prev.currentUser ? {
@@ -884,7 +900,7 @@ export function AppProvider({ children }) {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", handlePageHide);
     };
-  }, []);
+  }, [state.currentUser?.email]);
 
   // Manual re-synchronization with cloud on demand
   const refreshFromCloud = async (showNotification = true) => {
@@ -1141,7 +1157,10 @@ export function AppProvider({ children }) {
 
     if (!IS_FIRESTORE_MODE) {
       try {
-        localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+        if (!isCurrentTabSessionOnly() && localStorage.getItem("tarsashaz_remember_me") === "true") {
+          localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+        }
+        sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(updatedUser));
         localStorage.setItem("tarsashaz_role_mode", "kk");
         localStorage.setItem("tarsashaz_is_portfolio", buildingId ? "false" : "true");
       } catch (e) {}
@@ -1203,7 +1222,10 @@ export function AppProvider({ children }) {
 
     if (!IS_FIRESTORE_MODE) {
       try {
-        localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+        if (!isCurrentTabSessionOnly() && localStorage.getItem("tarsashaz_remember_me") === "true") {
+          localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+        }
+        sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(updatedUser));
         localStorage.setItem("tarsashaz_role_mode", "tenant");
         localStorage.setItem("tarsashaz_is_portfolio", "false");
       } catch (e) {}

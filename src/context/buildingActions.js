@@ -1,5 +1,5 @@
 import { getPermanentVault, savePermanentVault, stripSensitiveUserFields } from './syncEngine';
-import { getFirebaseInstance, IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
+import { getFirebaseInstance, IS_FIRESTORE_MODE, isCurrentTabSessionOnly } from '../constants/firebaseConfig';
 import { ref, set, get } from 'firebase/database';
 import {
   callProvisionBuilding,
@@ -99,7 +99,10 @@ export function createBuildingActions({ state, setState, persistState, showToast
       const updatedUser = s.currentUser ? stripSensitiveUserFields({ ...s.currentUser, buildingId }) : s.currentUser;
       if (updatedUser && !IS_FIRESTORE_MODE) {
         try {
-          localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+          if (!isCurrentTabSessionOnly() && localStorage.getItem("tarsashaz_remember_me") === "true") {
+            localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+          }
+          sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(updatedUser));
           localStorage.setItem("tarsashaz_is_portfolio", "false");
         } catch (e) {}
       }

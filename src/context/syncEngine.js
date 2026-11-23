@@ -481,9 +481,10 @@ export function loadInitialState() {
   // Restore session user from current tab first (tab-isolated multi-account support), then fallback to remember-me user
   try {
     const sessionUserRaw = sessionStorage.getItem("tarsashaz_session_user");
+    const isTabSession = sessionStorage.getItem("tarsashaz_is_tab_session") === "true";
     if (sessionUserRaw) {
       defaultState.currentUser = stripSensitiveUserFields(JSON.parse(sessionUserRaw));
-    } else {
+    } else if (!isTabSession) {
       const rememberMe = localStorage.getItem("tarsashaz_remember_me") === "true";
       const loggedInUserRaw = localStorage.getItem("tarsashaz_logged_in_user");
       if (rememberMe && loggedInUserRaw) {

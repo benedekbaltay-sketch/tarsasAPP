@@ -14,7 +14,8 @@ import {
   FileSpreadsheet,
   Calendar,
   Settings,
-  Users
+  Users,
+  UserPlus
 } from 'lucide-react';
 import { canUserManageTeam } from '../utils/teamPermissions';
 
@@ -23,7 +24,7 @@ export function IosSideDrawer({
   onClose, 
   onSelectOption 
 }) {
-  const { state, t, logout, getUserFlats, exitImpersonation } = useApp();
+  const { state, t, logout, switchTabAccount, getUserFlats, exitImpersonation } = useApp();
   const { currentUser, buildings, currentBuildingId, currentLang, impersonatedFrom, organizations } = state;
 
   const isHu = currentLang === 'hu' || !currentLang;
@@ -392,8 +393,37 @@ export function IosSideDrawer({
               </div>
             )}
 
-            {/* Logout Group (Common to all) */}
-            <div className="bg-gray-50/80 rounded-2xl p-2 border border-gray-100">
+            {/* Account & Session Actions */}
+            <div className="bg-gray-50/80 rounded-2xl p-2 border border-gray-100 space-y-1">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (typeof switchTabAccount === 'function') {
+                    switchTabAccount();
+                  } else {
+                    logout(false);
+                  }
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-blue-50/70 transition-all text-left group cursor-pointer"
+                title={t.menu_switch_tab_account_desc || (isHu ? "Másik fiók megnyitása ezen a lapon a megjegyzett bejelentkezés megtartásával" : "Open another account on this tab while keeping remembered profile")}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                    <UserPlus className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-semibold text-blue-700 block">
+                      {t.menu_switch_tab_account || (isHu ? "Másik fiók ezen a lapon" : "Switch account on this tab")}
+                    </span>
+                    <span className="text-[11px] text-gray-500 block leading-tight">
+                      {t.menu_switch_tab_account_desc || (isHu ? "A mentett fiók megmarad a többi lapon" : "Keeps remembered profile intact elsewhere")}
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-blue-400 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+
               <button
                 onClick={() => handleAction('logout')}
                 className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-red-50/70 transition-all text-left group cursor-pointer"

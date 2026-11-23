@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, connectDatabaseEmulator } from 'firebase/database';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, initializeAuth, browserSessionPersistence, connectAuthEmulator } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
@@ -22,29 +22,86 @@ export const IS_FIRESTORE_MODE =
 export const USE_EMULATORS =
   typeof import.meta !== 'undefined' && import.meta.env?.VITE_USE_EMULATORS === 'true';
 
-let app = null;
-let rtdb = null;
-let auth = null;
-let db = null;
-let functions = null;
-let storage = null;
 let emulatorsConnected = false;
 
-export function getFirebaseInstance() {
+export function getTabSessionId() {
+  if (typeof window === 'undefined') return 'server';
+  try {
+    let id = sessionStorage.getItem('tarsashaz_tab_id');
+    if (!id) {
+      id = 'tab_' + Math.random().toString(36).slice(2, 10);
+      sessionStorage.setItem('tarsashaz_tab_id', id);
+    }
+    return id;
+  } catch (e) {
+    return 'default';
+  }
+}
+
+export function isCurrentTabSessionOnly() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return sessionStorage.getItem('tarsashaz_is_tab_session') === 'true';
+  } catch (e) {
+    return false;
+  }
+}
+
+export function setTabSessionMode(isSessionOnly) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (isSessionOnly) {
+      sessionStorage.setItem('tarsashaz_is_tab_session', 'true');
+    } else {
+      sessionStorage.removeItem('tarsashaz_is_tab_session');
+    }
+  } catch (e) {}
+}
+
+export function saveSessionUser(user) {
+  if (typeof window === 'undefined') return;
+  try {
+    const isTabSession = isCurrentTabSessionOnly();
+    sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(user));
+    if (!isTabSession && localStorage.getItem("tarsashaz_remember_me") === "true") {
+      localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(user));
+    }
+  } catch (e) {}
+}
+
+export function getFirebaseInstance(forceSessionApp = false) {
   if (typeof window === 'undefined') {
     return { app: null, rtdb: null, auth: null, db: null, functions: null, storage: null };
   }
   try {
-    if (!getApps().length) {
-      app = initializeApp(firebaseConfig);
-    } else {
-      app = getApp();
+    const useSession = forceSessionApp || isCurrentTabSessionOnly();
+    const appName = useSession ? `session_${getTabSessionId()}` : '[DEFAULT]';
+
+    let app = getApps().find(a => a.name === appName);
+    let auth = null;
+
+    if (!app) {
+      if (appName === '[DEFAULT]') {
+        app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+      } else {
+        app = initializeApp(firebaseConfig, appName);
+      }
     }
-    rtdb = getDatabase(app);
-    auth = getAuth(app);
-    db = getFirestore(app);
-    functions = getFunctions(app, 'europe-west1');
-    storage = getStorage(app);
+
+    try {
+      if (useSession) {
+        auth = initializeAuth(app, { persistence: browserSessionPersistence });
+      } else {
+        auth = getAuth(app);
+      }
+    } catch {
+      auth = getAuth(app);
+    }
+
+    const rtdb = getDatabase(app);
+    const db = getFirestore(app);
+    const functions = getFunctions(app, 'europe-west1');
+    const storage = getStorage(app);
 
     if (USE_EMULATORS && !emulatorsConnected) {
       emulatorsConnected = true;
@@ -54,8 +111,10 @@ export function getFirebaseInstance() {
       connectFunctionsEmulator(functions, '127.0.0.1', 5001);
       connectStorageEmulator(storage, '127.0.0.1', 9199);
     }
+
+    return { app, rtdb, auth, db, functions, storage };
   } catch (err) {
     console.warn("Firebase initialization warning:", err.message);
+    return { app: null, rtdb: null, auth: null, db: null, functions: null, storage: null };
   }
-  return { app, rtdb, auth, db, functions, storage };
 }

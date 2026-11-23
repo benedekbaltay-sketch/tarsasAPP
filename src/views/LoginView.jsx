@@ -258,8 +258,8 @@ export function LoginView({
             </label>
             <p className="text-[11px] text-gray-500 pl-6 leading-tight">
               {isEn
-                ? 'Keep unchecked to sign into multiple accounts simultaneously in separate tabs.'
-                : 'Hagyd kikapcsolva, ha egyszerre több különböző fiókba szeretnél belépni más-más böngészőfülön.'}
+                ? 'Keep unchecked to use this account only in this tab while keeping your saved profile active on other tabs.'
+                : 'Hagyd kikapcsolva, ha csak ezen a lapon szeretnéd használni a fiókot a másik mentett profilod mellett.'}
             </p>
           </div>
 

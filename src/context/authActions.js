@@ -8,7 +8,12 @@ import {
   browserLocalPersistence,
   browserSessionPersistence
 } from 'firebase/auth';
-import { getFirebaseInstance, IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
+import {
+  getFirebaseInstance,
+  IS_FIRESTORE_MODE,
+  isCurrentTabSessionOnly,
+  setTabSessionMode
+} from '../constants/firebaseConfig';
 import { ref, get } from 'firebase/database';
 import {
   mergeStateWithCloud,
@@ -34,7 +39,13 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
       return { success: false, error: t.login_error || (isEn ? "Please enter your email and password." : "Kérjük, add meg az e-mail címet és a jelszót!") };
     }
 
-    const { auth, rtdb } = getFirebaseInstance();
+    if (rememberMe) {
+      setTabSessionMode(false);
+    } else {
+      setTabSessionMode(true);
+    }
+
+    const { auth, rtdb } = getFirebaseInstance(rememberMe ? false : true);
     if (!auth) {
       return {
         success: false,
@@ -287,13 +298,17 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     if (rememberMe) {
       localStorage.setItem("tarsashaz_remember_me", "true");
       localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(userCopy));
+      try {
+        sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(userCopy));
+        sessionStorage.removeItem("tarsashaz_is_tab_session");
+      } catch (e) {}
     } else {
-      localStorage.removeItem("tarsashaz_remember_me");
-      localStorage.removeItem("tarsashaz_logged_in_user");
+      // Tab-isolated session: NEVER delete or overwrite the remembered user in localStorage!
+      try {
+        sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(userCopy));
+        sessionStorage.setItem("tarsashaz_is_tab_session", "true");
+      } catch (e) {}
     }
-    try {
-      sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(userCopy));
-    } catch (e) {}
 
     await persistState(s => {
       const baseState = fetchedCloudData ? mergeStateWithCloud(s, fetchedCloudData) : s;
@@ -432,19 +447,14 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     showToast(state.currentLang === 'en' ? `Switched to Flat ${flatNum}` : `Átváltva: ${flatNum}. lakás`);
   };
 
-  // SuperAdmin & Owner: Impersonate / Act as another user (for instant role perspective testing)
+  // SuperAdmin: Impersonate / Act as another user (strictly guarded to superadmin only)
   const actAsUser = (targetUser, targetBuildingId) => {
     if (!state.currentUser) return;
     const isSuperAdmin = (
       state.currentUser.role === 'superadmin' ||
       state.impersonatedFrom?.originalUser?.role === 'superadmin'
     );
-    const isOwner = (
-      state.currentUser.orgRole === 'owner' ||
-      state.impersonatedFrom?.originalUser?.orgRole === 'owner' ||
-      canUserManageTeam(state.currentUser, state.organizations, state.buildings)
-    );
-    if (!isSuperAdmin && !isOwner) {
+    if (!isSuperAdmin) {
       showToast(state.currentLang === 'en' ? "Unauthorized action." : "Jogosulatlan művelet.", "error");
       return;
     }
@@ -453,10 +463,6 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
       state.impersonatedFrom ? state.impersonatedFrom.originalUser : state.currentUser
     );
     const safeTarget = stripSensitiveUserFields(JSON.parse(JSON.stringify(targetUser)));
-    if (safeTarget.orgRole === 'staff') {
-      safeTarget.role = 'admin';
-    }
-    const isTargetAdmin = safeTarget.role === 'admin' || safeTarget.role === 'superadmin';
     const bId = targetBuildingId || safeTarget.buildingId || state.currentBuildingId || state.buildings?.[0]?.id || null;
 
     persistState(s => {
@@ -465,8 +471,6 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         ...s,
         currentUser: safeTarget,
         currentBuildingId: curB?.id || bId,
-        activeRoleMode: isTargetAdmin ? 'kk' : 'tenant',
-        isPortfolioView: isTargetAdmin ? true : false,
         impersonatedFrom: {
           originalUser: JSON.parse(JSON.stringify(originalUser)),
           timestamp: Date.now()
@@ -486,49 +490,59 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
 
     showToast(
       state.currentLang === 'en'
-        ? `Acting as ${safeTarget.name || safeTarget.email}`
-        : `Belépve mint ${safeTarget.name || safeTarget.email}`
+        ? `SuperAdmin: Acting as ${safeTarget.name || safeTarget.email}`
+        : `Rendszergazda: Belépve mint ${safeTarget.name || safeTarget.email}`
     );
   };
 
-  // SuperAdmin & Owner: Exit impersonation / role testing
+  // SuperAdmin: Exit impersonation
   const exitImpersonation = () => {
     if (!state.impersonatedFrom) return;
     const originalUser = stripSensitiveUserFields(state.impersonatedFrom.originalUser);
-    const isOrigAdmin = originalUser.role === 'admin' || originalUser.role === 'superadmin';
 
     persistState(s => ({
       ...s,
       currentUser: JSON.parse(JSON.stringify(originalUser)),
-      activeRoleMode: isOrigAdmin ? 'kk' : 'tenant',
       impersonatedFrom: null
     }), 'localOnly');
 
     showToast(
       state.currentLang === 'en'
-        ? "Returned to original profile"
-        : "Visszatérve az eredeti profilodra"
+        ? "Returned to SuperAdmin Center"
+        : "Visszatérve a Rendszergazda felületre"
     );
   };
 
-  // Auth: Logout — completely purges all cached PII, financial records, and session state from browser storage & memory
-  const logout = () => {
+  // Auth: Logout — clears current tab session and optionally purges device-level remembered credentials
+  const logout = (forgetRememberMe = false) => {
+    const isTabSession = isCurrentTabSessionOnly();
     const { auth } = getFirebaseInstance();
     if (auth) {
       try {
         signOut(auth);
       } catch (e) {}
     }
+
+    // Only clear localStorage if this was NOT a temporary tab session,
+    // OR if the user explicitly chose complete device signout (forgetRememberMe = true)
+    if (!isTabSession || forgetRememberMe) {
+      if (forgetRememberMe || !localStorage.getItem("tarsashaz_remember_me")) {
+        try {
+          localStorage.removeItem("tarsashaz_state");
+          localStorage.removeItem("tarsashaz_permanent_vault");
+          localStorage.removeItem("tarsashaz_remember_me");
+          localStorage.removeItem("tarsashaz_logged_in_user");
+          localStorage.removeItem("tarsashaz_role_mode");
+          localStorage.removeItem("tarsashaz_is_portfolio");
+        } catch (e) {}
+      }
+    }
+
     try {
-      localStorage.removeItem("tarsashaz_state");
-      localStorage.removeItem("tarsashaz_permanent_vault");
-      localStorage.removeItem("tarsashaz_remember_me");
-      localStorage.removeItem("tarsashaz_logged_in_user");
-      localStorage.removeItem("tarsashaz_role_mode");
-      localStorage.removeItem("tarsashaz_is_portfolio");
-    } catch (e) {}
-    try {
-      sessionStorage.clear();
+      sessionStorage.removeItem("tarsashaz_session_user");
+      // Keep is_tab_session true so that the next login on this tab stays session-isolated
+      // unless the user explicitly checks "Remember Me"
+      sessionStorage.setItem("tarsashaz_is_tab_session", "true");
       if (window.location.hash && !window.location.hash.includes('mode=resetPassword') && !window.location.hash.includes('pay=1')) {
         window.history.replaceState(null, '', window.location.pathname);
       }
@@ -634,6 +648,11 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     return { success: true };
   };
 
+  // Switch account on current tab only — guarantees the remembered profile remains active on other tabs
+  const switchTabAccount = () => {
+    logout(false);
+  };
+
   return {
     login,
     quickLogin,
@@ -641,6 +660,7 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     actAsUser,
     exitImpersonation,
     logout,
+    switchTabAccount,
     changePassword
   };
 }

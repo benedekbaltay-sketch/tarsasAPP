@@ -174,15 +174,9 @@ The `Reply-To` (Válasz e-mail cím) header is resolved completely automatically
 
 ---
 
-## 8. Multi-Tab Session Isolation & Role Perspective Testing
+## 8. Multi-Tab Session Isolation & Simultaneous Multi-Account Usage
 
-### 8.1 Multi-Tab Session Isolation
 To enable managing multiple accounts simultaneously from a single workstation or browser without accounts interfering or overriding each other:
-1. **Browser Session Persistence (`browserSessionPersistence`)**: On `LoginView`, "Emlékezzen rám" (Remember Me) defaults to unchecked. When unchecked, Firebase Auth scopes authentication tokens to the current browser tab (`sessionStorage`), avoiding global `IndexedDB` cross-tab leakage.
-2. **Tab-Scoped Initial State Loading (`syncEngine.js`)**: `loadInitialState()` prioritizes `sessionStorage.getItem("tarsashaz_session_user")` over `localStorage`. If tab A signs into User A and tab B signs into User B, each tab maintains its isolated `currentUser` identity, active condominium, and state.
-
-### 8.2 Role Perspective Testing (Munkatárs Szerepkör Tesztelése)
-Common Representatives and Organization Owners (`canManageTeam`) can verify exactly how an assigned Viewer or Editor colleague experiences the portal:
-1. **One-Click Role Inspection**: In `TeamManagementModal`, each colleague card includes a dedicated button: **Alkalmazás megtekintése ezen munkatárs szemével** (`👁️`).
-2. **Dynamic UI Scoping**: Activating this enters impersonation mode (`actAsUser`), adjusting the UI to only the buildings and permission levels (e.g. read-only viewer badges and disabled mutation buttons) assigned to that colleague.
-3. **Impersonation Return Banner**: A persistent top banner (`ImpersonationBanner.jsx`) alerts the user that they are in **Szerepkör-tesztelés Mód** and provides a 1-click action (**Visszatérés a saját fiókomba**) to safely restore their full Owner permissions.
+1. **Tab-Scoped Firebase App Instances (`session_${tabId}`)**: When "Emlékezzen rám" (Remember Me) is unchecked, `getFirebaseInstance()` spins up a named, tab-scoped Firebase App and Auth instance configured strictly with `browserSessionPersistence`. This prevents Firebase Auth cross-tab broadcasting and avoids overwriting the primary remembered profile in `IndexedDB`.
+2. **Tab-Scoped Initial State Loading (`syncEngine.js`)**: `loadInitialState()` prioritizes `sessionStorage.getItem("tarsashaz_session_user")` over `localStorage`. If tab A signs into User A with Remember Me and tab B signs into User B without Remember Me, tab B operates exclusively in session memory without touching or deleting `localStorage.tarsashaz_remember_me` or `localStorage.tarsashaz_logged_in_user`.
+3. **In-Drawer Tab Account Switcher (`switchTabAccount`)**: The main menu provides a dedicated action (**Másik fiók ezen a lapon**) that clears only the current tab's session, allowing a user to immediately open a different account on that specific tab while preserving their remembered login on all other tabs and future sessions.

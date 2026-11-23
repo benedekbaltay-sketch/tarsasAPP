@@ -57,7 +57,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
     handoverMemberBuildings,
     revokeTeamInvite,
     updateOrganizationSettings,
-    actAsUser,
   } = useApp();
 
   const { currentUser, currentLang, buildings, organizations, repProfile } = state;
@@ -776,17 +775,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                   title={t.edit || (isEn ? 'Edit' : 'Szerkesztés')}
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    actAsUser(m);
-                                    onClose();
-                                  }}
-                                  className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-amber-50 hover:text-amber-800 text-gray-600 transition-colors cursor-pointer"
-                                  title={t.team_test_role_btn || (isEn ? 'View app as this colleague (Test role perspective)' : 'Alkalmazás megtekintése ezen munkatárs szemével (Szerepkör tesztelése)')}
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-amber-700" />
                                 </button>
                                 {staffMembers.length >= 2 && (
                                   <button
