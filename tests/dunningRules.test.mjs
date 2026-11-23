@@ -480,3 +480,11 @@ test('15. resolveFlatOwnerName resolves ownerName, flat.owners array and lakas_t
   assert.equal(matchB.renderedBody, 'Kedves Kiss Péter, Kiss Éva! (Kiss Péter, Kiss Éva)');
 });
 
+test('16. DEFAULT_DUNNING_RULES presets are all disabled (enabled: false) by default', () => {
+  assert.ok(DEFAULT_DUNNING_RULES.length >= 3, 'Should provide at least 3 default dunning rules');
+  DEFAULT_DUNNING_RULES.forEach((rule) => {
+    assert.equal(rule.enabled, false, `Preset rule ${rule.id} must be disabled by default so users can opt-in`);
+  });
+});
+
+

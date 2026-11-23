@@ -32,7 +32,7 @@ export const DEFAULT_DUNNING_RULES = [
     nameEn: '1-Month Friendly Balance Reminder',
     description: 'Figyelmeztetés 1 havi díjnak megfelelő vagy minimum 5.000 Ft elmaradás esetén.',
     descriptionEn: 'Gentle reminder when debt reaches 1 month of prescribed fees or min. 5,000 Ft.',
-    enabled: true,
+    enabled: false,
     buildingId: 'all', // 'all' or specific building ID
     targetAccount: 'per_account', // 'per_account' | 'total' | 'KK' | 'FA'
     conditionType: 'months', // 'months' | 'amount' | 'combined'
@@ -82,7 +82,7 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
     nameEn: 'Formal Overdue Notice (Stage 1 – 3 Months Debt)',
     description: 'Hivatalos felszólítás 3 havi elmaradás vagy legalább 30.000 Ft tartozás esetén.',
     descriptionEn: 'Formal payment demand when unpaid arrears reach 3 months or min. 30,000 Ft.',
-    enabled: true,
+    enabled: false,
     buildingId: 'all',
     targetAccount: 'per_account',
     conditionType: 'months',

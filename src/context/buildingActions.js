@@ -23,6 +23,7 @@ import {
 import { sanitizeFileName, readFileAsDataUrl } from '../utils/fileSecurity';
 import { formatTaxNumber } from '../utils/taxNumber';
 import { planExplorerMove, planExplorerDelete, planFolderTreeCopy } from '../utils/docExplorer';
+import { DEFAULT_DUNNING_RULES } from '../utils/dunningRules';
 import {
   resolveUserOrgContext,
   canUserAccessBuilding,
@@ -1167,11 +1168,17 @@ export function createBuildingActions({ state, setState, persistState, showToast
         });
       }
 
+      // Ensure default dunning rules exist in state so the new condominium has access to the templates (inactive by default)
+      const existingEmailRules = Array.isArray(s.emailRules) && s.emailRules.length > 0
+        ? s.emailRules
+        : JSON.parse(JSON.stringify(DEFAULT_DUNNING_RULES)).map(r => ({ ...r, enabled: false }));
+
       return {
         ...s,
         organizations: nextOrganizations,
         buildings: [...(s.buildings || []), enrichedBuilding],
         currentBuildingId: enrichedBuilding.id,
+        emailRules: existingEmailRules,
         flats: enrichedBuilding.flats || [],
         transactions: enrichedBuilding.transactions || [],
         expenses: enrichedBuilding.expenses || [],
