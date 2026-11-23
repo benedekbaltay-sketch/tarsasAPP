@@ -24,11 +24,12 @@ export function IosSideDrawer({
   onSelectOption 
 }) {
   const { state, t, logout, getUserFlats, exitImpersonation } = useApp();
-  const { currentUser, buildings, currentBuildingId, currentLang, impersonatedFrom, organizations } = state;
+  const { currentUser, buildings, currentBuildingId, currentLang, impersonatedFrom, organizations, repProfile } = state;
 
   const isHu = currentLang === 'hu' || !currentLang;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const canManageTeam = canUserManageTeam(currentUser, organizations, buildings);
+  const userDisplayName = currentUser?.name || repProfile?.name || currentUser?.email || (isHu ? 'Közös Képviselő' : 'Property Manager');
 
   // Determine dynamic mode: Portfolio Mode (All buildings aggregated) vs. Building-Specific Mode
   const isPortfolioMode = isAdmin && (Boolean(state.isPortfolioView) || !currentBuildingId);
@@ -99,8 +100,7 @@ export function IosSideDrawer({
                 </h3>
                 <span className="text-xs text-gray-500 font-medium block truncate">
                   {currentUser ? (
-                    currentUser.role === 'superadmin' ? (isHu ? 'Rendszergazda' : 'SuperAdmin') :
-                    currentUser.role === 'admin' ? (isHu ? 'Közös Képviselet' : 'Property Management') : 
+                    isAdmin ? userDisplayName : 
                     `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}`
                   ) : 'Menü'}
                 </span>

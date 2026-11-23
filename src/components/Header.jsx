@@ -18,7 +18,7 @@ export function Header({
   onOpenCommunicationCenter
 }) {
   const { state, t, toggleLanguage } = useApp();
-  const { currentUser, currentLang, buildings, currentBuildingId, isPortfolioView, organizations } = state;
+  const { currentUser, currentLang, buildings, currentBuildingId, isPortfolioView, organizations, repProfile } = state;
 
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
   const switcherRef = useRef(null);
@@ -82,6 +82,8 @@ export function Header({
     !canUserManageBuilding(currentUser, currentBuilding, organizations, buildings)
   );
 
+  const userDisplayName = currentUser?.name || repProfile?.name || currentUser?.email || (isHu ? 'Közös Képviselő' : 'Property Manager');
+
   // Primary header title: active condominium name when inside a building; portfolio/app title otherwise
   const headerTitle = isInBuilding
     ? currentBuilding.name
@@ -89,22 +91,12 @@ export function Header({
         ? (t.portfolio_title || (isHu ? "Társasházaim" : "My Condominiums"))
         : t.app_title);
 
-  // Secondary subtitle under title (avoids duplicating the building name)
-  const headerSubtitle = isInBuilding
-    ? (isCurrentlyAdminMode
-        ? (currentUser.role === 'superadmin'
-            ? (isHu ? 'Rendszergazda' : 'SuperAdmin')
-            : (isViewer
-                ? (isHu ? 'Közös Képviselet (Csak megtekintő)' : 'Property Management (Viewer)')
-                : (isHu ? 'Közös Képviselet' : 'Property Management')))
-        : (currentUser.role === 'szvb'
-            ? (isHu ? 'Számvizsgáló Bizottság (SZVB)' : 'Accounting Committee (SZVB)')
-            : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || ''))))
-    : (isCurrentlyAdminMode
-        ? (currentUser.role === 'superadmin'
-            ? (isHu ? 'Rendszergazda' : 'SuperAdmin')
-            : (isHu ? 'Közös Képviselet' : 'Property Management'))
-        : (t.building_address || ''));
+  // Secondary subtitle under title: always display the profile user's name
+  const headerSubtitle = isCurrentlyAdminMode
+    ? userDisplayName
+    : (currentUser.role === 'szvb'
+        ? (isHu ? 'Számvizsgáló Bizottság (SZVB)' : 'Accounting Committee (SZVB)')
+        : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || '')));
 
   return (
     <div ref={headerContainerRef} className="sticky top-0 z-30 w-full shadow-sm">
