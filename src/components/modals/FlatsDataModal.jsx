@@ -14,7 +14,8 @@ import {
   Package,
   Briefcase,
   Layers,
-  UserCheck
+  UserCheck,
+  CheckCircle2
 } from 'lucide-react';
 import { formatPhoneNumber } from '../../utils/phone';
 import { formatAnnexItem } from '../../utils/annex';
@@ -105,10 +106,16 @@ export function FlatsDataModal({
     );
   });
 
+  const buildingTotalShare = Number(currentBuilding?.totalOwnershipShare) || 10000;
   const totalFlats = (flats || []).length;
   const totalArea = (flats || []).reduce((acc, f) => acc + (f.area || Math.round((f.ownershipShare || 10) * 5.8)), 0);
   const totalTenants = (flats || []).reduce((acc, f) => acc + (f.tenantCount || 1), 0);
-  const totalShare = (flats || []).reduce((acc, f) => acc + (f.ownershipShare || 0), 0);
+  const totalShareSum = (flats || []).reduce((acc, f) => acc + (Number(f.ownershipShare) || 0), 0);
+  const sharePct = buildingTotalShare > 0 ? (totalShareSum / buildingTotalShare) * 100 : 0;
+  const shareDiff = buildingTotalShare - totalShareSum;
+  const isExactShareMatch = Math.abs(shareDiff) < 0.001;
+  const isOverShare = totalShareSum > buildingTotalShare;
+  const isUnderShare = totalShareSum < buildingTotalShare;
 
   return (
     <div className="fixed inset-0 z-40 bg-[#F3F4F6] flex flex-col overflow-hidden animate-fadeIn">
@@ -223,11 +230,54 @@ export function FlatsDataModal({
               </span>
               <strong className="text-gray-900 font-bold text-sm">{totalTenants} fő</strong>
             </div>
-            <div className="bg-gray-50 px-3 py-2 rounded-xl border border-gray-200">
-              <span className="text-gray-400 text-[10px] uppercase font-bold block">
-                {isEn ? "Ownership Share" : "Tulajdoni Hányad"}
-              </span>
-              <strong className="text-indigo-600 font-bold text-sm">{totalShare.toFixed(2)} %</strong>
+            <div className={`px-3 py-2 rounded-xl border transition-colors ${
+              isExactShareMatch && totalFlats > 0
+                ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
+                : isOverShare
+                  ? 'bg-red-50/80 border-red-300 text-red-950'
+                  : 'bg-indigo-50/60 border-indigo-200 text-indigo-950'
+            }`}>
+              <div className="flex items-center justify-between gap-1.5 mb-0.5">
+                <span className="text-gray-500 text-[10px] uppercase font-bold block">
+                  {t.total_ownership_share || (isEn ? "Total Ownership Share" : "Összes Tulajdoni Hányad")}
+                </span>
+                <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
+                  isExactShareMatch && totalFlats > 0
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : isOverShare
+                      ? 'bg-red-100 text-red-800'
+                      : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {sharePct.toFixed(1)}%
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1">
+                <strong className="text-gray-900 font-bold text-sm">
+                  {totalShareSum.toLocaleString('hu-HU')}
+                </strong>
+                <span className="text-xs text-gray-500 font-medium">
+                  / {buildingTotalShare.toLocaleString('hu-HU')}
+                </span>
+              </div>
+              {totalFlats > 0 && !isExactShareMatch && (
+                <div className="text-[10px] font-semibold mt-0.5">
+                  {isUnderShare ? (
+                    <span className="text-amber-700">
+                      {t.missing_share || (isEn ? "Missing:" : "Hiányzó:")} {shareDiff.toLocaleString('hu-HU')}
+                    </span>
+                  ) : (
+                    <span className="text-red-700">
+                      {t.surplus_share || (isEn ? "Surplus:" : "Többlet:")} {Math.abs(shareDiff).toLocaleString('hu-HU')}
+                    </span>
+                  )}
+                </div>
+              )}
+              {totalFlats > 0 && isExactShareMatch && (
+                <div className="text-[10px] font-semibold text-emerald-700 mt-0.5 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600 inline" />
+                  <span>{t.share_sum_ok || (isEn ? "100% - Complete" : "100% - Összegzés rendben")}</span>
+                </div>
+              )}
             </div>
 
             {/* View Mode Toggle */}
@@ -363,7 +413,18 @@ export function FlatsDataModal({
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap">
                           <div className="font-semibold text-gray-900">{f.area ? `${f.area} m²` : "-"}</div>
-                          <div className="text-[11px] text-indigo-600 font-medium">{f.ownershipShare || 0}%</div>
+                          <div className="text-[11px] text-indigo-700 font-medium">
+                            {f.ownershipShare !== undefined && f.ownershipShare !== null && f.ownershipShare !== '' ? (
+                              <span>
+                                {f.ownershipShare} / {buildingTotalShare.toLocaleString('hu-HU')}
+                                <span className="text-gray-400 text-[10px] ml-1">
+                                  ({buildingTotalShare > 0 ? ((Number(f.ownershipShare) / buildingTotalShare) * 100).toFixed(2) : 0}%)
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-gray-600 whitespace-nowrap text-[11px]">
                           <div><span className="text-gray-400">G: </span>{garageStr}</div>
@@ -469,8 +530,17 @@ export function FlatsDataModal({
                       <span className="font-medium">{f.area ? `${f.area} m²` : "-"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-400">{t.ownership_percentage}:</span>
-                      <span className="font-medium">{f.ownershipShare || 0}%</span>
+                      <span className="text-gray-400">{t.flats_ownership_share || (isEn ? "Ownership Share:" : "Tulajdoni hányad:")}</span>
+                      <span className="font-medium text-indigo-700">
+                        {f.ownershipShare !== undefined && f.ownershipShare !== null && f.ownershipShare !== '' ? (
+                          <>
+                            {f.ownershipShare} / {buildingTotalShare.toLocaleString('hu-HU')}
+                            <span className="text-gray-400 text-[11px] ml-1">
+                              ({buildingTotalShare > 0 ? ((Number(f.ownershipShare) / buildingTotalShare) * 100).toFixed(2) : 0}%)
+                            </span>
+                          </>
+                        ) : "-"}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Garázs:</span>

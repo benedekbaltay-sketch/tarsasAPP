@@ -300,6 +300,7 @@ export function firestoreBuildingToUiBuilding(buildingDoc, extras = {}) {
     name: buildingDoc.name || buildingDoc.id,
     address: buildingDoc.address || '',
     taxNumber: buildingDoc.taxNumber || '',
+    totalOwnershipShare: Number(buildingDoc.totalOwnershipShare) || 10000,
     code: buildingDoc.paymentCodePrefix || 'TH',
     defaultBank: buildingDoc.defaultBank || 'OTP',
     repName: rep.name || '',

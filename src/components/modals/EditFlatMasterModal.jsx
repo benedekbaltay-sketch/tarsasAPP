@@ -90,6 +90,8 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
   const flat = (flats || []).find(f => f.flatNum === flatNum);
 
   const targetBuildingId = buildingId || state.currentBuildingId;
+  const targetBuilding = (state.buildings || []).find(b => b.id === targetBuildingId) || state.buildings?.[0];
+  const buildingTotalShare = Number(targetBuilding?.totalOwnershipShare) || 10000;
   const isManaging = canUserManageBuilding(state.currentUser, targetBuildingId, state.organizations, state.buildings);
   const isReadOnly = !isManaging;
   const isEditMode = !isReadOnly;
@@ -1158,20 +1160,38 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
                   {/* Tulajdoni hányad */}
                   <div>
                     <label className="block text-gray-700 font-semibold mb-1 text-[11px]">
-                      {t.ownership_share_label || (isEn ? "Ownership Share (%)" : "Tulajdoni hányad (%)")}
+                      {t.ownership_share_label || (isEn ? "Ownership Share (deed)" : "Tulajdoni hányad (okirat szerint)")}
                     </label>
                     {isEditMode ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={ownershipShare}
-                        onChange={(e) => setOwnershipShare(e.target.value)}
-                        placeholder="pl. 12.5"
-                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A]"
-                      />
+                      <div>
+                        <div className="relative flex items-center">
+                          <input
+                            type="number"
+                            step="any"
+                            value={ownershipShare}
+                            onChange={(e) => setOwnershipShare(e.target.value)}
+                            placeholder={`pl. ${Math.round(buildingTotalShare * 0.025)}`}
+                            className="w-full pl-3 pr-24 py-2 bg-white border border-gray-300 rounded-xl text-xs font-mono font-medium focus:outline-none focus:border-[#1E3A8A]"
+                          />
+                          <span className="absolute right-3 text-xs font-semibold text-gray-500 pointer-events-none select-none">
+                            / {buildingTotalShare.toLocaleString('hu-HU')}
+                          </span>
+                        </div>
+                        {ownershipShare && (
+                          <div className="text-[11px] text-gray-500 mt-1 flex items-center gap-1">
+                            <span>{t.calculated_share_ratio || (isEn ? "Calculated ratio:" : "Számított arány:")}</span>
+                            <span className="font-bold text-indigo-700 font-mono">
+                              {buildingTotalShare > 0 ? (((parseFloat(String(ownershipShare).replace(',', '.')) || 0) / buildingTotalShare) * 100).toFixed(2) : '0.00'} %
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     ) : (
-                      <div className="p-2.5 bg-white rounded-xl border border-gray-200 font-bold text-indigo-700">
-                        {ownershipShare ? `${ownershipShare} %` : "0 %"}
+                      <div className="p-2.5 bg-white rounded-xl border border-gray-200 font-bold text-indigo-700 flex items-center gap-2">
+                        <span>{ownershipShare || 0} / {buildingTotalShare.toLocaleString('hu-HU')}</span>
+                        <span className="text-xs font-medium text-gray-500 font-mono">
+                          ({buildingTotalShare > 0 ? (((parseFloat(String(ownershipShare).replace(',', '.')) || 0) / buildingTotalShare) * 100).toFixed(2) : '0.00'}%)
+                        </span>
                       </div>
                     )}
                   </div>

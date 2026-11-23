@@ -9,6 +9,8 @@ export function AddFlatModal({ isOpen, onClose }) {
   const { state, t, addFlat } = useApp();
   const { currentLang } = state;
   const isEn = currentLang === 'en';
+  const targetBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  const buildingTotalShare = Number(targetBuilding?.totalOwnershipShare) || 10000;
 
   const [flatNum, setFlatNum] = useState('');
   const [owners, setOwners] = useState([{ name: '', share: '', email: '', phone: '' }]);
@@ -324,20 +326,32 @@ export function AddFlatModal({ isOpen, onClose }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">{t.ownership_percentage}</label>
-              <div className="relative">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                {t.ownership_share_label || (isEn ? "Ownership Share (deed)" : "Tulajdoni hányad (okirat szerint)")}
+              </label>
+              <div className="relative flex items-center">
                 <input
                   type="number"
-                  step="0.01"
+                  step="any"
                   min="0"
                   value={ownershipShare}
                   onChange={(e) => setOwnershipShare(e.target.value)}
-                  placeholder="10.5"
-                  className="w-full pl-3 pr-7 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+                  placeholder={`pl. ${Math.round(buildingTotalShare * 0.025)}`}
+                  className="w-full pl-3 pr-20 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono font-medium focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                   required
                 />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold pointer-events-none">%</span>
+                <span className="absolute right-2 text-[11px] font-semibold text-gray-400 pointer-events-none select-none">
+                  / {buildingTotalShare.toLocaleString('hu-HU')}
+                </span>
               </div>
+              {ownershipShare && (
+                <div className="text-[10px] text-gray-500 mt-1 flex items-center gap-1">
+                  <span>{t.calculated_share_ratio || (isEn ? "Ratio:" : "Arány:")}</span>
+                  <span className="font-bold text-indigo-700 font-mono">
+                    {buildingTotalShare > 0 ? (((parseFloat(String(ownershipShare).replace(',', '.')) || 0) / buildingTotalShare) * 100).toFixed(2) : '0.00'}%
+                  </span>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">{t.tenant_count_persons}</label>

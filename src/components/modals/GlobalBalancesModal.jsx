@@ -61,6 +61,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
   const [buildingOfficialName, setBuildingOfficialName] = useState('');
   const [buildingAddress, setBuildingAddress] = useState('');
   const [buildingTaxNumber, setBuildingTaxNumber] = useState('');
+  const [totalOwnershipShare, setTotalOwnershipShare] = useState('10000');
 
   // 1b. Resident-Facing Contact Switcher ('company' | 'manager', editable by actual building manager)
   const [contactDisplayMode, setContactDisplayMode] = useState('company');
@@ -113,6 +114,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
       setBuildingOfficialName(targetBuilding.officialName || '');
       setBuildingAddress(targetBuilding.address || '');
       setBuildingTaxNumber(formatTaxNumber(targetBuilding.taxNumber || ''));
+      setTotalOwnershipShare(targetBuilding.totalOwnershipShare !== undefined ? String(targetBuilding.totalOwnershipShare) : '10000');
 
       setContactDisplayMode(targetBuilding.contactDisplayMode === 'manager' ? 'manager' : 'company');
       setManagerName(targetBuilding.managerContact?.name || '');
@@ -368,6 +370,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
               officialName: buildingOfficialName.trim(),
               address: buildingAddress.trim() || b.address,
               taxNumber: formatTaxNumber(buildingTaxNumber).trim(),
+              totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000,
               contactDisplayMode: b.contactDisplayMode || 'company',
               managerContact: b.managerContact || null,
               showCentralContactToResidents: b.showCentralContactToResidents !== undefined ? b.showCentralContactToResidents : false,
@@ -547,6 +550,32 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                           placeholder="12345678-1-42"
                           className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A]"
                         />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block font-semibold text-gray-700">
+                            {t.bld_settings_total_share || (isEn ? "Total Ownership Share (Basis)" : "Teljes tulajdoni hányad (Alap)")} *
+                          </label>
+                          <span className="text-[10px] text-gray-400">
+                            {isEn ? "Default: 10,000" : "Alapértelmezett: 10 000"}
+                          </span>
+                        </div>
+                        <input
+                          type="number"
+                          step="any"
+                          min="1"
+                          value={totalOwnershipShare}
+                          onChange={(e) => setTotalOwnershipShare(e.target.value)}
+                          placeholder="10000"
+                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono font-bold focus:outline-none focus:border-[#1E3A8A]"
+                          required
+                        />
+                        <p className="text-[10px] text-gray-500 mt-1">
+                          {t.bld_settings_total_share_desc || (isEn 
+                            ? "Condominium deed basis for voting and shares (typically 10,000, 1,000, 100,000 or custom deed sum)." 
+                            : "Az alapító okirat szerinti teljes eszmei hányad (általában 10 000, de lehet 1 000, 100 000 vagy egyedi összeg).")}
+                        </p>
                       </div>
                     </div>
                   </div>
