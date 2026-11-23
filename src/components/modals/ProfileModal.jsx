@@ -136,7 +136,7 @@ export function ProfileModal({
       const org = orgCtx.org;
       setCompanyName(org?.name || prof.companyName || '');
       setCompanyRepName(org?.centralContact?.name || prof.companyName || prof.name || '');
-      setCompanyTaxNumber(formatTaxNumber(org?.taxNumber || prof.taxNumber || ''));
+      setCompanyTaxNumber(formatTaxNumber(org ? (org.taxNumber || '') : (prof.taxNumber || '')));
       setCompanyAddress(org?.centralContact?.address || prof.address || '');
       setCompanyPhone(org?.centralContact?.phone ? formatPhoneNumber(org.centralContact.phone) : (prof.phone ? formatPhoneNumber(prof.phone) : ''));
       setCompanyEmail(org?.centralContact?.email || prof.email || '');
@@ -479,10 +479,10 @@ export function ProfileModal({
                           <strong>{orgCtx.org?.name}</strong>
                         </span>
                       </div>
-                      {(orgCtx.org?.taxNumber || repProfile?.taxNumber) && (
+                      {Boolean(orgCtx.org?.taxNumber) && (
                         <span className="text-gray-500 font-medium">
                           {isEn ? "Tax ID:" : "Adószám:"}{' '}
-                          <strong className="text-gray-800 font-mono">{formatTaxNumber(orgCtx.org?.taxNumber || repProfile?.taxNumber)}</strong>
+                          <strong className="text-gray-800 font-mono">{formatTaxNumber(orgCtx.org.taxNumber)}</strong>
                         </span>
                       )}
                     </div>
@@ -926,7 +926,7 @@ export function ProfileModal({
                             const prof = repProfile || {};
                             setCompanyName(org?.name || prof.companyName || '');
                             setCompanyRepName(org?.centralContact?.name || prof.companyName || prof.name || '');
-      setCompanyTaxNumber(formatTaxNumber(org?.taxNumber || prof.taxNumber || ''));
+                            setCompanyTaxNumber(formatTaxNumber(org ? (org.taxNumber || '') : (prof.taxNumber || '')));
                             setCompanyAddress(org?.centralContact?.address || prof.address || '');
                             setCompanyPhone(org?.centralContact?.phone ? formatPhoneNumber(org.centralContact.phone) : (prof.phone ? formatPhoneNumber(prof.phone) : ''));
                             setCompanyEmail(org?.centralContact?.email || prof.email || '');

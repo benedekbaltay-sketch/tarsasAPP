@@ -874,8 +874,8 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         ? Boolean(showCentralContactToResidents)
         : (org.showCentralContactToResidents !== undefined ? org.showCentralContactToResidents : false);
       const resolvedTaxNumber = taxNumber !== undefined
-        ? formatTaxNumber(taxNumber)
-        : formatTaxNumber(org.taxNumber || s.repProfile?.taxNumber || '');
+        ? formatTaxNumber(taxNumber).trim()
+        : formatTaxNumber(org.taxNumber || '');
 
       orgs[orgIndex] = {
         ...org,

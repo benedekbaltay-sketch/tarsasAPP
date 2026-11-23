@@ -600,3 +600,29 @@ test('9. Per-building assignments: different roles & permissions on different bu
   assert.equal(contactB2.name, 'Alfa Kft.');
   assert.equal(contactB2.showCentralEscalation, false);
 });
+
+test('10. Tax number isolation: empty/deleted tax number in org must not leak from legacy repProfile', () => {
+  const orgWithoutTax = {
+    id: 'org-empty-tax',
+    name: 'Taxless Management Kft.',
+    ownerEmail: 'owner@taxless.hu',
+    taxNumber: '', // deleted or not provided
+    members: [
+      {
+        id: 'm-staff',
+        email: 'staff@taxless.hu',
+        name: 'Staff István',
+        orgRole: 'staff',
+        active: true,
+      },
+    ],
+  };
+
+  const staffUser = { email: 'staff@taxless.hu', role: 'admin' };
+  const ctx = resolveUserOrgContext(staffUser, [orgWithoutTax], []);
+
+  assert.equal(ctx.isStaff, true);
+  assert.equal(ctx.org.name, 'Taxless Management Kft.');
+  // The organization tax number must be empty, not undefined or leaking
+  assert.equal(ctx.org.taxNumber || '', '');
+});

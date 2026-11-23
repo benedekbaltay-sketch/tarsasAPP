@@ -4,6 +4,7 @@ import { getFirebaseInstance, IS_FIRESTORE_MODE, isCurrentTabSessionOnly } from 
 import { ref, onValue, set, get } from 'firebase/database';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { recalculateFlatBalances } from '../utils/finances';
+import { formatTaxNumber } from '../utils/taxNumber';
 import { playNotificationSound } from '../utils/sound';
 import { RotateCcw, X } from 'lucide-react';
 
@@ -107,24 +108,29 @@ export function AppProvider({ children }) {
       });
     }
     persistState(s => {
+      const userEmail = (s.currentUser?.email || '').toLowerCase().trim();
       let nextOrgs = s.organizations;
       if (Array.isArray(s.organizations) && s.organizations.length > 0) {
         nextOrgs = s.organizations.map(org => {
-          return {
-            ...org,
-            name: nextRepProfile.companyName ? nextRepProfile.companyName : org.name,
-            taxNumber: nextRepProfile.taxNumber !== undefined ? nextRepProfile.taxNumber : (org.taxNumber || ''),
-            centralContact: {
-              ...(org.centralContact || {}),
-              name: nextRepProfile.name || org.centralContact?.name || '',
-              phone: nextRepProfile.phone || org.centralContact?.phone || '',
-              email: nextRepProfile.email || org.centralContact?.email || '',
-              officeHours: nextRepProfile.officeHours || org.centralContact?.officeHours || '',
-            },
-            showCentralContactToResidents: nextRepProfile.showCentralContactToResidents !== undefined
-              ? Boolean(nextRepProfile.showCentralContactToResidents)
-              : org.showCentralContactToResidents
-          };
+          const orgOwnerEmail = (org.ownerEmail || '').toLowerCase().trim();
+          if (userEmail && orgOwnerEmail === userEmail) {
+            return {
+              ...org,
+              ...(profileData.companyName !== undefined ? { name: String(profileData.companyName).trim() } : {}),
+              ...(profileData.taxNumber !== undefined ? { taxNumber: formatTaxNumber(profileData.taxNumber).trim() } : {}),
+              centralContact: {
+                ...(org.centralContact || {}),
+                name: nextRepProfile.name || org.centralContact?.name || '',
+                phone: nextRepProfile.phone || org.centralContact?.phone || '',
+                email: nextRepProfile.email || org.centralContact?.email || '',
+                officeHours: nextRepProfile.officeHours || org.centralContact?.officeHours || '',
+              },
+              showCentralContactToResidents: nextRepProfile.showCentralContactToResidents !== undefined
+                ? Boolean(nextRepProfile.showCentralContactToResidents)
+                : org.showCentralContactToResidents
+            };
+          }
+          return org;
         });
       }
       return {
