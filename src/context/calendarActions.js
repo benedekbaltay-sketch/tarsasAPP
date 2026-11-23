@@ -1,6 +1,7 @@
 import { getPermanentVault, savePermanentVault } from './syncEngine';
 import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
 import { saveBuildingCalendarEvent, deleteBuildingCalendarEvent } from '../services/firestoreService';
+import { canUserManageBuilding } from '../utils/teamPermissions';
 
 function ensureArray(val) {
   if (!val) return [];
@@ -10,9 +11,19 @@ function ensureArray(val) {
 }
 
 export function createCalendarActions({ state, persistState, showToast, t }) {
-  const requireAdmin = () => {
+  const requireAdmin = (buildingId = null) => {
     if (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'superadmin')) {
-      return true;
+      const bId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+      if (canUserManageBuilding(state.currentUser, bId, state.organizations, state.buildings)) {
+        return true;
+      }
+      showToast(
+        t.team_viewer_readonly_error || (state.currentLang === 'en'
+          ? "You have read-only (viewer) access to this condominium. Editing is not allowed."
+          : "Csak megtekintési jogosultságod van ezen a társasházon. A módosítás nem engedélyezett."),
+        "error"
+      );
+      return false;
     }
     showToast(
       t.error_unauthorized || (state.currentLang === 'en' ? "Unauthorized action." : "Nincs jogosultságod ehhez a művelethez."),

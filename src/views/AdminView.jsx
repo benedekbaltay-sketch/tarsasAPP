@@ -22,7 +22,8 @@ import {
   Shield,
   Filter,
   Minus,
-  Calendar
+  Calendar,
+  Eye
 } from 'lucide-react';
 import { 
   formatCurrency, 
@@ -42,6 +43,7 @@ import { groupItemsByMonth } from '../utils/dateGrouping';
 
 export function AdminView({
   onBackToPortfolio,
+  isReadOnly = false,
   onOpenFlatDetail,
   onOpenAddTransaction,
   onOpenAddFlat,
@@ -58,9 +60,17 @@ export function AdminView({
   onOpenLoans,
   onOpenCalendar
 }) {
-  const { state, t, toggleGridEditMode, copiedTx, copyTransaction, pasteTransaction } = useApp();
+  const { state, t, toggleGridEditMode, copiedTx, copyTransaction, pasteTransaction, canUserManageBuilding } = useApp();
   const { flats, transactions, expenses, isGridEditMode, currentLang } = state;
   const isEn = currentLang === 'en';
+
+  // Building and accounts
+  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  const isEffectiveReadOnly = Boolean(
+    isReadOnly ||
+    !onOpenAddTransaction ||
+    (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding))
+  );
 
   const [txSearchQuery, setTxSearchQuery] = useState('');
   const [isTxEditMode, setIsTxEditMode] = useState(false);
@@ -85,8 +95,6 @@ export function AdminView({
     return map;
   }, [state.infoSections]);
 
-  // Building and accounts
-  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
   const allAccounts = getBuildingAccounts(currentBuilding);
   const customAccounts = allAccounts.filter(a => !a.isBaseAccount);
   const kkAccount = allAccounts.find(a => a.id === 'KK');
@@ -201,6 +209,7 @@ export function AdminView({
           }
         }
       } else if (isCtrlOrCmd && e.key.toLowerCase() === 'v') {
+        if (isEffectiveReadOnly) return;
         if (selectedTxId) {
           e.preventDefault();
           pasteTransaction(null);
@@ -224,6 +233,7 @@ export function AdminView({
           setSelectedTxId(displayTxList[idx - 1].id);
         }
       } else if (e.key === 'Delete') {
+        if (isEffectiveReadOnly) return;
         if (window.getSelection && window.getSelection().toString().trim().length > 0) {
           return;
         }
@@ -259,6 +269,30 @@ export function AdminView({
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 md:py-8 space-y-6">
       
+      {/* Read-Only Viewer Status Banner */}
+      {isEffectiveReadOnly && (
+        <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 flex flex-wrap items-center justify-between gap-3 text-amber-950 shadow-2xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0">
+              <Eye className="w-4 h-4 text-amber-700" />
+            </div>
+            <div className="min-w-0">
+              <div className="font-bold text-xs flex items-center gap-1.5">
+                <span>{t.team_viewer_banner_title || (isEn ? "Read-Only Viewer Access:" : "Megtekintő jogosultság:")}</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-200/80 text-amber-900 text-[10px] font-extrabold">
+                  {t.team_viewer_badge || (isEn ? "Viewer" : "Csak megtekintő")}
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-800/90 mt-0.5 leading-relaxed">
+                {t.team_viewer_banner_desc || (isEn
+                  ? "You have read-only access to this condominium. Data, balances, and documents can be viewed and exported, but editing is locked."
+                  : "Ezen a társasházon kizárólag olvasási joggal rendelkezel. Az adatok és kimutatások megtekinthetők és exportálhatók, de módosítás nem végezhető.")}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1. Top KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         
@@ -270,14 +304,16 @@ export function AdminView({
               <Scale className="w-3.5 h-3.5 text-[#1E3A8A]" />
               <span>{t.kpi_reserves_title || (isEn ? "Bank Accounts & Reserves" : "Folyószámlák és Tartalékok")}</span>
             </span>
-            <button
-              onClick={onOpenGlobalBalances}
-              className="p-1.5 px-2.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold shadow-2xs"
-              title={isEn ? "Edit bank balances" : "Folyószámlák és tartalékok szerkesztése"}
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              <span>{t.edit || (isEn ? "Edit" : "Szerkesztés")}</span>
-            </button>
+            {!isEffectiveReadOnly && onOpenGlobalBalances && (
+              <button
+                onClick={onOpenGlobalBalances}
+                className="p-1.5 px-2.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold shadow-2xs"
+                title={isEn ? "Edit bank balances" : "Folyószámlák és tartalékok szerkesztése"}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>{t.edit || (isEn ? "Edit" : "Szerkesztés")}</span>
+              </button>
+            )}
           </div>
 
           <div className="divide-y divide-gray-100 space-y-3 pt-3">
@@ -336,17 +372,21 @@ export function AdminView({
           </div>
 
           <div className="border-t border-gray-100 pt-3.5 mt-3.5 flex items-center gap-2">
-            <button
-              onClick={() => onOpenAddTransaction()}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>{isEn ? "+ Record New Item" : "+ Új tétel rögzítése"}</span>
-            </button>
+            {!isEffectiveReadOnly && onOpenAddTransaction && (
+              <button
+                onClick={() => onOpenAddTransaction()}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>{isEn ? "+ Record New Item" : "+ Új tétel rögzítése"}</span>
+              </button>
+            )}
             {onOpenCalendar && (
               <button
                 onClick={onOpenCalendar}
-                className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] font-bold text-xs rounded-xl border border-blue-200 transition-all cursor-pointer"
+                className={`flex items-center justify-center gap-1.5 py-2.5 px-3 bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] font-bold text-xs rounded-xl border border-blue-200 transition-all cursor-pointer ${
+                  isEffectiveReadOnly ? 'w-full' : ''
+                }`}
                 title={isEn ? "Building Calendar & Deadlines" : "Ház naptára és eseményei"}
               >
                 <Calendar className="w-4 h-4" />
@@ -431,37 +471,41 @@ export function AdminView({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => onOpenAddTransaction()}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{isEn ? "+ Record New Item" : "+ Új tétel rögzítése"}</span>
-            </button>
+          {!isEffectiveReadOnly && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {onOpenAddTransaction && (
+                <button
+                  onClick={() => onOpenAddTransaction()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isEn ? "+ Record New Item" : "+ Új tétel rögzítése"}</span>
+                </button>
+              )}
 
-            {isGridEditMode && (
+              {isGridEditMode && onOpenAddFlat && (
+                <button
+                  onClick={onOpenAddFlat}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+                >
+                  <Home className="w-3.5 h-3.5" />
+                  <span>{t.admin_add_flat}</span>
+                </button>
+              )}
+
               <button
-                onClick={onOpenAddFlat}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+                onClick={toggleGridEditMode}
+                className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  isGridEditMode
+                    ? 'bg-amber-100 border-amber-300 text-amber-900'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
               >
-                <Home className="w-3.5 h-3.5" />
-                <span>{t.admin_add_flat}</span>
+                <Pencil className="w-3.5 h-3.5" />
+                <span>{t.edit}</span>
               </button>
-            )}
-
-            <button
-              onClick={toggleGridEditMode}
-              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                isGridEditMode
-                  ? 'bg-amber-100 border-amber-300 text-amber-900'
-                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              <span>{t.edit}</span>
-            </button>
-          </div>
+            </div>
+          )}
         </div>
 
         {flatViewMode === 'list' ? (
@@ -563,61 +607,69 @@ export function AdminView({
 
                       {/* Quick Pay */}
                       <td className="py-3 px-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            onClick={() => onOpenQuickPayConfirm(flat.flatNum, 'KK', oneMonthKK)}
-                            className="px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] text-[11px] font-bold transition-colors cursor-pointer"
-                            title={`1 havi ${kkShort} befizetés (${formatCurrency(oneMonthKK)})`}
-                          >
-                            +{kkShort}
-                          </button>
-                          <button
-                            onClick={() => onOpenQuickPayConfirm(flat.flatNum, 'FA', oneMonthFA)}
-                            className="px-2 py-0.5 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 text-[11px] font-bold transition-colors cursor-pointer"
-                            title={`1 havi ${faShort} befizetés (${formatCurrency(oneMonthFA)})`}
-                          >
-                            +{faShort}
-                          </button>
-                          {customPayAccounts.map(acc => {
-                            const oneMonthCustom = getCurrentFee(flat, acc.id) > 0 ? getCurrentFee(flat, acc.id) : (Number(flat.customFees?.[acc.id]) || 0);
-                            const accShort = acc.shortName || (acc.name?.length > 5 ? acc.name.slice(0, 4) : acc.name);
-                            return (
-                              <button
-                                key={acc.id}
-                                onClick={() => onOpenQuickPayConfirm(flat.flatNum, acc.name, oneMonthCustom)}
-                                className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold transition-colors cursor-pointer"
-                                title={`1 havi ${acc.name} (${accShort}) befizetés (${formatCurrency(oneMonthCustom)})`}
-                              >
-                                +{accShort}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        {!isEffectiveReadOnly && onOpenQuickPayConfirm ? (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              onClick={() => onOpenQuickPayConfirm(flat.flatNum, 'KK', oneMonthKK)}
+                              className="px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] text-[11px] font-bold transition-colors cursor-pointer"
+                              title={`1 havi ${kkShort} befizetés (${formatCurrency(oneMonthKK)})`}
+                            >
+                              +{kkShort}
+                            </button>
+                            <button
+                              onClick={() => onOpenQuickPayConfirm(flat.flatNum, 'FA', oneMonthFA)}
+                              className="px-2 py-0.5 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 text-[11px] font-bold transition-colors cursor-pointer"
+                              title={`1 havi ${faShort} befizetés (${formatCurrency(oneMonthFA)})`}
+                            >
+                              +{faShort}
+                            </button>
+                            {customPayAccounts.map(acc => {
+                              const oneMonthCustom = getCurrentFee(flat, acc.id) > 0 ? getCurrentFee(flat, acc.id) : (Number(flat.customFees?.[acc.id]) || 0);
+                              const accShort = acc.shortName || (acc.name?.length > 5 ? acc.name.slice(0, 4) : acc.name);
+                              return (
+                                <button
+                                  key={acc.id}
+                                  onClick={() => onOpenQuickPayConfirm(flat.flatNum, acc.name, oneMonthCustom)}
+                                  className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold transition-colors cursor-pointer"
+                                  title={`1 havi ${acc.name} (${accShort}) befizetés (${formatCurrency(oneMonthCustom)})`}
+                                >
+                                  +{accShort}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 font-mono text-xs">—</span>
+                        )}
                       </td>
 
                       {/* Actions */}
                       <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        {isGridEditMode ? (
+                        {isGridEditMode && !isEffectiveReadOnly ? (
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => onOpenEditFlatMaster(state.currentBuildingId, flat.flatNum)}
-                              className="p-1 rounded text-gray-500 hover:text-blue-600 hover:bg-blue-50"
-                              title={isEn ? "Edit master data" : "Törzsadatok szerkesztése"}
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => onOpenDeleteFlatConfirm(flat.flatNum)}
-                              className="p-1 rounded text-gray-500 hover:text-red-600 hover:bg-red-50"
-                              title={isEn ? "Delete flat" : "Lakás törlése"}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {onOpenEditFlatMaster && (
+                              <button
+                                onClick={() => onOpenEditFlatMaster(state.currentBuildingId, flat.flatNum)}
+                                className="p-1 rounded text-gray-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer"
+                                title={isEn ? "Edit master data" : "Törzsadatok szerkesztése"}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {onOpenDeleteFlatConfirm && (
+                              <button
+                                onClick={() => onOpenDeleteFlatConfirm(flat.flatNum)}
+                                className="p-1 rounded text-gray-500 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                                title={isEn ? "Delete flat" : "Lakás törlése"}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <button
                             onClick={() => onOpenFlatDetail(flat.flatNum)}
-                            className="p-1 rounded-lg text-gray-400 group-hover:text-blue-600 group-hover:bg-blue-50 transition-colors"
+                            className="p-1 rounded-lg text-gray-400 group-hover:text-blue-600 group-hover:bg-blue-50 transition-colors cursor-pointer"
                             title={isEn ? "View flat details" : "Lakás részletei"}
                           >
                             <ChevronRight className="w-4 h-4" />
@@ -660,7 +712,7 @@ export function AdminView({
                         </span>
                       </div>
 
-                      {isGridEditMode ? (
+                      {isGridEditMode && !isEffectiveReadOnly ? (
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={() => onOpenEditFlatMaster(state.currentBuildingId, flat.flatNum)}
@@ -720,7 +772,7 @@ export function AdminView({
                     </div>
 
                     {/* Quick pay buttons */}
-                    {(() => {
+                    {!isEffectiveReadOnly && (() => {
                       const oneMonthKK = getCurrentFee(flat, 'KK') > 0 ? getCurrentFee(flat, 'KK') : (Number(flat.monthlyFee) || 0);
                       const oneMonthFA = getCurrentFee(flat, 'FA') > 0 ? getCurrentFee(flat, 'FA') : (Number(flat.renovationFee) || 0);
                       const customPayAccounts = customAccounts.filter(acc => acc.hasMonthlyFee);
@@ -831,17 +883,19 @@ export function AdminView({
             </button>
 
             {/* Edit Mode Toggle */}
-            <button
-              onClick={() => setIsTxEditMode(!isTxEditMode)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-semibold transition-colors flex-shrink-0 cursor-pointer ${
-                isTxEditMode
-                  ? 'bg-amber-100 border-amber-300 text-amber-900'
-                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              <span>{t.edit}</span>
-            </button>
+            {!isEffectiveReadOnly && (
+              <button
+                onClick={() => setIsTxEditMode(!isTxEditMode)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-semibold transition-colors flex-shrink-0 cursor-pointer ${
+                  isTxEditMode
+                    ? 'bg-amber-100 border-amber-300 text-amber-900'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>{t.edit}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1002,7 +1056,7 @@ export function AdminView({
                           })()}
                         </div>
 
-                        {isTxEditMode && (
+                        {isTxEditMode && !isEffectiveReadOnly && (
                           <div className="flex items-center gap-1 border-l border-gray-100 pl-2">
                             <button
                               onClick={(e) => {

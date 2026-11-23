@@ -136,11 +136,15 @@ function MainLayout() {
     openPortfolio,
     openBuildingAdmin,
     acceptTeamInvite,
+    canUserManageBuilding,
+    isUserBuildingViewer,
     showToast
   } = useApp();
   const { currentUser } = state;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const isAdminUser = isCurrentUserAdmin(currentUser, state.users);
+  const isManagingCurrentBuilding = canUserManageBuilding(state.currentBuildingId);
+  const isCurrentBuildingViewer = isUserBuildingViewer(state.currentBuildingId);
   const myFlats = getUserFlats(currentUser, state.buildings);
   const hasMultipleRoles = isAdminUser && myFlats.length > 0;
 
@@ -755,20 +759,21 @@ function MainLayout() {
           ) : (
             <AdminView
               onBackToPortfolio={() => openPortfolio()}
+              isReadOnly={!isManagingCurrentBuilding}
               onOpenFlatDetail={(fNum) => setFlatDetailNum(fNum)}
-              onOpenAddTransaction={(init) => handleOpenUniversalTx(init)}
-              onOpenAddFlat={() => setIsAddFlatOpen(true)}
-              onOpenGlobalBalances={() => {
+              onOpenAddTransaction={isManagingCurrentBuilding ? (init) => handleOpenUniversalTx(init) : undefined}
+              onOpenAddFlat={isManagingCurrentBuilding ? () => setIsAddFlatOpen(true) : undefined}
+              onOpenGlobalBalances={isManagingCurrentBuilding ? () => {
                 setBuildingSettingsTargetId(state.currentBuildingId);
                 setGlobalBalancesMode('accounts');
                 setIsGlobalBalancesOpen(true);
-              }}
-              onOpenGlobalAddTx={() => handleOpenUniversalTx({ scope: 'global' })}
-              onOpenEditFlatMaster={(bId, fNum) => setEditFlatMasterData({ buildingId: bId, flatNum: fNum })}
-              onOpenEditTx={(id, type, initialEditMode = false) => setEditTxData({ id, type, initialEditMode })}
-              onOpenDeleteFlatConfirm={(fNum) => setDeleteFlatNum(fNum)}
-              onOpenDeleteTxConfirm={(id, type) => setDeleteTxData({ id, type })}
-              onOpenQuickPayConfirm={(flatNum, accountType, amount) => setQuickPayData({ flatNum, accountType, amount })}
+              } : undefined}
+              onOpenGlobalAddTx={isManagingCurrentBuilding ? () => handleOpenUniversalTx({ scope: 'global' }) : undefined}
+              onOpenEditFlatMaster={isManagingCurrentBuilding ? (bId, fNum) => setEditFlatMasterData({ buildingId: bId, flatNum: fNum }) : undefined}
+              onOpenEditTx={(id, type, initialEditMode = false) => setEditTxData({ id, type, initialEditMode: isManagingCurrentBuilding ? initialEditMode : false })}
+              onOpenDeleteFlatConfirm={isManagingCurrentBuilding ? (fNum) => setDeleteFlatNum(fNum) : undefined}
+              onOpenDeleteTxConfirm={isManagingCurrentBuilding ? (id, type) => setDeleteTxData({ id, type }) : undefined}
+              onOpenQuickPayConfirm={isManagingCurrentBuilding ? (flatNum, accountType, amount) => setQuickPayData({ flatNum, accountType, amount }) : undefined}
               onOpenFullscreenTx={(type) => setFullscreenTxData({ type, fromFlatDetail: false })}
               onNavigateToCase={handleNavigateToCase}
               onOpenAssembly={() => setIsAssemblyOpen(true)}
@@ -832,8 +837,9 @@ function MainLayout() {
       <DocumentsModal
         isOpen={Boolean(currentUser && isDocumentsOpen)}
         onClose={() => setIsDocumentsOpen(false)}
+        isReadOnly={!isManagingCurrentBuilding}
         onOpenDeleteDocConfirm={(docId) => {
-          if (isAdmin) setDeleteDocId(docId);
+          if (isAdmin && isManagingCurrentBuilding) setDeleteDocId(docId);
         }}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}
@@ -843,6 +849,7 @@ function MainLayout() {
         isOpen={Boolean(currentUser && isCalendarOpen)}
         onClose={() => setIsCalendarOpen(false)}
         initialBuildingId={calendarBuildingId}
+        isReadOnly={!isManagingCurrentBuilding}
       />
 
       <LoansModal
@@ -871,7 +878,7 @@ function MainLayout() {
         profileNavigation={profileNavigation}
         onOpenTeamManagement={() => setIsTeamModalOpen(true)}
         onOpenEditTx={(id, type, initialEditMode = false) => {
-          if (isAdmin) setEditTxData({ id, type, initialEditMode });
+          setEditTxData({ id, type, initialEditMode: isManagingCurrentBuilding ? initialEditMode : false });
         }}
       />
 
@@ -879,6 +886,7 @@ function MainLayout() {
         isOpen={Boolean(currentUser && fullscreenTxData)}
         type={fullscreenTxData?.type || 'global'}
         flatNum={(isAdmin || currentUser?.role === 'szvb') ? (fullscreenTxData?.flatNum || currentUser?.flatNum) : currentUser?.flatNum}
+        isReadOnly={!isManagingCurrentBuilding}
         onClose={() => {
           const shouldReturnToFlatDetail = Boolean(
             isAdmin &&
@@ -891,8 +899,8 @@ function MainLayout() {
             setFlatDetailNum(targetFlat);
           }
         }}
-        onOpenEditTx={isAdmin ? (id, type, initialEditMode = false) => setEditTxData({ id, type, flatNum: fullscreenTxData?.flatNum, initialEditMode }) : undefined}
-        onOpenDeleteTx={isAdmin ? (id, type) => setDeleteTxData({ id, type, flatNum: fullscreenTxData?.flatNum }) : undefined}
+        onOpenEditTx={(id, type, initialEditMode = false) => setEditTxData({ id, type, flatNum: fullscreenTxData?.flatNum, initialEditMode: isManagingCurrentBuilding ? initialEditMode : false })}
+        onOpenDeleteTx={isAdmin && isManagingCurrentBuilding ? (id, type) => setDeleteTxData({ id, type, flatNum: fullscreenTxData?.flatNum }) : undefined}
         onNavigateToCase={handleNavigateToCase}
       />
 
@@ -901,30 +909,31 @@ function MainLayout() {
         flatNum={flatDetailNum}
         isOpen={Boolean(isAdmin && flatDetailNum)}
         onClose={() => setFlatDetailNum(null)}
-        onOpenAddTx={(fNum) => {
-          if (isAdmin) handleOpenUniversalTx({ scope: 'single', flatNum: fNum });
-        }}
+        isReadOnly={!isManagingCurrentBuilding}
+        onOpenAddTx={isManagingCurrentBuilding ? (fNum) => {
+          handleOpenUniversalTx({ scope: 'single', flatNum: fNum });
+        } : undefined}
         onOpenFullscreen={(type, fNum) => {
           setFlatDetailNum(null);
           setFullscreenTxData({ type, flatNum: fNum, fromFlatDetail: true });
         }}
         onOpenEditTx={(id, type, initialEditMode = false) => {
-          if (isAdmin) setEditTxData({ id, type, flatNum: flatDetailNum, initialEditMode });
+          setEditTxData({ id, type, flatNum: flatDetailNum, initialEditMode: isManagingCurrentBuilding ? initialEditMode : false });
         }}
-        onOpenDeleteTx={(id, type) => {
-          if (isAdmin) setDeleteTxData({ id, type, flatNum: flatDetailNum });
-        }}
+        onOpenDeleteTx={isManagingCurrentBuilding ? (id, type) => {
+          setDeleteTxData({ id, type, flatNum: flatDetailNum });
+        } : undefined}
       />
 
       <EditFlatMasterModal
         buildingId={editFlatMasterData?.buildingId}
         flatNum={editFlatMasterData?.flatNum}
-        isOpen={Boolean(isAdmin && editFlatMasterData)}
+        isOpen={Boolean(isAdmin && editFlatMasterData && isManagingCurrentBuilding)}
         onClose={() => setEditFlatMasterData(null)}
       />
 
       <UniversalTransactionModal
-        isOpen={Boolean(isAdmin && universalTxModalData)}
+        isOpen={Boolean(isAdmin && universalTxModalData && isManagingCurrentBuilding)}
         initialData={universalTxModalData}
         onClose={() => setUniversalTxModalData(null)}
       />
@@ -934,7 +943,8 @@ function MainLayout() {
         itemType={editTxData?.type}
         flatNum={editTxData?.flatNum}
         isOpen={Boolean(isAdmin && editTxData)}
-        initialEditMode={Boolean(editTxData?.initialEditMode)}
+        isReadOnly={!isManagingCurrentBuilding}
+        initialEditMode={Boolean(editTxData?.initialEditMode && isManagingCurrentBuilding)}
         onClose={() => setEditTxData(null)}
       />
 
@@ -942,6 +952,7 @@ function MainLayout() {
         isOpen={Boolean(isAdmin && isGlobalBalancesOpen)}
         buildingId={buildingSettingsTargetId || state.currentBuildingId}
         mode={globalBalancesMode}
+        isReadOnly={!canUserManageBuilding(buildingSettingsTargetId || state.currentBuildingId)}
         onClose={() => {
           setIsGlobalBalancesOpen(false);
           setGlobalBalancesMode('full');
@@ -950,7 +961,7 @@ function MainLayout() {
       />
 
       <AddFlatModal
-        isOpen={Boolean(isAdmin && isAddFlatOpen)}
+        isOpen={Boolean(isAdmin && isAddFlatOpen && isManagingCurrentBuilding)}
         onClose={() => setIsAddFlatOpen(false)}
       />
 

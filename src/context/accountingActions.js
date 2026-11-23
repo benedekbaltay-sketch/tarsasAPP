@@ -12,19 +12,32 @@ import {
   uiFlatMasterToFirestoreUnitUpdate,
   slugifyUnitId,
 } from '../services/firestoreAdapter';
+import { canUserManageBuilding } from '../utils/teamPermissions';
 
 export function createAccountingActions({ state, persistState, showToast, t, copiedTx, setCopiedTx, ensureFirebaseAuth, reloadCurrentBuilding }) {
   const isAdmin = () => Boolean(
     state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'superadmin')
   );
 
-  const requireAdmin = () => {
-    if (isAdmin()) return true;
-    showToast(
-      t.error_unauthorized || (state.currentLang === 'en' ? "Unauthorized action." : "Nincs jogosultságod ehhez a művelethez."),
-      "error"
-    );
-    return false;
+  const requireAdmin = (targetBuildingId = null) => {
+    if (!isAdmin()) {
+      showToast(
+        t.error_unauthorized || (state.currentLang === 'en' ? "Unauthorized action." : "Nincs jogosultságod ehhez a művelethez."),
+        "error"
+      );
+      return false;
+    }
+    const bId = targetBuildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    if (!canUserManageBuilding(state.currentUser, bId, state.organizations, state.buildings)) {
+      showToast(
+        t.team_viewer_readonly_error || (state.currentLang === 'en'
+          ? "You have read-only (viewer) access to this condominium. Editing is not allowed."
+          : "Csak megtekintési jogosultságod van ezen a társasházon. A módosítás nem engedélyezett."),
+        "error"
+      );
+      return false;
+    }
+    return true;
   };
 
   const getActiveBuildingContext = () => {

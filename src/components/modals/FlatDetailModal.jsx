@@ -35,14 +35,20 @@ export function FlatDetailModal({
   onOpenAddTx,
   onOpenFullscreen,
   onOpenEditTx,
-  onOpenDeleteTx
+  onOpenDeleteTx,
+  isReadOnly = false
 }) {
-  const { state, t, updateFlatFees, copiedTx, copyTransaction, pasteTransaction } = useApp();
+  const { state, t, updateFlatFees, copiedTx, copyTransaction, pasteTransaction, canUserManageBuilding } = useApp();
   const { flats, currentLang, currentUser, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
+  const isEffectiveReadOnly = Boolean(
+    isReadOnly ||
+    !isAdmin ||
+    (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding))
+  );
   const allAccounts = getBuildingAccounts(currentBuilding);
   const customAccounts = allAccounts.filter(a => !a.isBaseAccount);
 
@@ -115,7 +121,7 @@ export function FlatDetailModal({
           }
         }
       } else if (isCtrlOrCmd && e.key.toLowerCase() === 'v') {
-        if (selectedTimelineId) {
+        if (selectedTimelineId && !isEffectiveReadOnly) {
           e.preventDefault();
           pasteTransaction(flatNum);
         }
@@ -143,7 +149,7 @@ export function FlatDetailModal({
         if (window.getSelection && window.getSelection().toString().trim().length > 0) {
           return;
         }
-        if (selectedTimelineId && flatNum && onOpenDeleteTx) {
+        if (selectedTimelineId && flatNum && onOpenDeleteTx && !isEffectiveReadOnly) {
           const raw = getCombinedFlatLedgerTimeline(flatNum, state);
           const currentTimeline = applyTransactionFilters(raw, timelineFilters);
           const itemToDelete = currentTimeline.find(it => it.id === selectedTimelineId);
@@ -239,13 +245,15 @@ export function FlatDetailModal({
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => onOpenAddTx(flat.flatNum)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
-            >
-              <PlusCircle className="w-3.5 h-3.5" />
-              <span>{isEn ? "New Item" : "Új tétel"}</span>
-            </button>
+            {!isEffectiveReadOnly && onOpenAddTx && (
+              <button
+                onClick={() => onOpenAddTx(flat.flatNum)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>{isEn ? "New Item" : "Új tétel"}</span>
+              </button>
+            )}
 
             <button
               onClick={handleClose}
@@ -382,7 +390,7 @@ export function FlatDetailModal({
               <span className="text-xs font-bold text-gray-700 font-display">
                 {isEn ? "Balances & Monthly Fees" : "Egyenlegek és havi előírások"}
               </span>
-              {isAdmin && !isEditMode && (
+              {isAdmin && !isEffectiveReadOnly && !isEditMode && (
                 <button
                   type="button"
                   onClick={startEditMode}
@@ -666,7 +674,7 @@ export function FlatDetailModal({
                   )}
                 </button>
 
-                {isAdmin && (
+                {isAdmin && !isEffectiveReadOnly && (
                   <button
                     type="button"
                     onClick={() => setIsTimelineEditMode(!isTimelineEditMode)}
@@ -759,7 +767,7 @@ export function FlatDetailModal({
                               {formatCurrency(item.runningBalance)}
                             </td>
                             <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                              {isTimelineEditMode ? (
+                              {isTimelineEditMode && !isEffectiveReadOnly ? (
                                 <div className="flex items-center justify-center gap-1">
                                   <button
                                     type="button"
@@ -838,7 +846,7 @@ export function FlatDetailModal({
                           <span className="font-mono text-gray-400 select-text cursor-text">{item.date}</span>
                           <div className="flex items-center gap-2 select-text cursor-text">
                             <span>Egyenleg: <strong className="text-gray-700">{formatCurrency(item.runningBalance)}</strong></span>
-                            {isTimelineEditMode && (
+                            {isTimelineEditMode && !isEffectiveReadOnly && (
                               <div className="flex items-center gap-1 ml-1 pl-1.5 border-l border-gray-200">
                                 <button
                                   type="button"

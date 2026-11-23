@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Menu, Building2, Calendar, ChevronDown, Check, LayoutGrid } from 'lucide-react';
+import { Menu, Building2, Calendar, ChevronDown, Check, LayoutGrid, Eye } from 'lucide-react';
 import { ProfileSwitcherButton } from './ProfileSwitcherButton';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { CloudSyncBadge } from './CloudSyncBadge';
 import { FlagIcon } from './FlagIcon';
 import { NotificationBell } from './NotificationBell';
-import { getAccessibleBuildings } from '../utils/teamPermissions';
+import { getAccessibleBuildings, isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
 
 export function Header({ 
   onOpenDrawer, 
@@ -77,6 +77,10 @@ export function Header({
 
   const isCurrentlyAdminMode = currentUser.role === 'admin' || currentUser.role === 'superadmin';
   const isInBuilding = Boolean(currentBuilding && (!isCurrentlyAdminMode || (!isPortfolioView && currentBuildingId)));
+  const isViewer = isCurrentlyAdminMode && (
+    isUserBuildingViewer(currentUser, currentBuilding, organizations, buildings) ||
+    !canUserManageBuilding(currentUser, currentBuilding, organizations, buildings)
+  );
 
   // Primary header title: active condominium name when inside a building; portfolio/app title otherwise
   const headerTitle = isInBuilding
@@ -90,7 +94,9 @@ export function Header({
     ? (isCurrentlyAdminMode
         ? (currentUser.role === 'superadmin'
             ? (isHu ? 'Rendszergazda' : 'SuperAdmin')
-            : (isHu ? 'Közös Képviselet' : 'Property Management'))
+            : (isViewer
+                ? (isHu ? 'Közös Képviselet (Csak megtekintő)' : 'Property Management (Viewer)')
+                : (isHu ? 'Közös Képviselet' : 'Property Management')))
         : (currentUser.role === 'szvb'
             ? (isHu ? 'Számvizsgáló Bizottság (SZVB)' : 'Accounting Committee (SZVB)')
             : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || ''))))
@@ -137,9 +143,17 @@ export function Header({
               <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 leading-tight font-display truncate">
                 {headerTitle}
               </h1>
-              <span className="text-[11px] sm:text-xs text-gray-500 font-medium truncate max-w-[120px] xs:max-w-[170px] sm:max-w-[220px] md:max-w-none">
-                {headerSubtitle}
-              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] sm:text-xs text-gray-500 font-medium truncate max-w-[120px] xs:max-w-[170px] sm:max-w-[220px] md:max-w-none">
+                  {headerSubtitle}
+                </span>
+                {isViewer && isInBuilding && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                    <Eye className="w-2.5 h-2.5 text-amber-600" />
+                    <span>{isHu ? 'Csak megtekintő' : 'View only'}</span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -254,14 +268,27 @@ export function Header({
                                   )}
                                 </div>
                               </div>
-                              {isActive && (
-                                <div className="flex items-center gap-1 flex-shrink-0">
-                                  <span className="px-1.5 py-0.5 rounded-md bg-blue-100 text-[#1E3A8A] text-[10px] font-bold">
-                                    {t.header_active_building_badge || (isHu ? "Aktív" : "Active")}
-                                  </span>
-                                  <Check className="w-3.5 h-3.5 text-[#1E3A8A] stroke-[2.5]" />
-                                </div>
-                              )}
+                              {(() => {
+                                const bIsViewer = isUserBuildingViewer(currentUser, b, organizations, buildings) || !canUserManageBuilding(currentUser, b, organizations, buildings);
+                                return (
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    {bIsViewer && (
+                                      <span className="px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold inline-flex items-center gap-0.5">
+                                        <Eye className="w-2.5 h-2.5 text-amber-600" />
+                                        <span>{isHu ? 'Megtekintő' : 'Viewer'}</span>
+                                      </span>
+                                    )}
+                                    {isActive && (
+                                      <>
+                                        <span className="px-1.5 py-0.5 rounded-md bg-blue-100 text-[#1E3A8A] text-[10px] font-bold">
+                                          {t.header_active_building_badge || (isHu ? "Aktív" : "Active")}
+                                        </span>
+                                        <Check className="w-3.5 h-3.5 text-[#1E3A8A] stroke-[2.5]" />
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </button>
                           );
                         })}

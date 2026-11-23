@@ -41,6 +41,8 @@ import {
   resolveUserOrgContext,
   getAccessibleBuildings,
   canUserAccessBuilding,
+  canUserManageBuilding,
+  isUserBuildingViewer,
 } from '../utils/teamPermissions';
 
 const AppContext = createContext(null);
@@ -1364,6 +1366,11 @@ export function AppProvider({ children }) {
     ...teamActions,
     ...emailActions,
     orgContext: resolveUserOrgContext(state.currentUser, state.organizations, state.buildings),
+    canUserManageBuilding: (b = state.currentBuildingId) =>
+      canUserManageBuilding(state.currentUser, b, state.organizations, state.buildings),
+    isUserBuildingViewer: (b = state.currentBuildingId) =>
+      isUserBuildingViewer(state.currentUser, b, state.organizations, state.buildings),
+    isReadOnly: isUserBuildingViewer(state.currentUser, state.currentBuildingId, state.organizations, state.buildings),
     getAccessibleBuildings: (u = state.currentUser, b = state.buildings, o = state.organizations) =>
       getAccessibleBuildings(u, b, o),
     getUserFlats: (u = state.currentUser, b = state.buildings) => getUserFlats(u, b)

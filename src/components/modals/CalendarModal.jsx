@@ -369,7 +369,7 @@ function getRecurrenceLabel(ev, isEn) {
   }
 }
 
-export function CalendarModal({ isOpen, onClose, initialBuildingId = null }) {
+export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isReadOnly = false }) {
   const { 
     state, 
     t, 
@@ -383,12 +383,13 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null }) {
   const isEn = currentLang === 'en';
   const isHu = !isEn;
   const userEmail = (currentUser?.email || "").toLowerCase().trim();
-  const isAdmin = (
+  const rawAdmin = (
     currentUser?.isAdminUser === true ||
     currentUser?.role === 'admin' ||
     currentUser?.role === 'superadmin' ||
     Boolean(userEmail && (users || []).some(u => u.email && u.email.toLowerCase().trim() === userEmail && (u.role === 'admin' || u.role === 'superadmin')))
   );
+  const isAdmin = rawAdmin && !isReadOnly;
 
   // Guarantee calendarEvents is always a valid Array
   const safeCalendarEvents = useMemo(() => {

@@ -303,26 +303,66 @@ export function canUserEditBankAccountNumbers(user, building, organizations = []
 
 /**
  * Checks whether a staff member has active management/write permissions on a given building
- * (returns false if the colleague was explicitly assigned 'viewer' role on that building).
+ * (returns false if the colleague was explicitly assigned 'viewer' role on that building,
+ * or if they only have read-only viewer rights).
  */
 export function canUserManageBuilding(user, building, organizations = [], buildings = []) {
+  if (!user) return false;
   const ctx = resolveUserOrgContext(user, organizations, buildings);
   if (ctx.isSuspended) return false;
   if (ctx.isSuperAdmin) return true;
   if (ctx.isOwner) {
-    return building ? isBuildingInOrganization(building, ctx.org) : true;
+    const bObj = typeof building === 'string' ? (buildings || []).find((b) => b.id === building) : building;
+    return bObj ? isBuildingInOrganization(bObj, ctx.org) : true;
   }
   if (ctx.isStaff) {
-    if (building && !canUserAccessBuilding(user, building, organizations, buildings)) {
+    const bObj = typeof building === 'string' ? (buildings || []).find((b) => b.id === building) : building;
+    if (bObj && !canUserAccessBuilding(user, bObj, organizations, buildings)) {
       return false;
     }
+    const bId = typeof building === 'string' ? building : building?.id;
     const member = (ctx.org?.members || []).find((m) => m && normalizeEmail(m.email) === normalizeEmail(user?.email));
-    const perBuilding = building?.id ? member?.buildingAssignments?.[building.id] : null;
-    if (perBuilding && perBuilding.role === 'viewer') {
-      return false;
+    if (bId) {
+      const perBuilding = member?.buildingAssignments?.[bId];
+      if (perBuilding && perBuilding.role === 'viewer') {
+        return false;
+      }
+    } else {
+      const assignments = Object.values(member?.buildingAssignments || {});
+      if (assignments.length > 0 && assignments.every((a) => a?.role === 'viewer')) {
+        return false;
+      }
     }
     return true;
   }
+  return false;
+}
+
+/**
+ * Checks whether a user has read-only (viewer) rights on a given building or globally.
+ * Returns true if the user is a staff member whose role on this building (or all assigned buildings) is 'viewer'.
+ */
+export function isUserBuildingViewer(user, building, organizations = [], buildings = []) {
+  if (!user) return false;
+  const ctx = resolveUserOrgContext(user, organizations, buildings);
+  if (!ctx.isStaff || ctx.isSuperAdmin || ctx.isOwner || ctx.isSuspended) {
+    return false;
+  }
+  const member = (ctx.org?.members || []).find((m) => m && normalizeEmail(m.email) === normalizeEmail(user?.email));
+  if (!member) return false;
+
+  const bId = typeof building === 'string' ? building : building?.id;
+  if (bId) {
+    const assignment = member.buildingAssignments?.[bId];
+    if (assignment?.role === 'viewer') return true;
+    if (assignment?.role === 'manager') return false;
+  }
+
+  const assignments = Object.values(member.buildingAssignments || {});
+  if (assignments.length > 0 && assignments.every((a) => a?.role === 'viewer')) {
+    return true;
+  }
+
   return false;
 }
 

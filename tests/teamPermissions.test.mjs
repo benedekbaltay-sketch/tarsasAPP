@@ -11,6 +11,7 @@ import {
   canUserManageTeam,
   canUserEditBankAccountNumbers,
   canUserManageBuilding,
+  isUserBuildingViewer,
   canActorManageTargetMember,
   detectBankAccountChanges,
   buildBankChangeNotification,
@@ -564,6 +565,14 @@ test('9. Per-building assignments: different roles & permissions on different bu
   // Management (write) check: Manager on b-1, Viewer on b-2
   assert.equal(canUserManageBuilding(colleague, testBuildings[0], customOrgs, testBuildings), true);
   assert.equal(canUserManageBuilding(colleague, testBuildings[1], customOrgs, testBuildings), false);
+  assert.equal(canUserManageBuilding(colleague, 'b-1', customOrgs, testBuildings), true);
+  assert.equal(canUserManageBuilding(colleague, 'b-2', customOrgs, testBuildings), false);
+
+  // Read-only viewer check: Viewer on b-2, NOT viewer on b-1
+  assert.equal(isUserBuildingViewer(colleague, testBuildings[0], customOrgs, testBuildings), false);
+  assert.equal(isUserBuildingViewer(colleague, testBuildings[1], customOrgs, testBuildings), true);
+  assert.equal(isUserBuildingViewer(colleague, 'b-1', customOrgs, testBuildings), false);
+  assert.equal(isUserBuildingViewer(colleague, 'b-2', customOrgs, testBuildings), true);
 
   // Bank account editing check: canEditBankAccounts is TRUE on b-1, but FALSE on b-2
   assert.equal(canUserEditBankAccountNumbers(colleague, testBuildings[0], customOrgs, testBuildings), true);

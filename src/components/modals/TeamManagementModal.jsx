@@ -677,6 +677,10 @@ export function TeamManagementModal({ isOpen, onClose }) {
                           ? orgBuildings
                           : orgBuildings.filter((b) => (m.buildingIds || []).includes(b.id));
                       const canEditThis = canActorManageTargetMember(orgCtx, m, null, currentUser.email).allowed;
+                      const assignments = Object.values(m.buildingAssignments || {});
+                      const isAllViewer = assignments.length > 0 && assignments.every((a) => a?.role === 'viewer');
+                      const isAllManager = assignments.length > 0 && assignments.every((a) => a?.role !== 'viewer');
+                      const isMixedRole = !isAllViewer && !isAllManager && assignments.length > 0;
 
                       return (
                         <div
@@ -708,6 +712,23 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                   ) : (
                                     <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 text-[10px] font-bold">
                                       {t.team_status_active || (isEn ? 'Active' : 'Aktív')}
+                                    </span>
+                                  )}
+
+                                  {isAllViewer ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200">
+                                      <Eye className="w-3 h-3 text-amber-600" />
+                                      {t.team_viewer_badge || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő')}
+                                    </span>
+                                  ) : isMixedRole ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-bold border border-purple-200">
+                                      <ShieldAlert className="w-3 h-3 text-purple-600" />
+                                      {t.team_mixed_badge || (isEn ? 'Mixed Roles' : 'Vegyes jogosultság')}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-[#1E3A8A] text-[10px] font-bold border border-blue-200">
+                                      <Shield className="w-3 h-3 text-[#1E3A8A]" />
+                                      {t.team_manager_badge || (isEn ? 'Manager' : 'Kezelő')}
                                     </span>
                                   )}
                                 </div>
@@ -855,22 +876,30 @@ export function TeamManagementModal({ isOpen, onClose }) {
                             </span>
                           </div>
 
-                          {/* Preview assigned building names when selected */}
-                          {m.buildingScope !== 'all' && assignedBuildings.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {assignedBuildings.slice(0, 5).map((b) => (
-                                <span
-                                  key={b.id}
-                                  className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-[10px] font-medium truncate max-w-[180px]"
-                                >
-                                  {b.name}
-                                </span>
-                              ))}
-                              {assignedBuildings.length > 5 && (
-                                <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 text-[10px] font-bold">
-                                  +{assignedBuildings.length - 5}
-                                </span>
-                              )}
+                          {/* Preview assigned building names with explicit role badge */}
+                          {assignedBuildings.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              {assignedBuildings.map((b) => {
+                                const isViewerOnThis = m.buildingAssignments?.[b.id]?.role === 'viewer';
+                                return (
+                                  <span
+                                    key={b.id}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${
+                                      isViewerOnThis
+                                        ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                        : 'bg-blue-50/60 text-[#1E3A8A] border-blue-200'
+                                    }`}
+                                  >
+                                    <Building2 className={`w-3 h-3 ${isViewerOnThis ? 'text-amber-600' : 'text-[#1E3A8A]'}`} />
+                                    <span className="truncate max-w-[140px]">{b.name}</span>
+                                    <span className={`text-[9px] px-1 py-0.2 rounded font-bold ml-0.5 ${
+                                      isViewerOnThis ? 'bg-amber-200 text-amber-900' : 'bg-blue-200/80 text-blue-900'
+                                    }`}>
+                                      {isViewerOnThis ? (isEn ? 'Viewer' : 'Megtekintő') : (isEn ? 'Manager' : 'Kezelő')}
+                                    </span>
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -889,19 +918,51 @@ export function TeamManagementModal({ isOpen, onClose }) {
                   <div className="space-y-1.5">
                     {pendingInvites.map((inv) => {
                       const invUrl = `${origin}/?invite=${encodeURIComponent(inv.token)}`;
+                      const invAssignments = Object.values(inv.buildingAssignments || {});
+                      const isInvViewer = invAssignments.length > 0 && invAssignments.every((a) => a?.role === 'viewer');
+                      const invAssignedBlds = inv.buildingScope === 'all'
+                        ? orgBuildings
+                        : orgBuildings.filter((b) => (inv.buildingIds || []).includes(b.id));
+
                       return (
                         <div
                           key={inv.id}
-                          className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-200/80 flex flex-wrap items-center justify-between gap-2"
+                          className="p-3 rounded-xl bg-amber-50/60 border border-amber-200/80 flex flex-wrap items-center justify-between gap-3"
                         >
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold text-gray-900 truncate">{inv.email}</div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-amber-800">
-                              <Clock className="w-3 h-3" />
-                              <span>
-                                {isEn ? 'Expires:' : 'Lejárat:'}{' '}
-                                {inv.expiresAt ? String(inv.expiresAt).slice(0, 10) : '7d'}
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold text-gray-900 truncate">{inv.email}</span>
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                                isInvViewer
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : 'bg-blue-100 text-[#1E3A8A] border-blue-200'
+                              }`}>
+                                {isInvViewer ? <Eye className="w-3 h-3 text-amber-600" /> : <Shield className="w-3 h-3 text-[#1E3A8A]" />}
+                                {isInvViewer ? (t.team_viewer_badge || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő')) : (t.team_manager_badge || (isEn ? 'Manager' : 'Kezelő'))}
                               </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 text-[10px] text-gray-600 flex-wrap">
+                              <span className="text-gray-500 font-semibold">{isEn ? 'Assigned Condo:' : 'Kijelölt ház:'}</span>
+                              {inv.buildingScope === 'all' ? (
+                                <span className="font-bold text-gray-800">{isEn ? 'All buildings' : 'Minden céges ház'}</span>
+                              ) : invAssignedBlds.length > 0 ? (
+                                invAssignedBlds.map((b) => (
+                                  <span key={b.id} className="font-bold text-gray-800 bg-white/80 px-1.5 py-0.5 rounded border border-amber-200">
+                                    {b.name} ({inv.buildingAssignments?.[b.id]?.role === 'viewer' ? (isEn ? 'Viewer' : 'Megtekintő') : (isEn ? 'Manager' : 'Kezelő')})
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                              <span className="text-gray-300">•</span>
+                              <div className="flex items-center gap-1 text-[10px] text-amber-800">
+                                <Clock className="w-3 h-3" />
+                                <span>
+                                  {isEn ? 'Expires:' : 'Lejárat:'}{' '}
+                                  {inv.expiresAt ? String(inv.expiresAt).slice(0, 10) : '7d'}
+                                </span>
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap">

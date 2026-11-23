@@ -23,10 +23,12 @@ import {
   getFileValidationErrorMessage,
 } from '../../utils/fileSecurity';
 
-export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClose, initialEditMode = false }) {
+export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClose, initialEditMode = false, isReadOnly = false }) {
   const { state, t, editItem, showToast } = useApp();
   const { transactions, expenses, manualDebits, currentLang, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
+  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
+  const effectiveReadOnly = Boolean(isReadOnly || !isAdmin);
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const allAccounts = useMemo(() => getBuildingAccounts(currentBuilding), [currentBuilding]);
@@ -51,7 +53,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
       });
   }, [state.flats]);
 
-  const [isEditMode, setIsEditMode] = useState(Boolean(initialEditMode));
+  const [isEditMode, setIsEditMode] = useState(Boolean(initialEditMode && !effectiveReadOnly));
   const [selectedType, setSelectedType] = useState('Payment'); // 'Payment' | 'Expense' | 'Debit'
 
   // Filtered categories according to current selectedType
@@ -222,10 +224,10 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
       return;
     }
 
-    const currentKey = `${itemId}-${effectiveItemType}-${Boolean(initialEditMode)}`;
+    const currentKey = `${itemId}-${effectiveItemType}-${Boolean(initialEditMode)}-${effectiveReadOnly}`;
     if (prevOpenKeyRef.current !== currentKey) {
       prevOpenKeyRef.current = currentKey;
-      setIsEditMode(Boolean(initialEditMode));
+      setIsEditMode(Boolean(initialEditMode && !effectiveReadOnly));
       if (currentItem) {
         populateItemData(currentItem, effectiveItemType);
       } else {
@@ -234,7 +236,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
     } else if (currentItem && !isEditMode) {
       populateItemData(currentItem, effectiveItemType);
     }
-  }, [isOpen, itemId, effectiveItemType, initialEditMode, currentItem]);
+  }, [isOpen, itemId, effectiveItemType, initialEditMode, effectiveReadOnly, currentItem]);
 
   const handleClose = () => {
     prevOpenKeyRef.current = '';
@@ -254,7 +256,6 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
 
   const backdropProps = useBackdropClose(handleClose);
 
-  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   if (!isOpen || !itemId || !isAdmin) return null;
 
   const handleTypeSelect = (newType) => {
@@ -324,6 +325,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (effectiveReadOnly) return;
     const numAmount = Math.abs(Number(amount));
     if (amount === '' || isNaN(numAmount) || numAmount === 0) return;
 
@@ -385,7 +387,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {!isEditMode && (
+            {!isEditMode && !effectiveReadOnly && (
               <button
                 type="button"
                 onClick={() => setIsEditMode(true)}

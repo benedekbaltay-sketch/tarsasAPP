@@ -284,7 +284,7 @@ function loadSavedViewMode() {
   return 'list';
 }
 
-export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpenDrawer, onOpenProfileSelector }) {
+export function DocumentsModal({ isOpen, onClose, isReadOnly = false, onOpenDeleteDocConfirm, onOpenDrawer, onOpenProfileSelector }) {
   const {
     state,
     t,
@@ -303,7 +303,7 @@ export function DocumentsModal({ isOpen, onClose, onOpenDeleteDocConfirm, onOpen
 
   const { documents, docFolders, currentUser, currentLang } = state;
   const isEn = currentLang === 'en';
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const isAdmin = (currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && !isReadOnly;
 
   // Navigation, View Mode & Sorting
   const [currentFolderId, setCurrentFolderId] = useState(null); // null = root
