@@ -478,16 +478,16 @@ export function loadInitialState() {
     console.warn("Could not load from LocalStorage:", e);
   }
 
-  // Restore remember-me user if present or session user from current tab (without any password fields)
+  // Restore session user from current tab first (tab-isolated multi-account support), then fallback to remember-me user
   try {
-    const rememberMe = localStorage.getItem("tarsashaz_remember_me") === "true";
-    const loggedInUserRaw = localStorage.getItem("tarsashaz_logged_in_user");
-    if (rememberMe && loggedInUserRaw) {
-      defaultState.currentUser = stripSensitiveUserFields(JSON.parse(loggedInUserRaw));
+    const sessionUserRaw = sessionStorage.getItem("tarsashaz_session_user");
+    if (sessionUserRaw) {
+      defaultState.currentUser = stripSensitiveUserFields(JSON.parse(sessionUserRaw));
     } else {
-      const sessionUserRaw = sessionStorage.getItem("tarsashaz_session_user");
-      if (sessionUserRaw) {
-        defaultState.currentUser = stripSensitiveUserFields(JSON.parse(sessionUserRaw));
+      const rememberMe = localStorage.getItem("tarsashaz_remember_me") === "true";
+      const loggedInUserRaw = localStorage.getItem("tarsashaz_logged_in_user");
+      if (rememberMe && loggedInUserRaw) {
+        defaultState.currentUser = stripSensitiveUserFields(JSON.parse(loggedInUserRaw));
       }
     }
   } catch (e) {}

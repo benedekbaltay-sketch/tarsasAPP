@@ -20,6 +20,14 @@ export function ImpersonationBanner({ onExit }) {
     exitImpersonation();
   };
 
+  const isOriginalSuperAdmin = impersonatedFrom?.originalUser?.role === 'superadmin';
+  const bannerBadgeText = isOriginalSuperAdmin
+    ? (t.impersonation_banner_text || "Rendszergazda Mód:")
+    : (t.impersonation_test_mode || (isEn ? "Role Test Mode:" : "Szerepkör-tesztelés Mód:"));
+  const returnBtnText = isOriginalSuperAdmin
+    ? (t.return_to_superadmin || "Visszalépés a Rendszergazda felületre")
+    : (t.impersonation_return_btn || (isEn ? "Return to My Account" : "Visszatérés a fiókomba"));
+
   return (
     <aside aria-label="Impersonation Status" className="w-full bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white px-3 sm:px-6 py-2 shadow-md flex flex-wrap items-center justify-between gap-2.5 border-b border-amber-900/40 select-none animate-fadeIn">
       <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
@@ -28,7 +36,7 @@ export function ImpersonationBanner({ onExit }) {
         </div>
         <div className="text-xs text-amber-50 font-medium truncate">
           <span className="font-bold text-white uppercase tracking-wider text-[11px] bg-amber-900/60 px-1.5 py-0.5 rounded mr-1.5">
-            {t.impersonation_banner_text || "Rendszergazda Mód:"}
+            {bannerBadgeText}
           </span>
           <span>
             {isEn ? "Acting in profile of " : "Jelenleg "}
@@ -47,10 +55,10 @@ export function ImpersonationBanner({ onExit }) {
         type="button"
         onClick={handleExit}
         className="flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-amber-50 text-gray-900 text-xs font-bold rounded-lg shadow-sm hover:shadow transition-all cursor-pointer flex-shrink-0 active:scale-95"
-        title={t.return_to_superadmin || "Visszalépés a Rendszergazda felületre"}
+        title={returnBtnText}
       >
         <ArrowLeft className="w-3.5 h-3.5 text-amber-800" />
-        <span>{t.return_to_superadmin || "Visszalépés a Rendszergazda felületre"}</span>
+        <span>{returnBtnText}</span>
       </button>
     </aside>
   );

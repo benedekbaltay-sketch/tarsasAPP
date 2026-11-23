@@ -31,7 +31,7 @@ export function LoginView({
   }, [prefilledEmail]);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [failedAttempts, setFailedAttempts] = useState(() => {
@@ -246,16 +246,21 @@ export function LoginView({
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1">
-            <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-gray-600">
+          <div className="space-y-1 pt-1">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-gray-700">
               <input
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
               />
-              <span>{t.remember_me}</span>
+              <span className="font-semibold">{t.remember_me || (isEn ? 'Remember me on this device' : 'Emlékezzen rám ezen a számítógépen')}</span>
             </label>
+            <p className="text-[11px] text-gray-500 pl-6 leading-tight">
+              {isEn
+                ? 'Keep unchecked to sign into multiple accounts simultaneously in separate tabs.'
+                : 'Hagyd kikapcsolva, ha egyszerre több különböző fiókba szeretnél belépni más-más böngészőfülön.'}
+            </p>
           </div>
 
           <button

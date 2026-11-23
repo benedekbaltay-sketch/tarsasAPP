@@ -171,3 +171,18 @@ The `Reply-To` (Válasz e-mail cím) header is resolved completely automatically
 2. **Context Transparency**: Explicitly includes the inviter's identity (`name` and `email`), the recipient's assigned login email, and the list of assigned condominiums.
 3. **Separate From Forgot Password**: Completely distinct copy and structure from forgot-password recovery emails.
 4. **Graceful Failover**: If no transactional email API key is configured or if the external service fails, the system safely provisions the Auth identity and dispatches the localized Firebase Auth email so onboarding never stalls.
+
+---
+
+## 8. Multi-Tab Session Isolation & Role Perspective Testing
+
+### 8.1 Multi-Tab Session Isolation
+To enable managing multiple accounts simultaneously from a single workstation or browser without accounts interfering or overriding each other:
+1. **Browser Session Persistence (`browserSessionPersistence`)**: On `LoginView`, "Emlékezzen rám" (Remember Me) defaults to unchecked. When unchecked, Firebase Auth scopes authentication tokens to the current browser tab (`sessionStorage`), avoiding global `IndexedDB` cross-tab leakage.
+2. **Tab-Scoped Initial State Loading (`syncEngine.js`)**: `loadInitialState()` prioritizes `sessionStorage.getItem("tarsashaz_session_user")` over `localStorage`. If tab A signs into User A and tab B signs into User B, each tab maintains its isolated `currentUser` identity, active condominium, and state.
+
+### 8.2 Role Perspective Testing (Munkatárs Szerepkör Tesztelése)
+Common Representatives and Organization Owners (`canManageTeam`) can verify exactly how an assigned Viewer or Editor colleague experiences the portal:
+1. **One-Click Role Inspection**: In `TeamManagementModal`, each colleague card includes a dedicated button: **Alkalmazás megtekintése ezen munkatárs szemével** (`👁️`).
+2. **Dynamic UI Scoping**: Activating this enters impersonation mode (`actAsUser`), adjusting the UI to only the buildings and permission levels (e.g. read-only viewer badges and disabled mutation buttons) assigned to that colleague.
+3. **Impersonation Return Banner**: A persistent top banner (`ImpersonationBanner.jsx`) alerts the user that they are in **Szerepkör-tesztelés Mód** and provides a 1-click action (**Visszatérés a saját fiókomba**) to safely restore their full Owner permissions.

@@ -432,14 +432,19 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     showToast(state.currentLang === 'en' ? `Switched to Flat ${flatNum}` : `Átváltva: ${flatNum}. lakás`);
   };
 
-  // SuperAdmin: Impersonate / Act as another user (strictly guarded to superadmin only)
+  // SuperAdmin & Owner: Impersonate / Act as another user (for instant role perspective testing)
   const actAsUser = (targetUser, targetBuildingId) => {
     if (!state.currentUser) return;
     const isSuperAdmin = (
       state.currentUser.role === 'superadmin' ||
       state.impersonatedFrom?.originalUser?.role === 'superadmin'
     );
-    if (!isSuperAdmin) {
+    const isOwner = (
+      state.currentUser.orgRole === 'owner' ||
+      state.impersonatedFrom?.originalUser?.orgRole === 'owner' ||
+      canUserManageTeam(state.currentUser, state.organizations, state.buildings)
+    );
+    if (!isSuperAdmin && !isOwner) {
       showToast(state.currentLang === 'en' ? "Unauthorized action." : "Jogosulatlan művelet.", "error");
       return;
     }
@@ -448,6 +453,10 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
       state.impersonatedFrom ? state.impersonatedFrom.originalUser : state.currentUser
     );
     const safeTarget = stripSensitiveUserFields(JSON.parse(JSON.stringify(targetUser)));
+    if (safeTarget.orgRole === 'staff') {
+      safeTarget.role = 'admin';
+    }
+    const isTargetAdmin = safeTarget.role === 'admin' || safeTarget.role === 'superadmin';
     const bId = targetBuildingId || safeTarget.buildingId || state.currentBuildingId || state.buildings?.[0]?.id || null;
 
     persistState(s => {
@@ -456,6 +465,8 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         ...s,
         currentUser: safeTarget,
         currentBuildingId: curB?.id || bId,
+        activeRoleMode: isTargetAdmin ? 'kk' : 'tenant',
+        isPortfolioView: isTargetAdmin ? true : false,
         impersonatedFrom: {
           originalUser: JSON.parse(JSON.stringify(originalUser)),
           timestamp: Date.now()
@@ -475,26 +486,28 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
 
     showToast(
       state.currentLang === 'en'
-        ? `SuperAdmin: Acting as ${safeTarget.name || safeTarget.email}`
-        : `Rendszergazda: Belépve mint ${safeTarget.name || safeTarget.email}`
+        ? `Acting as ${safeTarget.name || safeTarget.email}`
+        : `Belépve mint ${safeTarget.name || safeTarget.email}`
     );
   };
 
-  // SuperAdmin: Exit impersonation
+  // SuperAdmin & Owner: Exit impersonation / role testing
   const exitImpersonation = () => {
     if (!state.impersonatedFrom) return;
     const originalUser = stripSensitiveUserFields(state.impersonatedFrom.originalUser);
+    const isOrigAdmin = originalUser.role === 'admin' || originalUser.role === 'superadmin';
 
     persistState(s => ({
       ...s,
       currentUser: JSON.parse(JSON.stringify(originalUser)),
+      activeRoleMode: isOrigAdmin ? 'kk' : 'tenant',
       impersonatedFrom: null
     }), 'localOnly');
 
     showToast(
       state.currentLang === 'en'
-        ? "Returned to SuperAdmin Center"
-        : "Visszatérve a Rendszergazda felületre"
+        ? "Returned to original profile"
+        : "Visszatérve az eredeti profilodra"
     );
   };
 
