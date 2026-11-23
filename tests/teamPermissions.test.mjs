@@ -737,4 +737,62 @@ test('13. resolveUserDisplayName prefers real human names over email prefixes an
   assert.equal(resolveUserDisplayName(null), '');
 });
 
+test('14. Viewers can view buildings and flat master data, but cannot manage or mutate building flat data', () => {
+  const viewerOrg = {
+    id: 'org-viewer-test-14',
+    ownerEmail: 'owner@condo.hu',
+    members: [
+      {
+        id: 'm-viewer-14',
+        email: 'viewer@condo.hu',
+        name: 'Megtekintő Márk',
+        orgRole: 'staff',
+        buildingScope: 'selected',
+        buildingIds: ['b-view-1'],
+        buildingAssignments: {
+          'b-view-1': {
+            role: 'viewer',
+            canEditBankAccounts: false,
+          },
+        },
+        active: true,
+      },
+      {
+        id: 'm-manager-14',
+        email: 'manager@condo.hu',
+        name: 'Kezelő Károly',
+        orgRole: 'staff',
+        buildingScope: 'selected',
+        buildingIds: ['b-view-1'],
+        buildingAssignments: {
+          'b-view-1': {
+            role: 'manager',
+            canEditBankAccounts: true,
+          },
+        },
+        active: true,
+      },
+    ],
+  };
+  const testBuilding = {
+    id: 'b-view-1',
+    name: 'Teszt Ház 10.',
+    organizationId: 'org-viewer-test-14',
+  };
+  const viewerUser = { email: 'viewer@condo.hu', role: 'admin' };
+  const managerUser = { email: 'manager@condo.hu', role: 'admin' };
+
+  // Viewer has read access to building
+  assert.equal(canUserAccessBuilding(viewerUser, testBuilding, [viewerOrg], [testBuilding]), true);
+  assert.equal(isUserBuildingViewer(viewerUser, 'b-view-1', [viewerOrg], [testBuilding]), true);
+
+  // Viewer does NOT have management / mutation permission
+  assert.equal(canUserManageBuilding(viewerUser, 'b-view-1', [viewerOrg], [testBuilding]), false);
+
+  // Manager DOES have management permission
+  assert.equal(canUserManageBuilding(managerUser, 'b-view-1', [viewerOrg], [testBuilding]), true);
+  assert.equal(isUserBuildingViewer(managerUser, 'b-view-1', [viewerOrg], [testBuilding]), false);
+});
+
+
 

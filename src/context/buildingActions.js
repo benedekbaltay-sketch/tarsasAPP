@@ -223,6 +223,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
       if (updatedData?.emergencyContact !== undefined) safeUpdate.emergencyContact = updatedData.emergencyContact;
       if (updatedData?.notes !== undefined) safeUpdate.notes = updatedData.notes;
     } else {
+      if (!requireBuildingManage()) return;
       const { pass, password, resetToken, resetTokenExpiry, ...clean } = updatedData || {};
       safeUpdate = clean;
     }

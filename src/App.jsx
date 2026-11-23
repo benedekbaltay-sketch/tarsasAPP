@@ -772,7 +772,7 @@ function MainLayout() {
                 setIsGlobalBalancesOpen(true);
               } : undefined}
               onOpenGlobalAddTx={isManagingCurrentBuilding ? () => handleOpenUniversalTx({ scope: 'global' }) : undefined}
-              onOpenEditFlatMaster={isManagingCurrentBuilding ? (bId, fNum) => setEditFlatMasterData({ buildingId: bId, flatNum: fNum }) : undefined}
+              onOpenEditFlatMaster={(bId, fNum) => setEditFlatMasterData({ buildingId: bId, flatNum: fNum })}
               onOpenEditTx={(id, type, initialEditMode = false) => setEditTxData({ id, type, initialEditMode: isManagingCurrentBuilding ? initialEditMode : false })}
               onOpenDeleteFlatConfirm={isManagingCurrentBuilding ? (fNum) => setDeleteFlatNum(fNum) : undefined}
               onOpenDeleteTxConfirm={isManagingCurrentBuilding ? (id, type) => setDeleteTxData({ id, type }) : undefined}
@@ -925,7 +925,7 @@ function MainLayout() {
       <EditFlatMasterModal
         buildingId={editFlatMasterData?.buildingId}
         flatNum={editFlatMasterData?.flatNum}
-        isOpen={Boolean(isAdmin && editFlatMasterData && isManagingCurrentBuilding)}
+        isOpen={Boolean(isAdmin && editFlatMasterData)}
         onClose={() => setEditFlatMasterData(null)}
       />
 
