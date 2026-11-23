@@ -125,9 +125,6 @@ export function CommunicationCenterModal({
   const [showRecipientList, setShowRecipientList] = useState(false);
   const [showLivePreview, setShowLivePreview] = useState(false);
 
-  // Strict permission check: non-admins cannot open Communication & Dunning Center
-  if (!isOpen || !isAdmin) return null;
-
   // Evaluate Viewer rights for selected building
   const isSelectedBuildingViewer = useMemo(() => {
     if (selectedBuildingId !== 'all') {
@@ -410,6 +407,8 @@ export function CommunicationCenterModal({
       setIsSendingNotice(false);
     }
   };
+
+  if (!isOpen || !isAdmin) return null;
 
   return (
     <div className="fixed inset-0 z-40 bg-[#F3F4F6] flex flex-col overflow-hidden animate-fadeIn">
