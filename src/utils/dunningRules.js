@@ -14,9 +14,10 @@ export const MERGE_VARIABLES = [
   { key: 'hatralek_osszeg', alt: 'arrears_amount', labelHu: 'Hátralék pontos összege', labelEn: 'Arrears Amount' },
   { key: 'hatralek_honapok', alt: 'arrears_months', labelHu: 'Elmaradás (hónapok száma)', labelEn: 'Arrears (Months)' },
   { key: 'albetet_havi_dij', alt: 'monthly_fee', labelHu: 'Albetét havi előírt díja', labelEn: 'Prescribed Monthly Fee' },
-  { key: 'szamlaszam', alt: 'bank_account', labelHu: 'Ház bankszámlaszáma', labelEn: 'Bank Account Number' },
-  { key: 'kozlemeny', alt: 'payment_reference', labelHu: 'Ajánlott banki közlemény', labelEn: 'Payment Reference' },
+  { key: 'fizetesi_adatok', alt: 'payment_details', labelHu: 'Fizetési adatok számlánként (bankszámlák, közlemény, összegek)', labelEn: 'Payment Details by Account (Bank accounts, References, Amounts)' },
   { key: 'fizetesi_hatarido', alt: 'due_date', labelHu: 'Fizetési határidő (pl. 8 nap)', labelEn: 'Payment Due Date' },
+  { key: 'szamlaszam', alt: 'bank_account', labelHu: 'Ház elsődleges bankszámlája', labelEn: 'Primary Bank Account' },
+  { key: 'kozlemeny', alt: 'payment_reference', labelHu: 'Ajánlott banki közlemény', labelEn: 'Payment Reference' },
   { key: 'kepviselo_neve', alt: 'manager_name', labelHu: 'Közös képviselő neve / cége', labelEn: 'Property Manager Name' },
   { key: 'kepviselo_email', alt: 'manager_email', labelHu: 'Közös képviselő e-mailje', labelEn: 'Manager Email' },
   { key: 'kepviselo_telefon', alt: 'manager_phone', labelHu: 'Közös képviselő telefonszáma', labelEn: 'Manager Phone' }
@@ -31,23 +32,24 @@ export const DEFAULT_DUNNING_RULES = [
     descriptionEn: 'Gentle reminder when debt reaches 1 month of prescribed fees or min. 5,000 Ft.',
     enabled: true,
     buildingId: 'all', // 'all' or specific building ID
-    targetAccount: 'total', // 'total' | 'KK' | 'FA'
+    targetAccount: 'per_account', // 'per_account' | 'total' | 'KK' | 'FA'
     conditionType: 'months', // 'months' | 'amount' | 'combined'
     monthThreshold: 1.0,
+    maxMonthThreshold: null, // Optional upper bound (e.g. 2.0 for range 1.0 - 2.0)
     minAmountHuf: 5000,
     operator: 'OR', // 'OR' | 'AND'
-    checkDayOfMonth: 15,
+    checkDayOfMonth: 24,
     cooldownDays: 25,
+    crossRuleCooldown: true, // Prevents duplicate notice if another dunning rule triggered within cooldown
     templateSubject: 'Egyenleg-értesítő: {{tarsashaz_neve}}, {{lakas_szam}}. lakás',
     templateSubjectEn: 'Balance Notice: {{tarsashaz_neve}}, Flat #{{lakas_szam}}',
     templateBody: `Kedves {{tulajdonos_neve}}!
 
 Ezúton szeretnénk tájékoztatni, hogy a társasház könyvelése szerint a(z) {{tarsashaz_neve}} alatti {{lakas_szam}}. lakás egyenlegén jelenleg {{hatralek_osszeg}} elmaradás mutatkozik (amely megközelítőleg {{hatralek_honapok}} havi előírásnak felel meg).
 
-Kérjük, szíveskedjen ellenőrizni korábbi utalásait, és az elmaradt összeget átutalni az alábbi bankszámlára:
-• Kedvezményezett társasház: {{tarsashaz_neve}}
-• Bankszámlaszám: {{szamlaszam}}
-• Közlemény: {{kozlemeny}}
+Kérjük, szíveskedjen ellenőrizni korábbi utalásait, és az elmaradt összeget átutalni az alábbi adatok szerint:
+
+{{fizetesi_adatok}}
 • Fizetési határidő: {{fizetesi_hatarido}}
 
 Amennyiben az összeget a közelmúltban már kiegyenlítette, kérjük, tekintse levelünket tárgytalannak.
@@ -60,11 +62,10 @@ E-mail: {{kepviselo_email}} | Tel: {{kepviselo_telefon}}`,
 
 According to the building ledger for {{tarsashaz_neve}}, Flat #{{lakas_szam}} currently has an outstanding balance of {{hatralek_osszeg}} (equivalent to approximately {{hatralek_honapok}} months of prescribed fees).
 
-Please review your payment records and settle the outstanding amount to the following bank account:
-• Condominium: {{tarsashaz_neve}}
-• Bank Account: {{szamlaszam}}
-• Reference: {{kozlemeny}}
-• Payment Due: {{fizetesi_hatarido}}
+Please review your payment records and settle the outstanding amount according to the details below:
+
+{{payment_details}}
+• Payment Due Date: {{due_date}}
 
 If you have already settled this balance recently, please disregard this notice.
 
@@ -81,13 +82,15 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
     descriptionEn: 'Formal payment demand when unpaid arrears reach 3 months or min. 30,000 Ft.',
     enabled: true,
     buildingId: 'all',
-    targetAccount: 'total',
+    targetAccount: 'per_account',
     conditionType: 'months',
     monthThreshold: 3.0,
+    maxMonthThreshold: null,
     minAmountHuf: 30000,
     operator: 'OR',
-    checkDayOfMonth: 16,
+    checkDayOfMonth: 25,
     cooldownDays: 25,
+    crossRuleCooldown: true,
     templateSubject: 'FIZETÉSI FELSZÓLÍTÁS: {{tarsashaz_neve}} – {{lakas_szam}}. lakás',
     templateSubjectEn: 'OVERDUE PAYMENT DEMAND: {{tarsashaz_neve}} – Flat #{{lakas_szam}}',
     templateBody: `Tisztelt {{tulajdonos_neve}}!
@@ -96,10 +99,9 @@ Hivatalosan értesítjük, hogy a(z) {{tarsashaz_neve}} társasházban találhat
 {{hatralek_osszeg}}
 amely {{hatralek_honapok}} havi előírás elmaradásának felel meg.
 
-A Társasházakról szóló 2003. évi CXXXIII. törvény és a Szervezeti-Működési Szabályzat (SZMSZ) értelmében felszólítjuk, hogy a fenti összeget a kézhezvételtől számított {{fizetesi_hatarido}} banki átutalással fizesse meg:
+A Társasházakról szóló 2003. évi CXXXIII. törvény és a Szervezeti-Működési Szabályzat (SZMSZ) értelmében felszólítjuk, hogy a fenti összeget a kézhezvételtől számított póthatáridőn belül ({{fizetesi_hatarido}}) banki átutalással fizesse meg:
 
-• Bankszámlaszám: {{szamlaszam}}
-• Közlemény (kötelező): {{kozlemeny}}
+{{fizetesi_adatok}}
 
 Tájékoztatjuk, hogy a határidő eredménytelen elteltét követően a társasház kénytelen lesz megtenni a szükséges jogi lépéseket (fizetési meghagyásos eljárás, jelzálogjog bejegyzése).
 
@@ -115,10 +117,9 @@ You are formally notified that Flat #{{lakas_szam}} in {{tarsashaz_neve}} has ac
 {{hatralek_osszeg}}
 (equivalent to {{hatralek_honapok}} months of common charges).
 
-In accordance with Act CXXXIII of 2003 on Condominiums and the House Bylaws (SZMSZ), you are hereby requested to settle this amount within {{fizetesi_hatarido}} via bank transfer:
+In accordance with Act CXXXIII of 2003 on Condominiums and the House Bylaws (SZMSZ), you are hereby requested to settle this amount by {{due_date}} via bank transfer:
 
-• Bank Account: {{szamlaszam}}
-• Reference (Required): {{kozlemeny}}
+{{payment_details}}
 
 Please note that failure to pay within this timeframe will result in immediate legal enforcement (order for payment procedure, statutory mortgage recording).
 
@@ -129,28 +130,30 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
   },
   {
     id: 'rule-preset-legal-warning',
-    name: 'Jogi eljárás előtti utolsó figyelmeztetés (6+ havi vagy >100.000 Ft)',
-    nameEn: 'Final Demand Before Legal Action (6+ Months or >100,000 Ft)',
-    description: 'Szigorú végső figyelmeztetés fizetési meghagyás (FMH) kibocsátása előtt.',
+    name: 'Jogi eljárás előtti utolsó figyelmeztetés (3+ havi vagy >50.000 Ft)',
+    nameEn: 'Final Demand Before Legal Action (3+ Months or >50,000 Ft)',
+    description: 'Szigorú végső figyelmeztetés fizetési meghagyás (FMH) és jelzálogjog bejegyzése előtt.',
     descriptionEn: 'Strict final notice prior to initiating formal civil court / notary payment order (FMH).',
     enabled: false,
     buildingId: 'all',
-    targetAccount: 'total',
+    targetAccount: 'per_account',
     conditionType: 'combined',
-    monthThreshold: 6.0,
-    minAmountHuf: 100000,
+    monthThreshold: 3.0,
+    maxMonthThreshold: null,
+    minAmountHuf: 50000,
     operator: 'OR',
-    checkDayOfMonth: 20,
+    checkDayOfMonth: 25,
     cooldownDays: 30,
+    crossRuleCooldown: true,
     templateSubject: 'VÉGSŐ FIGYELMEZTETÉS JOGI ELJÁRÁS ELŐTT – {{tarsashaz_neve}}, {{lakas_szam}}. lakás',
     templateSubjectEn: 'FINAL WARNING BEFORE LEGAL PROCEEDINGS – {{tarsashaz_neve}}, Flat #{{lakas_szam}}',
     templateBody: `Tisztelt {{tulajdonos_neve}}!
 
 A(z) {{tarsashaz_neve}} közös képviselete ezúton küldi az UTOLSÓ FELSZÓLÍTÁST a(z) {{lakas_szam}}. lakás kapcsán felhalmozott {{hatralek_osszeg}} összegű tartozás azonnali rendezésére (elmaradás: {{hatralek_honapok}} hó).
 
-Amennyiben az összeg legkésőbb {{fizetesi_hatarido}} nem érkezik meg a társasház alábbi számlájára:
-• Bankszámlaszám: {{szamlaszam}}
-• Közlemény: {{kozlemeny}}
+Amennyiben az összeg legkésőbb {{fizetesi_hatarido}} nem érkezik meg a társasház bankszámlájára az alábbi adatok szerint:
+
+{{fizetesi_adatok}}
 
 A társasház ügyvédje útján fizetési meghagyásos (FMH) eljárást indít a Magyar Országos Közjegyzői Kamara (MOKK) rendszerén keresztül, és a társasházi törvény alapján jelzálogjogot jegyeztet be az ingatlan tulajdoni lapjára. Az eljárási és perköltségek, valamint a végrehajtási díjak teljes egészében a tulajdonost terhelik.
 
@@ -163,9 +166,9 @@ E-mail: {{kepviselo_email}} | Telefon: {{kepviselo_telefon}}`,
 
 The property management of {{tarsashaz_neve}} issues this FINAL NOTICE regarding the outstanding debt of {{hatralek_osszeg}} on Flat #{{lakas_szam}} (delinquency: {{hatralek_honapok}} months).
 
-Unless the full balance is credited by {{fizetesi_hatarido}} to:
-• Bank Account: {{szamlaszam}}
-• Reference: {{kozlemeny}}
+Unless the full balance is credited by {{due_date}} according to the transfer instructions below:
+
+{{payment_details}}
 
 The condominium will initiate formal court enforcement (FMH order for payment) through legal counsel and record a statutory lien on the property title deed. All court, legal, and enforcement costs will be borne by the owner.
 
@@ -178,7 +181,117 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
 ];
 
 /**
- * Replaces merge tags like {{tulajdonos_neve}} or {{owner_name}} with real context values.
+ * Builds a clear, multi-account payment details block tailored to the flat's exact delinquent accounts.
+ * If the condominium has separate accounts (e.g. KK vs FA), it lists each separately with the correct bank account and reference.
+ * If accounts share the same bank number, it formats a clean combined summary.
+ */
+export function buildPaymentDetailsBlock(flat = {}, building = {}, options = {}) {
+  const isEn = Boolean(options.isEn);
+  const targetAccount = options.targetAccount || 'total';
+
+  const kkBalance = Number(flat?.balance) || 0;
+  const faBalance = Number(flat?.renovationBalance) || 0;
+  const customAccounts = Array.isArray(flat?.customAccounts) ? flat.customAccounts : [];
+
+  const buildingName = building?.officialName || building?.name || (isEn ? 'Condominium' : 'Társasház');
+  const bankKK = (building?.bankKK || building?.bankAccount || '').trim();
+  const bankFA = (building?.bankFA || bankKK || '').trim();
+
+  const flatNum = flat?.flatNum || '';
+
+  const debts = [];
+
+  // KK debt check
+  if (targetAccount === 'total' || targetAccount === 'KK' || targetAccount === 'per_account') {
+    if (kkBalance < 0) {
+      debts.push({
+        type: 'KK',
+        title: isEn ? 'Common Cost (Operating)' : 'Közös költség',
+        amount: Math.abs(kkBalance),
+        bankAccount: bankKK,
+        reference: isEn ? `Flat #${flatNum} Common Cost` : `${flatNum}. lakás közös költség`
+      });
+    }
+  }
+
+  // FA debt check
+  if (targetAccount === 'total' || targetAccount === 'FA' || targetAccount === 'per_account') {
+    if (faBalance < 0) {
+      debts.push({
+        type: 'FA',
+        title: isEn ? 'Renovation Fund' : 'Felújítási alap',
+        amount: Math.abs(faBalance),
+        bankAccount: bankFA,
+        reference: isEn ? `Flat #${flatNum} Renovation Fund` : `${flatNum}. lakás felújítási alap`
+      });
+    }
+  }
+
+  // Custom accounts debt check
+  if (targetAccount === 'total' || targetAccount === 'per_account') {
+    customAccounts.forEach(c => {
+      const cBal = Number(c.balance) || 0;
+      if (cBal < 0) {
+        debts.push({
+          type: 'CUSTOM',
+          title: c.name || (isEn ? 'Custom Account' : 'Egyedi számla'),
+          amount: Math.abs(cBal),
+          bankAccount: (c.bankAccount || bankKK || '').trim(),
+          reference: isEn ? `Flat #${flatNum} ${c.name || 'Custom'}` : `${flatNum}. lakás ${c.name || 'egyedi'}`
+        });
+      }
+    });
+  }
+
+  // If debts found, format debt items
+  if (debts.length > 0) {
+    const uniqueBanks = Array.from(new Set(debts.map(d => d.bankAccount).filter(Boolean)));
+    const singleBankForAll = uniqueBanks.length <= 1;
+
+    const lines = [];
+    lines.push(isEn ? 'Bank Transfer Details for Settlement:' : 'Átutalási adatok az elmaradás rendezéséhez:');
+
+    if (singleBankForAll) {
+      const commonBank = uniqueBanks[0] || bankKK || (isEn ? 'Not specified' : 'Nincs megadva');
+      debts.forEach(d => {
+        lines.push(`• ${d.title}: ${formatCurrency(d.amount)}`);
+      });
+      lines.push(`  ${isEn ? 'Beneficiary' : 'Kedvezményezett'}: ${buildingName}`);
+      lines.push(`  ${isEn ? 'Bank Account' : 'Bankszámlaszám'}: ${commonBank}`);
+      const combinedRef = debts.length === 1 
+        ? debts[0].reference 
+        : (isEn ? `Flat #${flatNum} arrears` : `${flatNum}. lakás elmaradás`);
+      lines.push(`  ${isEn ? 'Reference' : 'Közlemény'}: ${combinedRef}`);
+    } else {
+      debts.forEach(d => {
+        lines.push(`• ${d.title} (${isEn ? 'Arrears' : 'Elmaradás'}: ${formatCurrency(d.amount)}):`);
+        lines.push(`  ${isEn ? 'Beneficiary' : 'Kedvezményezett'}: ${buildingName}`);
+        lines.push(`  ${isEn ? 'Bank Account' : 'Bankszámlaszám'}: ${d.bankAccount || (isEn ? 'Not specified' : 'Nincs megadva')}`);
+        lines.push(`  ${isEn ? 'Reference' : 'Közlemény'}: ${d.reference}`);
+      });
+    }
+
+    return lines.join('\n');
+  }
+
+  // Fallback when no debt (sample preview or general notice)
+  const lines = [];
+  lines.push(isEn ? 'Bank Account Details:' : 'Bankszámla adatok:');
+  lines.push(`• ${isEn ? 'Beneficiary' : 'Kedvezményezett'}: ${buildingName}`);
+  if (bankKK === bankFA || !bankFA) {
+    lines.push(`• ${isEn ? 'Bank Account' : 'Bankszámlaszám'}: ${bankKK || (isEn ? 'Not specified' : 'Nincs megadva')}`);
+    lines.push(`• ${isEn ? 'Reference' : 'Közlemény'}: ${isEn ? `Flat #${flatNum}` : `${flatNum}. lakás`}`);
+  } else {
+    lines.push(`• ${isEn ? 'Common Cost Account' : 'Közös költség számla'}: ${bankKK}`);
+    lines.push(`  ${isEn ? 'Reference' : 'Közlemény'}: ${isEn ? `Flat #${flatNum} Common Cost` : `${flatNum}. lakás közös költség`}`);
+    lines.push(`• ${isEn ? 'Renovation Fund Account' : 'Felújítási alap számla'}: ${bankFA}`);
+    lines.push(`  ${isEn ? 'Reference' : 'Közlemény'}: ${isEn ? `Flat #${flatNum} Renovation Fund` : `${flatNum}. lakás felújítási alap`}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Replaces merge tags like {{tulajdonos_neve}} or {{owner_name}} or {tulajdonosNeve} with real context values.
  */
 export function renderEmailTemplate(templateStr = '', context = {}) {
   if (!templateStr || typeof templateStr !== 'string') return '';
@@ -187,9 +300,39 @@ export function renderEmailTemplate(templateStr = '', context = {}) {
 
   MERGE_VARIABLES.forEach(({ key, alt }) => {
     const val = context[key] !== undefined ? context[key] : (context[alt] !== undefined ? context[alt] : '');
-    const regex1 = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi');
-    const regex2 = new RegExp(`\\{\\{\\s*${alt}\\s*\\}\\}`, 'gi');
-    rendered = rendered.replace(regex1, String(val)).replace(regex2, String(val));
+    // Support {{key}}, {{alt}}, {key}, {alt}
+    const regexDouble1 = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'gi');
+    const regexDouble2 = new RegExp(`\\{\\{\\s*${alt}\\s*\\}\\}`, 'gi');
+    const regexSingle1 = new RegExp(`\\{\\s*${key}\\s*\\}`, 'gi');
+    const regexSingle2 = new RegExp(`\\{\\s*${alt}\\s*\\}`, 'gi');
+    rendered = rendered
+      .replace(regexDouble1, String(val))
+      .replace(regexDouble2, String(val))
+      .replace(regexSingle1, String(val))
+      .replace(regexSingle2, String(val));
+  });
+
+  // Direct alias replacements for camelCase UI tags
+  const aliasMap = {
+    tulajdonosNeve: context.tulajdonos_neve || context.owner_name || '',
+    ownerName: context.tulajdonos_neve || context.owner_name || '',
+    lakasszam: context.lakas_szam || context.flat_num || '',
+    flatNum: context.lakas_szam || context.flat_num || '',
+    tarsashazNeve: context.tarsashaz_neve || context.building_name || '',
+    buildingName: context.tarsashaz_neve || context.building_name || '',
+    egyenleg: context.hatralek_osszeg || context.arrears_amount || '',
+    aktualisEgyenleg: context.hatralek_osszeg || context.arrears_amount || '',
+    balance: context.hatralek_osszeg || context.arrears_amount || '',
+    fizetesiAdatok: context.fizetesi_adatok || context.payment_details || '',
+    paymentDetails: context.fizetesi_adatok || context.payment_details || '',
+    fizetesiHatarido: context.fizetesi_hatarido || context.due_date || '',
+    dueDate: context.fizetesi_hatarido || context.due_date || ''
+  };
+
+  Object.entries(aliasMap).forEach(([tag, val]) => {
+    const regDouble = new RegExp(`\\{\\{\\s*${tag}\\s*\\}\\}`, 'g');
+    const regSingle = new RegExp(`\\{\\s*${tag}\\s*\\}`, 'g');
+    rendered = rendered.replace(regDouble, String(val)).replace(regSingle, String(val));
   });
 
   return rendered;
@@ -214,37 +357,78 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
   const kkFee = getCurrentFee(flat, 'KK') > 0 ? getCurrentFee(flat, 'KK') : (Number(flat.monthlyFee) || 0);
   const faFee = getCurrentFee(flat, 'FA') > 0 ? getCurrentFee(flat, 'FA') : (Number(flat.renovationFee) || 0);
 
+  let arrearsMonths = 0;
+
   if (targetAccount === 'KK') {
     balance = Number(flat.balance) || 0;
     monthlyFee = kkFee;
+    if (balance < 0) {
+      arrearsMonths = monthlyFee > 0 ? Number((Math.abs(balance) / monthlyFee).toFixed(1)) : 0;
+    }
   } else if (targetAccount === 'FA') {
     balance = Number(flat.renovationBalance) || 0;
     monthlyFee = faFee;
+    if (balance < 0) {
+      arrearsMonths = monthlyFee > 0 ? Number((Math.abs(balance) / monthlyFee).toFixed(1)) : 0;
+    }
+  } else if (targetAccount === 'per_account') {
+    // Per-account evaluation: checks KK, FA and custom sub-accounts separately
+    // Surplus on one account (e.g. FA) does NOT wipe out debt on another (e.g. KK)
+    const kkBal = Number(flat.balance) || 0;
+    const faBal = Number(flat.renovationBalance) || 0;
+    const customAccounts = Array.isArray(flat.customAccounts) ? flat.customAccounts : [];
+
+    const kkDebt = kkBal < 0 ? Math.abs(kkBal) : 0;
+    const faDebt = faBal < 0 ? Math.abs(faBal) : 0;
+    const customDebt = customAccounts.reduce((sum, c) => sum + ((Number(c.balance) || 0) < 0 ? Math.abs(Number(c.balance)) : 0), 0);
+
+    const totalArrears = kkDebt + faDebt + customDebt;
+    balance = -totalArrears;
+    monthlyFee = kkFee + faFee;
+
+    const kkMonths = (kkDebt > 0 && kkFee > 0) ? (kkDebt / kkFee) : 0;
+    const faMonths = (faDebt > 0 && faFee > 0) ? (faDebt / faFee) : 0;
+    arrearsMonths = Number(Math.max(kkMonths, faMonths).toFixed(1));
   } else {
-    // Total arrears (KK + FA + custom accounts)
+    // Total arrears (KK + FA + custom accounts net sum)
     const customSum = (flat.customAccounts || []).reduce((acc, c) => acc + (Number(c.balance) || 0), 0);
     balance = (Number(flat.balance) || 0) + (Number(flat.renovationBalance) || 0) + customSum;
     monthlyFee = kkFee + faFee;
+    if (balance < 0) {
+      arrearsMonths = monthlyFee > 0 ? Number((Math.abs(balance) / monthlyFee).toFixed(1)) : 0;
+    }
   }
 
   // If balance >= 0, flat has zero arrears -> never dunn
   if (balance >= 0) return null;
 
   const arrearsHuf = Math.abs(balance);
-  const arrearsMonths = monthlyFee > 0 ? Number((arrearsHuf / monthlyFee).toFixed(1)) : 0;
 
   const monthThreshold = Number(rule.monthThreshold) || 1.0;
+  const maxMonthThreshold = (rule.maxMonthThreshold !== undefined && rule.maxMonthThreshold !== null && rule.maxMonthThreshold !== '' && !isNaN(Number(rule.maxMonthThreshold)))
+    ? Number(rule.maxMonthThreshold)
+    : null;
+
   const minAmountHuf = Number(rule.minAmountHuf) || 0;
   const conditionType = rule.conditionType || 'months'; // 'months' | 'amount' | 'combined'
   const operator = rule.operator || 'OR';
 
   let matches = false;
 
-  const matchesMonths = arrearsMonths >= monthThreshold;
+  // Zero-fee division guard: if monthly fee is 0, months cannot be evaluated
+  const matchesMinMonths = (monthlyFee > 0) ? (arrearsMonths >= monthThreshold) : false;
+  const matchesMaxMonths = (maxMonthThreshold !== null && monthlyFee > 0) ? (arrearsMonths < maxMonthThreshold) : true;
+  const matchesMonths = matchesMinMonths && matchesMaxMonths;
+
   const matchesAmount = arrearsHuf >= minAmountHuf;
 
   if (conditionType === 'months') {
-    matches = matchesMonths;
+    // If flat has 0 Ft monthly fee but user asked for months, fall back to matching if minAmountHuf > 0 and satisfied
+    if (monthlyFee <= 0 && minAmountHuf > 0) {
+      matches = matchesAmount;
+    } else {
+      matches = matchesMonths;
+    }
   } else if (conditionType === 'amount') {
     matches = matchesAmount;
   } else if (conditionType === 'combined') {
@@ -253,16 +437,21 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
 
   if (!matches) return null;
 
-  // Check cooldown if history is provided
+  // Check cooldown & deduplication if history is provided
   const now = options.currentDate ? new Date(options.currentDate) : new Date();
   const cooldownDays = Number(rule.cooldownDays) || 0;
+  const crossRuleCooldown = rule.crossRuleCooldown !== false;
 
   if (cooldownDays > 0 && Array.isArray(options.history)) {
     const cutoffTime = now.getTime() - (cooldownDays * 24 * 60 * 60 * 1000);
     const recentSent = options.history.some(log => {
-      if (log.ruleId !== rule.id) return false;
-      if (log.flatNum !== flat.flatNum && log.unitId !== flat.id) return false;
-      const logTime = new Date(log.sentAt || log.createdAt).getTime();
+      const isTargetFlat = (String(log.flatNum) === String(flat.flatNum)) || (log.unitId && log.unitId === flat.id);
+      if (!isTargetFlat) return false;
+
+      // If cross-rule cooldown is active, any dunning notice to this flat within cooldown suppresses sending
+      if (!crossRuleCooldown && log.ruleId !== rule.id) return false;
+
+      const logTime = new Date(log.sentAt || log.createdAt || log.queuedAt).getTime();
       return logTime >= cutoffTime;
     });
     if (recentSent) return null;
@@ -294,27 +483,40 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
     ? dueDate.toLocaleDateString('en-GB')
     : `${dueDate.getFullYear()}. ${String(dueDate.getMonth() + 1).padStart(2, '0')}. ${String(dueDate.getDate()).padStart(2, '0')}.`;
 
+  const paymentDetailsBlock = buildPaymentDetailsBlock(flat, building, {
+    isEn: options.isEn,
+    targetAccount
+  });
+
   const context = {
     tulajdonos_neve: ownerName,
     owner_name: ownerName,
+    tulajdonosNeve: ownerName,
     lakas_szam: flat.flatNum,
     flat_num: flat.flatNum,
+    lakasszam: flat.flatNum,
     tarsashaz_neve: buildingName,
     building_name: buildingName,
+    tarsashazNeve: buildingName,
     tarsashaz_cime: buildingAddress,
     building_address: buildingAddress,
     hatralek_osszeg: formatCurrency(-arrearsHuf),
     arrears_amount: formatCurrency(-arrearsHuf),
+    egyenleg: formatCurrency(-arrearsHuf),
     hatralek_honapok: arrearsMonths.toString(),
     arrears_months: arrearsMonths.toString(),
     albetet_havi_dij: formatCurrency(monthlyFee),
     monthly_fee: formatCurrency(monthlyFee),
+    fizetesi_adatok: paymentDetailsBlock,
+    payment_details: paymentDetailsBlock,
+    fizetesiAdatok: paymentDetailsBlock,
     szamlaszam: bankAccount || (options.isEn ? 'Not specified' : 'Nincs megadva'),
     bank_account: bankAccount || (options.isEn ? 'Not specified' : 'Nincs megadva'),
     kozlemeny: paymentRef,
     payment_reference: paymentRef,
     fizetesi_hatarido: dueDateFormatted,
     due_date: dueDateFormatted,
+    fizetesiHatarido: dueDateFormatted,
     kepviselo_neve: managerName,
     manager_name: managerName,
     kepviselo_email: managerEmail,
@@ -481,13 +683,15 @@ export function generateSampleFlatPreview(rule, buildings = [], options = {}) {
 
   // Realistic sample: threshold + 0.2-0.5 months
   const simMonths = Number((thresholdMonths > 0 ? thresholdMonths + 0.2 : 2.5).toFixed(1));
-  const calculatedArrears = Math.round(simMonths * effectiveMonthly);
-  const simArrears = Math.max(calculatedArrears, minAmount > 0 ? minAmount + 5000 : 35000);
+  const simKkDebt = rule.targetAccount === 'FA' ? 0 : Math.max(minAmount, Math.round(simMonths * (kkFee > 0 ? kkFee : effectiveMonthly)));
+  const simFaDebt = (rule.targetAccount === 'FA' || (rule.targetAccount === 'per_account' && faFee > 0)) 
+    ? Math.max(minAmount, Math.round(simMonths * (faFee > 0 ? faFee : 5000))) 
+    : 0;
 
   const simulatedFlat = {
     ...flat,
-    balance: rule.targetAccount === 'FA' ? (flat.balance || 0) : -simArrears,
-    renovationBalance: rule.targetAccount === 'FA' ? -simArrears : (flat.renovationBalance || 0)
+    balance: -simKkDebt,
+    renovationBalance: -simFaDebt
   };
 
   const simResult = evaluateFlatAgainstRule(rule, simulatedFlat, building, {

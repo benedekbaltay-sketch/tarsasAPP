@@ -207,3 +207,176 @@ test('7. Realistic sample flat preview generates filled email template for rando
   assert.ok(emptyPreview.renderedSubject);
   assert.ok(emptyPreview.renderedBody);
 });
+
+test('8. Range conditions (monthThreshold and maxMonthThreshold) isolate delinquency bands', () => {
+  const band1Rule = {
+    id: 'rule-band-1',
+    conditionType: 'months',
+    monthThreshold: 1.0,
+    maxMonthThreshold: 2.0, // Band: [1.0, 2.0)
+    templateSubject: 'Band 1',
+    templateBody: 'Band 1'
+  };
+
+  const band2Rule = {
+    id: 'rule-band-2',
+    conditionType: 'months',
+    monthThreshold: 2.0,
+    maxMonthThreshold: 3.0, // Band: [2.0, 3.0)
+    templateSubject: 'Band 2',
+    templateBody: 'Band 2'
+  };
+
+  const flat15Mo = { flatNum: '10', balance: -15000, monthlyFee: 10000 }; // 1.5 months
+  const flat20Mo = { flatNum: '20', balance: -20000, monthlyFee: 10000 }; // exactly 2.0 months
+  const flat25Mo = { flatNum: '30', balance: -25000, monthlyFee: 10000 }; // 2.5 months
+  const flat35Mo = { flatNum: '40', balance: -35000, monthlyFee: 10000 }; // 3.5 months
+
+  // flat15Mo matches Band 1, but NOT Band 2
+  assert.ok(evaluateFlatAgainstRule(band1Rule, flat15Mo));
+  assert.equal(evaluateFlatAgainstRule(band2Rule, flat15Mo), null);
+
+  // flat20Mo (2.0 months) matches Band 2, but NOT Band 1 (excluded by maxMonthThreshold: 2.0)
+  assert.equal(evaluateFlatAgainstRule(band1Rule, flat20Mo), null);
+  assert.ok(evaluateFlatAgainstRule(band2Rule, flat20Mo));
+
+  // flat25Mo matches Band 2, but NOT Band 1
+  assert.equal(evaluateFlatAgainstRule(band1Rule, flat25Mo), null);
+  assert.ok(evaluateFlatAgainstRule(band2Rule, flat25Mo));
+
+  // flat35Mo matches neither (exceeds Band 2 upper threshold 3.0)
+  assert.equal(evaluateFlatAgainstRule(band1Rule, flat35Mo), null);
+  assert.equal(evaluateFlatAgainstRule(band2Rule, flat35Mo), null);
+});
+
+test('9. Cross-rule cooldown prevents duplicate notices across consecutive execution days', () => {
+  const ruleStage2 = {
+    id: 'rule-stage-2',
+    conditionType: 'months',
+    monthThreshold: 2.0,
+    cooldownDays: 25,
+    crossRuleCooldown: true, // Prevents notice if ANY rule sent a notice recently
+    templateSubject: 'Stage 2',
+    templateBody: 'Stage 2'
+  };
+
+  const flat = { flatNum: '10', balance: -40000, monthlyFee: 20000 }; // 2 months
+  const building = { id: 'bld-1', name: 'Minta Ház' };
+
+  // Flat received a notice yesterday from a DIFFERENT rule ('rule-stage-1')
+  const history = [
+    {
+      ruleId: 'rule-stage-1',
+      flatNum: '10',
+      sentAt: '2026-11-24T10:00:00Z'
+    }
+  ];
+
+  // Running Stage 2 rule on 2026-11-25 (next day): should be BLOCKED because of crossRuleCooldown!
+  const matchBlocked = evaluateFlatAgainstRule(ruleStage2, flat, building, {
+    currentDate: '2026-11-25T10:00:00Z',
+    history
+  });
+  assert.equal(matchBlocked, null, 'Should suppress notice due to recent notification from another rule');
+
+  // If crossRuleCooldown is explicitly disabled (false), ruleStage2 would ignore ruleStage1's log
+  const ruleNoCross = { ...ruleStage2, crossRuleCooldown: false };
+  const matchAllowed = evaluateFlatAgainstRule(ruleNoCross, flat, building, {
+    currentDate: '2026-11-25T10:00:00Z',
+    history
+  });
+  assert.ok(matchAllowed, 'Should match when cross-rule cooldown is explicitly disabled');
+});
+
+test('10. Per-account target evaluation isolates KK and FA debts independently', () => {
+  const rulePerAccount = {
+    id: 'rule-per-acc',
+    targetAccount: 'per_account',
+    conditionType: 'months',
+    monthThreshold: 2.0,
+    templateSubject: 'Subj',
+    templateBody: 'Body'
+  };
+
+  // Flat has huge surplus on FA (+50,000 Ft), but 2 months debt on KK (-20,000 Ft, fee: 10,000 Ft)
+  // In 'total' mode, net balance is +30,000 Ft -> would NEVER be dunned!
+  // In 'per_account' mode, the KK debt stands on its own and triggers the notice!
+  const flat = {
+    flatNum: '7',
+    balance: -20000,
+    monthlyFee: 10000,
+    renovationBalance: 50000,
+    renovationFee: 5000
+  };
+  const building = { id: 'bld-1', name: 'Ház', bankKK: '111-222', bankFA: '333-444' };
+
+  const match = evaluateFlatAgainstRule(rulePerAccount, flat, building);
+  assert.ok(match, 'Per-account rule must detect KK arrears despite FA surplus');
+  assert.equal(match.arrearsMonths, 2);
+  assert.equal(match.arrearsHuf, 20000);
+});
+
+test('11. buildPaymentDetailsBlock accurately formats multi-account transfer info', () => {
+  const flatMultiDebt = {
+    flatNum: '15',
+    balance: -25000,
+    monthlyFee: 20000,
+    renovationBalance: -10000,
+    renovationFee: 10000
+  };
+
+  // Sub-case A: Separate bank accounts for KK and FA
+  const buildingSeparateBanks = {
+    name: 'Napfény Ház',
+    bankKK: '11705008-11111111',
+    bankFA: '11605008-22222222'
+  };
+
+  const paymentBlockA = evaluateFlatAgainstRule({
+    id: 'r1',
+    targetAccount: 'per_account',
+    monthThreshold: 0.5,
+    templateSubject: 'S',
+    templateBody: '{{fizetesi_adatok}}'
+  }, flatMultiDebt, buildingSeparateBanks);
+
+  assert.ok(paymentBlockA);
+  assert.match(paymentBlockA.renderedBody, /11705008-11111111/);
+  assert.match(paymentBlockA.renderedBody, /11605008-22222222/);
+  assert.match(paymentBlockA.renderedBody, /15\. lakás közös költség/);
+  assert.match(paymentBlockA.renderedBody, /15\. lakás felújítási alap/);
+
+  // Sub-case B: Single bank account for both
+  const buildingSingleBank = {
+    name: 'Napfény Ház',
+    bankKK: '11705008-11111111',
+    bankFA: '11705008-11111111'
+  };
+
+  const paymentBlockB = evaluateFlatAgainstRule({
+    id: 'r2',
+    targetAccount: 'per_account',
+    monthThreshold: 0.5,
+    templateSubject: 'S',
+    templateBody: '{{fizetesi_adatok}}'
+  }, flatMultiDebt, buildingSingleBank);
+
+  assert.ok(paymentBlockB);
+  assert.match(paymentBlockB.renderedBody, /11705008-11111111/);
+  assert.match(paymentBlockB.renderedBody, /Napfény Ház/);
+});
+
+test('12. Zero monthly fee safety guard prevents division by zero without error', () => {
+  const rule = {
+    id: 'rule-zero-guard',
+    conditionType: 'months',
+    monthThreshold: 1.0,
+    templateSubject: 'S',
+    templateBody: 'B'
+  };
+
+  // Storage / parking unit with 0 Ft fee but has negative balance
+  const zeroFeeFlat = { flatNum: 'T1', balance: -10000, monthlyFee: 0 };
+  const match = evaluateFlatAgainstRule(rule, zeroFeeFlat);
+  assert.equal(match, null, 'Cannot evaluate months when fee is 0');
+});

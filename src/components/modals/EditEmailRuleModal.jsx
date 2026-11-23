@@ -35,13 +35,15 @@ export function EditEmailRuleModal({
 
   const [name, setName] = useState(rule?.name || rule?.nameEn || '');
   const [buildingId, setBuildingId] = useState(rule?.buildingId || defaultBuildingId || 'all');
-  const [targetAccount, setTargetAccount] = useState(rule?.targetAccount || 'total');
+  const [targetAccount, setTargetAccount] = useState(rule?.targetAccount || 'per_account');
   const [conditionType, setConditionType] = useState(rule?.conditionType || 'months');
   const [monthThreshold, setMonthThreshold] = useState(rule?.monthThreshold !== undefined ? rule.monthThreshold : 1.0);
+  const [maxMonthThreshold, setMaxMonthThreshold] = useState(rule?.maxMonthThreshold !== undefined && rule?.maxMonthThreshold !== null ? rule.maxMonthThreshold : '');
   const [minAmountHuf, setMinAmountHuf] = useState(rule?.minAmountHuf !== undefined ? rule.minAmountHuf : 10000);
   const [operator, setOperator] = useState(rule?.operator || 'OR');
   const [checkDayOfMonth, setCheckDayOfMonth] = useState(rule?.checkDayOfMonth || 15);
   const [cooldownDays, setCooldownDays] = useState(rule?.cooldownDays !== undefined ? rule.cooldownDays : 25);
+  const [crossRuleCooldown, setCrossRuleCooldown] = useState(rule?.crossRuleCooldown !== undefined ? rule.crossRuleCooldown : true);
   const [templateSubject, setTemplateSubject] = useState(rule?.templateSubject || '');
   const [templateSubjectEn, setTemplateSubjectEn] = useState(rule?.templateSubjectEn || '');
   const [templateBody, setTemplateBody] = useState(rule?.templateBody || '');
@@ -62,17 +64,19 @@ export function EditEmailRuleModal({
       targetAccount,
       conditionType,
       monthThreshold: Number(monthThreshold) || 1.0,
+      maxMonthThreshold: maxMonthThreshold !== '' && !isNaN(Number(maxMonthThreshold)) ? Number(maxMonthThreshold) : null,
       minAmountHuf: Number(minAmountHuf) || 0,
       operator,
       checkDayOfMonth: Number(checkDayOfMonth) || 15,
       cooldownDays: Number(cooldownDays) || 25,
+      crossRuleCooldown: Boolean(crossRuleCooldown),
       templateSubject,
       templateSubjectEn,
       templateBody,
       templateBodyEn,
       enabled
     };
-  }, [rule, name, buildingId, targetAccount, conditionType, monthThreshold, minAmountHuf, operator, checkDayOfMonth, cooldownDays, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, isEn]);
+  }, [rule, name, buildingId, targetAccount, conditionType, monthThreshold, maxMonthThreshold, minAmountHuf, operator, checkDayOfMonth, cooldownDays, crossRuleCooldown, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, isEn]);
 
   // Real-time realistic sample preview for any picked or random flat
   const samplePreview = useMemo(() => {
@@ -234,9 +238,10 @@ export function EditEmailRuleModal({
                     onChange={(e) => setTargetAccount(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:border-[#1E3A8A] font-medium"
                   >
-                    <option value="total">{isEn ? "Σ Total Arrears (Operating + Renovation + Custom)" : "Σ Összesített hátralék (KK + FA + Egyedi)"}</option>
-                    <option value="KK">{isEn ? "Operating / Common Cost Arrears (KK)" : "Közös Költség elmaradás (KK)"}</option>
-                    <option value="FA">{isEn ? "Renovation Fund Arrears (FA)" : "Felújítási Alap elmaradás (FA)"}</option>
+                    <option value="per_account">{isEn ? "⚡ Per-Account Separate Arrears (Operating & Renovation independently)" : "⚡ Alszámlánkénti külön vizsgálat (KK és FA függetlenül)"}</option>
+                    <option value="total">{isEn ? "Σ Total Arrears (Operating + Renovation + Custom net sum)" : "Σ Összesített hátralék (KK + FA + Egyedi nettó)"}</option>
+                    <option value="KK">{isEn ? "Operating / Common Cost Arrears (KK only)" : "Közös Költség elmaradás (csak KK)"}</option>
+                    <option value="FA">{isEn ? "Renovation Fund Arrears (FA only)" : "Felújítási Alap elmaradás (csak FA)"}</option>
                   </select>
                 </div>
               </div>
@@ -248,10 +253,10 @@ export function EditEmailRuleModal({
                   <span>{isEn ? "Trigger Formula & Arrears Thresholds" : "Feltételi képlet és küszöbértékek"}</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                      {isEn ? "Condition Calculation Mode" : "Feltétel számítási módja"}
+                      {isEn ? "Condition Mode" : "Feltétel számítási módja"}
                     </label>
                     <select
                       value={conditionType}
@@ -265,19 +270,37 @@ export function EditEmailRuleModal({
                   </div>
 
                   {(conditionType === 'months' || conditionType === 'combined') && (
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                        {isEn ? "Min. Unpaid Months Threshold" : "Minimum elmaradt havi díj (hó)"}
-                      </label>
-                      <input
-                        type="number"
-                        step="0.5"
-                        min="0.5"
-                        value={monthThreshold}
-                        onChange={(e) => setMonthThreshold(e.target.value)}
-                        className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-xl bg-white focus:outline-none font-bold text-gray-900"
-                      />
-                    </div>
+                    <>
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          {isEn ? "Min. Unpaid Months (≥)" : "Min. elmaradás (≥ hó)"}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0.5"
+                          value={monthThreshold}
+                          onChange={(e) => setMonthThreshold(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-xl bg-white focus:outline-none font-bold text-gray-900"
+                          placeholder="pl. 1.0"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          {isEn ? "Max. Months (< optional)" : "Felső sáv (< hó, opcionális)"}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0.5"
+                          value={maxMonthThreshold}
+                          onChange={(e) => setMaxMonthThreshold(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-xl bg-white focus:outline-none font-bold text-gray-900"
+                          placeholder={isEn ? "e.g. 2.0" : "pl. 2.0"}
+                        />
+                      </div>
+                    </>
                   )}
 
                   {(conditionType === 'amount' || conditionType === 'combined') && (
@@ -317,64 +340,92 @@ export function EditEmailRuleModal({
                   <Sparkles className="w-4 h-4 text-blue-700 flex-shrink-0" />
                   <span>
                     <strong>{isEn ? "Active Formula:" : "Érvényes szabály:"}</strong>{' '}
-                    {conditionType === 'months' && (isEn ? `Triggers when flat arrears reach at least ${monthThreshold} months of common fees.` : `Akkor küld értesítést, ha a lakás tartozása eléri a legalább ${monthThreshold} havi előírást.`)}
+                    {conditionType === 'months' && (
+                      isEn
+                        ? `Triggers when arrears are ≥ ${monthThreshold} months${maxMonthThreshold ? ` and < ${maxMonthThreshold} months` : ''}.`
+                        : `Akkor küld értesítést, ha a lakás tartozása ≥ ${monthThreshold} havi díj${maxMonthThreshold ? ` és < ${maxMonthThreshold} havi díj (sávos kizárás)` : ''}.`
+                    )}
                     {conditionType === 'amount' && (isEn ? `Triggers when flat arrears reach at least ${formatCurrency(minAmountHuf)}.` : `Akkor küld értesítést, ha a hátralék eléri a legalább ${formatCurrency(minAmountHuf)} összeget.`)}
-                    {conditionType === 'combined' && (isEn ? `Triggers when debt is >= ${monthThreshold} months ${operator} >= ${formatCurrency(minAmountHuf)}.` : `Akkor küld, ha a hátralék eléri a legalább ${monthThreshold} havi előírást ${operator === 'OR' ? 'VAGY' : 'ÉS'} a ${formatCurrency(minAmountHuf)} összeget.`)}
+                    {conditionType === 'combined' && (
+                      isEn
+                        ? `Triggers when debt is ≥ ${monthThreshold} months${maxMonthThreshold ? ` (< ${maxMonthThreshold})` : ''} ${operator} ≥ ${formatCurrency(minAmountHuf)}.`
+                        : `Akkor küld, ha a hátralék ≥ ${monthThreshold} hó${maxMonthThreshold ? ` (< ${maxMonthThreshold})` : ''} ${operator === 'OR' ? 'VAGY' : 'ÉS'} ≥ ${formatCurrency(minAmountHuf)}.`
+                    )}
                   </span>
                 </div>
               </div>
 
               {/* Timing & Deduplication */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-200">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-gray-500" />
-                    <span>{isEn ? "Monthly Check Day" : "Havi ellenőrzés napja"}</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={checkDayOfMonth}
-                    onChange={(e) => setCheckDayOfMonth(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
-                  />
-                  <span className="text-[10px] text-gray-400 mt-0.5 block">
-                    {isEn ? "Day of month (e.g. 15th)" : "Minden hónap adott napján (pl. 15-én)"}
-                  </span>
+              <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-gray-500" />
+                      <span>{isEn ? "Monthly Check Day" : "Havi ellenőrzés napja"}</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={checkDayOfMonth}
+                      onChange={(e) => setCheckDayOfMonth(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
+                    />
+                    <span className="text-[10px] text-gray-400 mt-0.5 block">
+                      {isEn ? "Day of month (e.g. 24th or 25th)" : "Minden hónap adott napján (pl. 24-én vagy 25-én)"}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-gray-500" />
+                      <span>{isEn ? "Cooldown / Re-send Guard" : "Türelmi idő (nap)"}</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="90"
+                      value={cooldownDays}
+                      onChange={(e) => setCooldownDays(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
+                    />
+                    <span className="text-[10px] text-gray-400 mt-0.5 block">
+                      {isEn ? "Minimum days between notices" : "Két felszólítás közötti várakozási idő"}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col justify-center">
+                    <label className="block text-xs font-bold text-gray-700 mb-2">
+                      {isEn ? "Rule Status" : "Szabály státusza"}
+                    </label>
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        onChange={(e) => setEnabled(e.target.checked)}
+                        className="w-4 h-4 text-[#1E3A8A] rounded border-gray-300 focus:ring-0"
+                      />
+                      <span className="text-xs font-bold text-gray-800">
+                        {enabled ? (isEn ? "🟢 Active & Enabled" : "🟢 Aktív (Bekapcsolva)") : (isEn ? "⚪ Paused (Disabled)" : "⚪ Szüneteltetve (Kikapcsolva)")}
+                      </span>
+                    </label>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-gray-500" />
-                    <span>{isEn ? "Cooldown / Re-send Guard" : "Duplikáció-védelem (nap)"}</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="90"
-                    value={cooldownDays}
-                    onChange={(e) => setCooldownDays(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
-                  />
-                  <span className="text-[10px] text-gray-400 mt-0.5 block">
-                    {isEn ? "Minimum days between notices" : "Két felszólítás közötti türelmi idő"}
-                  </span>
-                </div>
-
-                <div className="flex flex-col justify-center">
-                  <label className="block text-xs font-bold text-gray-700 mb-2">
-                    {isEn ? "Rule Status" : "Szabály státusza"}
-                  </label>
-                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                {/* Cross-rule cooldown toggle */}
+                <div className="pt-2 border-t border-gray-200/80">
+                  <label className="inline-flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-gray-700 select-none">
                     <input
                       type="checkbox"
-                      checked={enabled}
-                      onChange={(e) => setEnabled(e.target.checked)}
-                      className="w-4 h-4 text-[#1E3A8A] rounded border-gray-300 focus:ring-0"
+                      checked={crossRuleCooldown}
+                      onChange={(e) => setCrossRuleCooldown(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A]"
                     />
-                    <span className="text-xs font-bold text-gray-800">
-                      {enabled ? (isEn ? "🟢 Active & Enabled" : "🟢 Aktív (Bekapcsolva)") : (isEn ? "⚪ Paused (Disabled)" : "⚪ Szüneteltetve (Kikapcsolva)")}
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>
+                      {isEn 
+                        ? "🛡️ Cross-Rule Cooldown Protection: Do not send if this flat already received ANY dunning notice within cooldown period." 
+                        : "🛡️ Kereszt-türelmi védelem: Ne küldjön, ha a lakás BÁRMELY MÁS felszólító szabályból kapott már levelet a türelmi időn belül."}
                     </span>
                   </label>
                 </div>

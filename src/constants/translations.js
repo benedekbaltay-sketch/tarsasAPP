@@ -949,6 +949,10 @@ export const translations = {
     comm_btn_back: "← Vissza a címzettekhez",
     comm_dynamic_tags_title: "Beilleszthető dinamikus mezők",
     comm_dynamic_tags_desc: "Kattints bármelyik változóra a levélbe illesztéshez. Kiküldéskor minden lakó a saját albetétjének adatait kapja meg:",
+    comm_tag_payment_details: "Fizetési adatok (alszámlánként)",
+    comm_tag_due_date: "Fizetési határidő (+8 nap)",
+    comm_cross_cooldown_label: "Kereszt-türelmi védelem",
+    comm_per_account_badge: "Alszámlánként",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Csapat & Jogosultságok",
     team_modal_subtitle: "Munkatársak e-mail csatolása, társasházak kiosztása és jogosultságok kezelése.",
@@ -2081,6 +2085,10 @@ export const translations = {
     comm_btn_back: "← Back to Recipients",
     comm_dynamic_tags_title: "Insert Dynamic Tags",
     comm_dynamic_tags_desc: "Click any tag to insert it into the message body. When sent, each recipient will receive their personalized unit values:",
+    comm_tag_payment_details: "Payment Details (by account)",
+    comm_tag_due_date: "Payment Due Date (+8 days)",
+    comm_cross_cooldown_label: "Cross-Rule Cooldown",
+    comm_per_account_badge: "Per-Account",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Team & Access Permissions",
     team_modal_subtitle: "Attach colleagues by email, assign condominiums, and manage security permissions.",

@@ -2,7 +2,7 @@
  * Action creators for email communication, automated dunning rules, direct resident notices, and outbox logs.
  */
 
-import { DEFAULT_DUNNING_RULES } from '../utils/dunningRules.js';
+import { DEFAULT_DUNNING_RULES, buildPaymentDetailsBlock } from '../utils/dunningRules.js';
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
 import { sendResidentCustomNoticeEmail } from '../services/emailService.js';
 
@@ -222,12 +222,27 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       const bldName = rBuilding?.officialName || rBuilding?.name || r.buildingName || (isEn() ? 'Condominium' : 'Társasház');
       const bldId = r.buildingId || buildingId || rBuilding?.id || 'general';
 
+      // Find specific flat in building state if available for rich debt details
+      const rFlat = (rBuilding?.flats || []).find(f => String(f.flatNum) === String(r.flatNum)) || {
+        flatNum: r.flatNum,
+        balance: r.balance
+      };
+
+      const paymentDetails = buildPaymentDetailsBlock(rFlat, rBuilding, { isEn: isEn() });
+      const now = new Date();
+      const dueDate = new Date(now.getTime() + (8 * 24 * 60 * 60 * 1000));
+      const dueDateFormatted = isEn()
+        ? dueDate.toLocaleDateString('en-GB')
+        : `${dueDate.getFullYear()}. ${String(dueDate.getMonth() + 1).padStart(2, '0')}. ${String(dueDate.getDate()).padStart(2, '0')}.`;
+
       // Personalize body for tags
       const personalizedBody = body
-        .replace(/\{tulajdonosNeve\}|\{ownerName\}/g, r.name || '')
-        .replace(/\{lakasszam\}|\{flatNum\}/g, r.flatNum || '')
-        .replace(/\{tarsashazNeve\}|\{buildingName\}/g, bldName)
-        .replace(/\{aktualisEgyenleg\}|\{egyenleg\}|\{balance\}/g, r.balanceFormatted || '');
+        .replace(/\{tulajdonosNeve\}|\{ownerName\}|\{\{\s*tulajdonos_neve\s*\}\}|\{\{\s*owner_name\s*\}\}/gi, r.name || '')
+        .replace(/\{lakasszam\}|\{flatNum\}|\{\{\s*lakas_szam\s*\}\}|\{\{\s*flat_num\s*\}\}/gi, r.flatNum || '')
+        .replace(/\{tarsashazNeve\}|\{buildingName\}|\{\{\s*tarsashaz_neve\s*\}\}|\{\{\s*building_name\s*\}\}/gi, bldName)
+        .replace(/\{aktualisEgyenleg\}|\{egyenleg\}|\{balance\}|\{\{\s*hatralek_osszeg\s*\}\}|\{\{\s*arrears_amount\s*\}\}/gi, r.balanceFormatted || '')
+        .replace(/\{fizetesiAdatok\}|\{paymentDetails\}|\{\{\s*fizetesi_adatok\s*\}\}|\{\{\s*payment_details\s*\}\}/gi, paymentDetails)
+        .replace(/\{fizetesiHatarido\}|\{dueDate\}|\{\{\s*fizetesi_hatarido\s*\}\}|\{\{\s*due_date\s*\}\}/gi, dueDateFormatted);
 
       // 1. In-app notification
       if (sendInAppNotification) {

@@ -805,11 +805,33 @@ export function CommunicationCenterModal({
                           <span className="px-2.5 py-1 rounded-xl bg-gray-100 text-gray-700 font-semibold flex items-center gap-1.5">
                             <Calculator className="w-3.5 h-3.5 text-gray-500" />
                             <span>
-                              {rule.conditionType === 'months' && `${isEn ? "Arrears" : "Hátralék"} ≥ ${rule.monthThreshold} ${isEn ? "months" : "hó"}`}
+                              {rule.conditionType === 'months' && (
+                                rule.maxMonthThreshold 
+                                  ? `${isEn ? "Arrears" : "Hátralék"}: ${rule.monthThreshold} – ${rule.maxMonthThreshold} ${isEn ? "mo." : "hó"}`
+                                  : `${isEn ? "Arrears" : "Hátralék"} ≥ ${rule.monthThreshold} ${isEn ? "months" : "hó"}`
+                              )}
                               {rule.conditionType === 'amount' && `${isEn ? "Arrears" : "Hátralék"} ≥ ${formatCurrency(rule.minAmountHuf)}`}
-                              {rule.conditionType === 'combined' && `≥ ${rule.monthThreshold} hó ${rule.operator} ≥ ${formatCurrency(rule.minAmountHuf)}`}
+                              {rule.conditionType === 'combined' && (
+                                rule.maxMonthThreshold
+                                  ? `${rule.monthThreshold} – ${rule.maxMonthThreshold} hó ${rule.operator} ≥ ${formatCurrency(rule.minAmountHuf)}`
+                                  : `≥ ${rule.monthThreshold} hó ${rule.operator} ≥ ${formatCurrency(rule.minAmountHuf)}`
+                              )}
                             </span>
                           </span>
+
+                          {rule.targetAccount === 'per_account' && (
+                            <span className="px-2.5 py-1 rounded-xl bg-blue-50 text-[#1E3A8A] font-semibold flex items-center gap-1 border border-blue-200">
+                              <span>⚡</span>
+                              <span>{isEn ? "Per-account" : "Alszámlánként"}</span>
+                            </span>
+                          )}
+
+                          {rule.crossRuleCooldown !== false && (
+                            <span className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 font-semibold flex items-center gap-1 border border-emerald-200" title={isEn ? "Cross-rule cooldown protection active" : "Kereszt-türelmi védelem aktív"}>
+                              <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{isEn ? "Cross-Guard" : "Kereszt-védelem"}</span>
+                            </span>
+                          )}
 
                           <span className="px-2.5 py-1 rounded-xl bg-purple-50 text-purple-800 font-semibold flex items-center gap-1.5 border border-purple-100">
                             <Calendar className="w-3.5 h-3.5 text-purple-600" />
@@ -1334,7 +1356,9 @@ export function CommunicationCenterModal({
                       { tag: '{tulajdonosNeve}', label: isEn ? "Owner Name" : "Címzett neve", icon: "👤" },
                       { tag: '{lakasszam}', label: isEn ? "Flat #" : "Lakásszám", icon: "🚪" },
                       { tag: '{tarsashazNeve}', label: isEn ? "Building Name" : "Társasház neve", icon: "🏢" },
-                      { tag: '{egyenleg}', label: isEn ? "Current Balance" : "Aktuális egyenleg", icon: "💰" }
+                      { tag: '{egyenleg}', label: isEn ? "Current Balance" : "Aktuális egyenleg", icon: "💰" },
+                      { tag: '{fizetesiAdatok}', label: isEn ? "Payment Details" : "Fizetési adatok", icon: "🏦" },
+                      { tag: '{fizetesiHatarido}', label: isEn ? "Due Date (+8d)" : "Fizetési határidő", icon: "📅" }
                     ].map(item => (
                       <button
                         key={item.tag}
@@ -1375,8 +1399,8 @@ export function CommunicationCenterModal({
                     value={composeBody}
                     onChange={(e) => setComposeBody(e.target.value)}
                     placeholder={isEn 
-                      ? "Dear {tulajdonosNeve},\n\nWe hereby notify you regarding the {tarsashazNeve}..." 
-                      : "Tisztelt {tulajdonosNeve}!\n\nEzúton értesítjük a {lakasszam}. albetét kapcsán, hogy a(z) {tarsashazNeve} épületében..."}
+                      ? "Dear {tulajdonosNeve},\n\nPlease be informed that your current balance is {egyenleg}.\n\n{fizetesiAdatok}\nDue date: {fizetesiHatarido}" 
+                      : "Tisztelt {tulajdonosNeve}!\n\nEzúton tájékoztatjuk a {lakasszam}. lakás egyenlegéről: {egyenleg}.\n\n{fizetesiAdatok}\nFizetési határidő: {fizetesiHatarido}"}
                     className="w-full p-3.5 text-xs font-mono bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#1E3A8A] leading-relaxed resize-y"
                   />
                 </div>
@@ -1402,10 +1426,14 @@ export function CommunicationCenterModal({
                       </div>
                       <div className="text-xs font-mono text-gray-700 whitespace-pre-wrap bg-white p-3.5 rounded-xl border border-gray-200">
                         {(composeBody || '')
-                          .replace(/\{tulajdonosNeve\}/g, resolvedRecipients[0]?.name || "Minta János")
-                          .replace(/\{lakasszam\}/g, resolvedRecipients[0]?.flatNum || "12")
-                          .replace(/\{tarsashazNeve\}/g, resolvedRecipients[0]?.buildingName || composeTargetBuildings[0]?.name || "Minta Társasház")
-                          .replace(/\{egyenleg\}/g, formatCurrency(resolvedRecipients[0]?.balance || 0))}
+                          .replace(/\{tulajdonosNeve\}|\{ownerName\}/g, resolvedRecipients[0]?.name || "Minta János")
+                          .replace(/\{lakasszam\}|\{flatNum\}/g, resolvedRecipients[0]?.flatNum || "12")
+                          .replace(/\{tarsashazNeve\}|\{buildingName\}/g, resolvedRecipients[0]?.buildingName || composeTargetBuildings[0]?.name || "Minta Társasház")
+                          .replace(/\{egyenleg\}|\{balance\}/g, formatCurrency(resolvedRecipients[0]?.balance || -25000))
+                          .replace(/\{fizetesiAdatok\}|\{paymentDetails\}/g, isEn 
+                            ? "Bank Transfer Details for Settlement:\n• Common Cost: 25,000 Ft\n  Beneficiary: Sunflower Condominium\n  Bank Account: 11705008-20456789-00000000\n  Reference: Flat #12 Common Cost" 
+                            : "Átutalási adatok az elmaradás rendezéséhez:\n• Közös költség tartozás: 25 000 Ft\n  Kedvezményezett: Napfény Társasház\n  Bankszámlaszám: 11705008-20456789-00000000\n  Közlemény: 12. lakás közös költség")
+                          .replace(/\{fizetesiHatarido\}|\{dueDate\}/g, new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toLocaleDateString(isEn ? 'en-GB' : 'hu-HU'))}
                       </div>
                     </div>
                   )}
