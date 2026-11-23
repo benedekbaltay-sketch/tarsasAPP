@@ -191,3 +191,29 @@ To guarantee resident privacy, role clarity, and prevent non-admin users from ac
    - Strictly admin/KK only. Residents are blocked by guards in `App.jsx`, `Header.jsx`, `NotificationBell.jsx`, and `CommunicationCenterModal.jsx`.
    - Residents only receive personal in-app notifications in the `NotificationBell` popover and never see dunning rules, email templates, SMTP settings, or the outgoing letter log (Outbox).
    - Multi-building switching ("Minden társasház") is completely blocked and inaccessible in resident mode. Staff members only see buildings in their assigned scope.
+
+---
+
+## 10. Circular Notice Broadcasting & View-Only Communication Lockdown
+
+### 10.1 Notice Composition & Recipient Targeting (`CommunicationCenterModal`)
+Managers and company owners can broadcast custom circular letters and notices to condominium residents:
+1. **Targeting Presets**:
+   - **All Residents (`all`)**: Reaches all registered primary and co-owners.
+   - **Arrears Only (`arrears`)**: Automatically targets only units with negative combined balances.
+   - **Audit Board Only (`szvb`)**: Strictly reaches Supervisory/Audit Board members (`isBoardMember` / `szvbMember`).
+   - **Custom Flats (`custom`)**: Multi-select checklist allowing granular flat-by-flat targeting.
+2. **Tenant Inclusion Option**: Checkbox to include registered active tenants in the recipient pool alongside owners.
+3. **Dual Delivery Channels**:
+   - **Transactional Email (Resend)**: Sends branded HTML emails with automatic `Reply-To` routing to the condominium manager.
+   - **In-App Notification**: Delivers instant announcements to the resident's in-app notification bell (`state.notifications`).
+4. **Dynamic Personalization Tags**: Supports `{tulajdonosNeve}`, `{lakasszam}`, `{tarsashazNeve}`, `{egyenleg}` with live sample preview.
+5. **Audit Logging**: Every dispatched letter is automatically logged into the Outbox (`emailOutbox`) with recipient delivery status.
+
+### 10.2 View-Only Permission Enforcement (`role === 'viewer'`)
+Staff members with view-only permissions (`isUserBuildingViewer === true` / `canUserManageBuilding === false`) are strictly prohibited from performing communication mutations:
+- **Compose Notice**: Blocked from sending letters; shows an amber warning banner.
+- **Dunning Rules**: Cannot create new rules, edit existing rules, toggle rules on/off, or trigger dry-runs to outbox; toggle switches and action buttons are disabled/hidden.
+- **Outbox Log**: Cannot clear or purge the delivery logs.
+- **Context-Level Guards**: `sendCustomResidentNotice`, `saveEmailRule`, `deleteEmailRule`, and `toggleEmailRule` verify `canUserManageBuilding` before execution, returning unauthorized errors if bypassed.
+

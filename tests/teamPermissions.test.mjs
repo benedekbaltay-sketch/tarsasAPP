@@ -639,3 +639,73 @@ test('11. Communication & Admin Isolation: Residents must never have admin acces
   assert.equal(canAccessCommCenter(residentUser), false);
   assert.equal(canAccessCommCenter(adminUser), true);
 });
+
+test('12. Viewers must NOT be able to manage email rules or send circular letters/notices', () => {
+  const viewerOrg = {
+    id: 'org-viewer-test',
+    name: 'View Only Test Org',
+    ownerEmail: 'owner@testorg.hu',
+    members: [
+      {
+        id: 'm-owner',
+        email: 'owner@testorg.hu',
+        orgRole: 'owner',
+        active: true,
+        buildingScope: 'all',
+      },
+      {
+        id: 'm-viewer',
+        email: 'viewer@testorg.hu',
+        name: 'Megtekintő Márk',
+        orgRole: 'staff',
+        buildingScope: 'selected',
+        buildingIds: ['b-test-1'],
+        buildingAssignments: {
+          'b-test-1': {
+            role: 'viewer',
+            canEditBankAccounts: false,
+          },
+        },
+        active: true,
+      },
+      {
+        id: 'm-manager',
+        email: 'manager@testorg.hu',
+        name: 'Kezelő Kálmán',
+        orgRole: 'staff',
+        buildingScope: 'selected',
+        buildingIds: ['b-test-1'],
+        buildingAssignments: {
+          'b-test-1': {
+            role: 'manager',
+            canEditBankAccounts: true,
+          },
+        },
+        active: true,
+      },
+    ],
+  };
+
+  const testBuilding = {
+    id: 'b-test-1',
+    name: 'Próba Ház',
+    organizationId: 'org-viewer-test',
+  };
+
+  const viewerUser = { email: 'viewer@testorg.hu', role: 'admin' };
+  const managerUser = { email: 'manager@testorg.hu', role: 'admin' };
+  const ownerUser = { email: 'owner@testorg.hu', role: 'admin' };
+
+  // Viewer check
+  assert.equal(isUserBuildingViewer(viewerUser, 'b-test-1', [viewerOrg], [testBuilding]), true);
+  assert.equal(canUserManageBuilding(viewerUser, 'b-test-1', [viewerOrg], [testBuilding]), false);
+
+  // Manager check
+  assert.equal(isUserBuildingViewer(managerUser, 'b-test-1', [viewerOrg], [testBuilding]), false);
+  assert.equal(canUserManageBuilding(managerUser, 'b-test-1', [viewerOrg], [testBuilding]), true);
+
+  // Owner check
+  assert.equal(isUserBuildingViewer(ownerUser, 'b-test-1', [viewerOrg], [testBuilding]), false);
+  assert.equal(canUserManageBuilding(ownerUser, 'b-test-1', [viewerOrg], [testBuilding]), true);
+});
+

@@ -1115,7 +1115,7 @@ export function AppProvider({ children }) {
   });
   const calendarActions = createCalendarActions({ state, persistState, showToast, t });
   const teamActions = createTeamActions({ state, persistState, showToast, t });
-  const emailActions = createEmailActions(state, setState);
+  const emailActions = createEmailActions({ state, setState, persistState, showToast, t });
 
   // Helper to check if current user is admin/KK authorized (respecting org suspension & staff delegation)
   const isCurrentUserAdmin = (user = state.currentUser, users = state.users) => {

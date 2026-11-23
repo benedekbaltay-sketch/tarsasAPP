@@ -25,18 +25,27 @@ import {
   FileText,
   Play,
   Calculator,
-  Calendar
+  Calendar,
+  Users,
+  CheckSquare,
+  Square,
+  AlertCircle
 } from 'lucide-react';
 import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
 import { EditEmailRuleModal } from './EditEmailRuleModal';
 import { 
   DEFAULT_DUNNING_RULES, 
-  runDunningDryRun, 
-  renderEmailTemplate 
+  runDunningDryRun 
 } from '../../utils/dunningRules.js';
 import { formatCurrency } from '../../utils/finances.js';
-import { getNotificationsForUser, getAccessibleBuildings, resolveUserOrgContext } from '../../utils/teamPermissions.js';
+import { 
+  getNotificationsForUser, 
+  getAccessibleBuildings, 
+  resolveUserOrgContext,
+  isUserBuildingViewer,
+  canUserManageBuilding
+} from '../../utils/teamPermissions.js';
 
 function formatTime(iso, isEn) {
   if (!iso) return '';
@@ -69,6 +78,7 @@ export function CommunicationCenterModal({
     toggleEmailRule,
     queueOutboxItems,
     clearOutboxItems,
+    sendCustomResidentNotice,
     showToast
   } = useApp();
 
@@ -86,7 +96,7 @@ export function CommunicationCenterModal({
 
   const canAccessAll = orgCtx.isOwner || orgCtx.isSuperAdmin || (orgCtx.member && orgCtx.member.buildingScope === 'all');
 
-  const [activeTab, setActiveTab] = useState('inbox'); // 'inbox' | 'rules' | 'outbox'
+  const [activeTab, setActiveTab] = useState('inbox'); // 'inbox' | 'compose' | 'rules' | 'outbox'
   const [selectedBuildingId, setSelectedBuildingId] = useState(() => {
     if (initialBuildingId && initialBuildingId !== 'all') return initialBuildingId;
     if (canAccessAll) return 'all';
@@ -98,8 +108,136 @@ export function CommunicationCenterModal({
   const [viewingLetter, setViewingLetter] = useState(null);
   const [ruleDryRunTarget, setRuleDryRunTarget] = useState(null);
 
+  // Compose State
+  const [composeTargetBuildingId, setComposeTargetBuildingId] = useState(() => {
+    if (initialBuildingId && initialBuildingId !== 'all') return initialBuildingId;
+    return accessibleBuildings[0]?.id || '';
+  });
+  const [composeAudience, setComposeAudience] = useState('all'); // 'all' | 'arrears' | 'szvb' | 'custom'
+  const [composeIncludeTenants, setComposeIncludeTenants] = useState(false);
+  const [composeCustomFlats, setComposeCustomFlats] = useState([]); // array of flatNums
+  const [composeCategory, setComposeCategory] = useState('general'); // 'general' | 'urgent' | 'finance' | 'assembly'
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const [composeSendEmail, setComposeSendEmail] = useState(true);
+  const [composeSendInApp, setComposeSendInApp] = useState(true);
+  const [isSendingNotice, setIsSendingNotice] = useState(false);
+  const [showRecipientList, setShowRecipientList] = useState(false);
+  const [showLivePreview, setShowLivePreview] = useState(false);
+
   // Strict permission check: non-admins cannot open Communication & Dunning Center
   if (!isOpen || !isAdmin) return null;
+
+  // Evaluate Viewer rights for selected building
+  const isSelectedBuildingViewer = useMemo(() => {
+    if (selectedBuildingId !== 'all') {
+      return isUserBuildingViewer(currentUser, selectedBuildingId, state.organizations || [], buildings || []) ||
+             !canUserManageBuilding(currentUser, selectedBuildingId, state.organizations || [], buildings || []);
+    }
+    if (canAccessAll) return false;
+    return accessibleBuildings.length > 0 && accessibleBuildings.every(b =>
+      isUserBuildingViewer(currentUser, b.id, state.organizations || [], buildings || [])
+    );
+  }, [currentUser, selectedBuildingId, state.organizations, buildings, canAccessAll, accessibleBuildings]);
+
+  const canManageSelectedBuilding = !isSelectedBuildingViewer;
+
+  // Active target building for composing
+  const activeComposeBuilding = useMemo(() => {
+    const targetId = (selectedBuildingId !== 'all' ? selectedBuildingId : composeTargetBuildingId) || accessibleBuildings[0]?.id;
+    return (buildings || []).find(b => b.id === targetId) || null;
+  }, [selectedBuildingId, composeTargetBuildingId, accessibleBuildings, buildings]);
+
+  // Viewer check for activeComposeBuilding
+  const isComposeBuildingViewer = useMemo(() => {
+    if (!activeComposeBuilding) return false;
+    return isUserBuildingViewer(currentUser, activeComposeBuilding.id, state.organizations || [], buildings || []) ||
+           !canUserManageBuilding(currentUser, activeComposeBuilding.id, state.organizations || [], buildings || []);
+  }, [currentUser, activeComposeBuilding, state.organizations, buildings]);
+
+  const canManageComposeBuilding = !isComposeBuildingViewer;
+
+  // Calculate target audience recipients for compose
+  const resolvedRecipients = useMemo(() => {
+    if (!activeComposeBuilding) return [];
+    const flats = Array.isArray(activeComposeBuilding.flats) ? activeComposeBuilding.flats : [];
+    
+    let targetFlats = flats;
+    if (composeAudience === 'arrears') {
+      targetFlats = flats.filter(f => {
+        const bal = (Number(f.balance) || 0) + (Number(f.renovationBalance) || 0);
+        return bal < 0;
+      });
+    } else if (composeAudience === 'szvb') {
+      targetFlats = flats.filter(f => Boolean(f.isBoardMember || f.szvbMember));
+    } else if (composeAudience === 'custom') {
+      targetFlats = flats.filter(f => composeCustomFlats.includes(f.flatNum));
+    }
+
+    const recList = [];
+    targetFlats.forEach(flat => {
+      const pEmail = (flat.email || '').trim();
+      const pName = (flat.ownerName || `${flat.flatNum}. ${isEn ? "Flat" : "lakás"}`).trim();
+      const debt = (Number(flat.balance) || 0) + (Number(flat.renovationBalance) || 0);
+
+      recList.push({
+        flatNum: flat.flatNum,
+        name: pName,
+        email: pEmail,
+        isOwner: true,
+        isTenant: false,
+        balance: debt
+      });
+
+      if (Array.isArray(flat.owners)) {
+        flat.owners.forEach(o => {
+          const oEmail = (o.email || '').trim();
+          const oName = (o.name || '').trim();
+          if (oEmail && oEmail.toLowerCase() !== pEmail.toLowerCase()) {
+            recList.push({
+              flatNum: flat.flatNum,
+              name: oName || pName,
+              email: oEmail,
+              isOwner: true,
+              isTenant: false,
+              balance: debt
+            });
+          }
+        });
+      }
+
+      if (composeIncludeTenants && Array.isArray(flat.tenants)) {
+        flat.tenants.forEach(t => {
+          const tEmail = (t.email || '').trim();
+          const tName = (t.name || '').trim();
+          if (tEmail) {
+            recList.push({
+              flatNum: flat.flatNum,
+              name: tName || (isEn ? `Tenant (${flat.flatNum})` : `Bérlő (${flat.flatNum})`),
+              email: tEmail,
+              isOwner: false,
+              isTenant: true,
+              balance: debt
+            });
+          }
+        });
+      }
+    });
+
+    return recList;
+  }, [activeComposeBuilding, composeAudience, composeCustomFlats, composeIncludeTenants, isEn]);
+
+  const recipientStats = useMemo(() => {
+    const withEmail = resolvedRecipients.filter(r => Boolean(r.email));
+    const withoutEmail = resolvedRecipients.filter(r => !r.email);
+    const uniqueFlats = new Set(resolvedRecipients.map(r => r.flatNum));
+    return {
+      total: resolvedRecipients.length,
+      withEmail: withEmail.length,
+      withoutEmail: withoutEmail.length,
+      uniqueFlatsCount: uniqueFlats.size
+    };
+  }, [resolvedRecipients]);
 
   // Fallback to default dunning rules if not initialized
   const activeRules = useMemo(() => {
@@ -162,9 +300,11 @@ export function CommunicationCenterModal({
     });
   }, [emailOutbox, selectedBuildingId, searchQuery]);
 
-  if (!isOpen) return null;
-
   const handleSimulateRuleDispatch = (rule) => {
+    if (!canManageSelectedBuilding) {
+      showToast(t.comm_viewer_action_blocked || (isEn ? "Action blocked: Viewers cannot trigger notices." : "Művelet megtagadva: Megtekintők nem futtathatnak felszólításokat."), "error");
+      return;
+    }
     const matches = runDunningDryRun(rule, buildings || [], {}, { isEn, repProfile });
     if (matches.length === 0) {
       showToast(isEn ? "No units currently match this rule condition." : "Jelenleg egyetlen lakás sem felel meg a szabály feltételeinek.", "info");
@@ -192,13 +332,92 @@ export function CommunicationCenterModal({
       : `${matches.length} db értesítő sikeresen bejegyezve a Kiküldési naplóba!`, "info");
   };
 
+  const handleInsertTag = (tag) => {
+    setComposeBody(prev => (prev ? `${prev} ${tag}` : tag));
+  };
+
+  const handleToggleCustomFlat = (flatNum) => {
+    setComposeCustomFlats(prev => 
+      prev.includes(flatNum) ? prev.filter(num => num !== flatNum) : [...prev, flatNum]
+    );
+  };
+
+  const handleSelectAllFlats = () => {
+    if (!activeComposeBuilding?.flats) return;
+    setComposeCustomFlats(activeComposeBuilding.flats.map(f => f.flatNum));
+  };
+
+  const handleClearFlatSelection = () => {
+    setComposeCustomFlats([]);
+  };
+
+  const handleSendCustomNotice = async () => {
+    if (!canManageComposeBuilding) {
+      showToast(t.comm_viewer_action_blocked || (isEn ? "Action blocked: Viewers cannot send notices." : "Művelet megtagadva: Megtekintők nem küldhetnek leveleket."), "error");
+      return;
+    }
+    if (!activeComposeBuilding) {
+      showToast(isEn ? "Please select a building." : "Kérlek válassz ki egy társasházat!", "error");
+      return;
+    }
+    if (!composeSubject.trim()) {
+      showToast(t.comm_subject_required || (isEn ? "Please provide a subject." : "Kérlek add meg a levél tárgyát!"), "error");
+      return;
+    }
+    if (!composeBody.trim()) {
+      showToast(t.comm_body_required || (isEn ? "Please enter the letter text." : "Kérlek add meg a levél szövegét!"), "error");
+      return;
+    }
+    if (!composeSendEmail && !composeSendInApp) {
+      showToast(isEn ? "Select at least one delivery channel (Email or Notification)." : "Válassz legalább egy kézbesítési csatornát (E-mail vagy Értesítés)!", "error");
+      return;
+    }
+
+    if (resolvedRecipients.length === 0) {
+      showToast(t.comm_no_recipients || (isEn ? "No recipients match the selected criteria." : "A kiválasztott feltételeknek egyetlen címzett sem felel meg."), "error");
+      return;
+    }
+
+    const confirmMsg = isEn
+      ? `Send notice to ${resolvedRecipients.length} recipients (${activeComposeBuilding.name})?`
+      : `Biztosan elküldöd a levelet ${resolvedRecipients.length} címzettnek a következő házban: ${activeComposeBuilding.name}?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsSendingNotice(true);
+    try {
+      const result = await sendCustomResidentNotice({
+        buildingId: activeComposeBuilding.id,
+        audience: composeAudience,
+        customFlatNums: composeCustomFlats,
+        includeTenants: composeIncludeTenants,
+        category: composeCategory,
+        subject: composeSubject.trim(),
+        body: composeBody.trim(),
+        channels: {
+          email: composeSendEmail,
+          inApp: composeSendInApp
+        }
+      });
+
+      if (result && result.success) {
+        setComposeSubject('');
+        setComposeBody('');
+        setComposeCustomFlats([]);
+        setActiveTab('outbox');
+      }
+    } finally {
+      setIsSendingNotice(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-40 bg-[#F3F4F6] flex flex-col overflow-hidden animate-fadeIn">
       {/* Top Header Bar */}
       <div className="sticky top-0 z-20 w-full shadow-xs bg-white border-b border-gray-200">
         <ImpersonationBanner onExit={onClose} />
         <div className="px-3 sm:px-6 md:px-8 py-3 flex items-center justify-between gap-3">
-          {/* Left: Logo & Back */}
+          {/* Left: Logo & Title */}
           <div className="flex items-center gap-3 min-w-0">
             <NavLogoButton onClick={onClose} />
             <div className="hidden sm:block h-6 w-px bg-gray-200" />
@@ -211,7 +430,7 @@ export function CommunicationCenterModal({
                   {t.comm_center_title || (isEn ? "Communication & Email Center" : "Kommunikációs & E-mail Központ")}
                 </h1>
                 <span className="text-[10px] sm:text-xs text-gray-500 truncate block">
-                  {isEn ? "Automated dunning rules, email templates & notifications" : "Automatikus felszólítási szabályok, sablonok és értesítések"}
+                  {isEn ? "Automated dunning rules, resident notices & email broadcasts" : "Automatikus felszólítási szabályok, lakói körlevelek és értesítések"}
                 </span>
               </div>
             </div>
@@ -223,7 +442,13 @@ export function CommunicationCenterModal({
               <Building2 className="w-3.5 h-3.5 text-gray-400" />
               <select
                 value={selectedBuildingId}
-                onChange={(e) => setSelectedBuildingId(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedBuildingId(val);
+                  if (val !== 'all') {
+                    setComposeTargetBuildingId(val);
+                  }
+                }}
                 className="bg-transparent text-gray-800 text-xs font-bold focus:outline-none cursor-pointer pr-1"
               >
                 {canAccessAll && (
@@ -272,6 +497,19 @@ export function CommunicationCenterModal({
 
             <button
               type="button"
+              onClick={() => setActiveTab('compose')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'compose'
+                  ? 'bg-[#1E3A8A] text-white shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{t.comm_tab_compose || (isEn ? "Compose Notice" : "Új levél írása")}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveTab('rules')}
               className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeTab === 'rules'
@@ -307,26 +545,40 @@ export function CommunicationCenterModal({
 
           {/* Search Box & Tab Action */}
           <div className="flex items-center gap-2 flex-1 sm:flex-initial max-w-md ml-auto">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={isEn ? "Search..." : "Keresés..."}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#1E3A8A]"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+            {activeTab !== 'compose' && (
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={isEn ? "Search..." : "Keresés..."}
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#1E3A8A]"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
 
-            {activeTab === 'rules' && (
+            {/* Quick Action Buttons */}
+            {activeTab !== 'compose' && canManageSelectedBuilding && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('compose')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] border border-blue-200 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{t.comm_compose_btn || (isEn ? "Write Notice" : "Levél írása")}</span>
+              </button>
+            )}
+
+            {activeTab === 'rules' && canManageSelectedBuilding && (
               <button
                 type="button"
                 onClick={() => {
@@ -351,7 +603,7 @@ export function CommunicationCenterModal({
               </button>
             )}
 
-            {activeTab === 'outbox' && (emailOutbox || []).length > 0 && (
+            {activeTab === 'outbox' && (emailOutbox || []).length > 0 && canManageSelectedBuilding && (
               <button
                 type="button"
                 onClick={clearOutboxItems}
@@ -473,26 +725,431 @@ export function CommunicationCenterModal({
             </div>
           )}
 
-          {/* TAB 2: AUTOMATED DUNNING & NOTIFICATION RULES */}
+          {/* TAB 2: COMPOSE NOTICE (ÚJ LEVÉL ÍRÁSA) */}
+          {activeTab === 'compose' && (
+            <div className="space-y-4 animate-fadeIn">
+              {/* Viewer restriction alert */}
+              {!canManageComposeBuilding && (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-3 text-xs text-amber-900 shadow-2xs">
+                  <Eye className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                  <div>
+                    <strong className="block font-bold">{t.comm_viewer_badge || (isEn ? "View-Only Permission" : "Csak megtekintési jogosultság")}</strong>
+                    <span>{t.comm_viewer_banner_compose || (isEn ? "You have view-only access to this building. Sending notices and circular letters is restricted to building managers and owners." : "Csak megtekintési jogosultságod van erre a társasházra. Értesítések és körlevelek küldése csak adminisztrátorok és cégtulajdonosok számára engedélyezett.")}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-xs space-y-6">
+                {/* 1. Target Condominium Selector */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-gray-100">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                      {isEn ? "Target Building" : "Célzott társasház"}
+                    </label>
+                    <select
+                      value={activeComposeBuilding?.id || ''}
+                      onChange={(e) => setComposeTargetBuildingId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#1E3A8A]"
+                    >
+                      {accessibleBuildings.map(b => (
+                        <option key={b.id} value={b.id}>
+                          🏢 {b.officialName || b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                      {t.comm_notice_category || (isEn ? "Category" : "Kategória")}
+                    </label>
+                    <select
+                      value={composeCategory}
+                      onChange={(e) => setComposeCategory(e.target.value)}
+                      className="w-full px-3 py-2 text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#1E3A8A]"
+                    >
+                      <option value="general">📢 {t.comm_cat_general || (isEn ? "General Notice" : "Általános tájékoztató")}</option>
+                      <option value="urgent">🚨 {t.comm_cat_urgent || (isEn ? "Urgent Announcement" : "Sürgős felhívás")}</option>
+                      <option value="finance">💳 {t.comm_cat_finance || (isEn ? "Finance / Payment Reminder" : "Pénzügyi / Befizetési értesítő")}</option>
+                      <option value="assembly">🏛️ {t.comm_cat_assembly || (isEn ? "General Assembly Notice" : "Közgyűlési felhívás")}</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 2. Target Audience Selector */}
+                <div className="space-y-3 pb-4 border-b border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-gray-700">
+                      {t.comm_target_audience || (isEn ? "Target Audience / Preset" : "Címzetti kör kiválasztása")}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowRecipientList(!showRecipientList)}
+                        className="text-[11px] font-bold text-[#1E3A8A] hover:underline cursor-pointer flex items-center gap-1"
+                      >
+                        <Users className="w-3 h-3" />
+                        <span>
+                          {showRecipientList 
+                            ? (isEn ? "Hide Recipient List" : "Címzettek elrejtése") 
+                            : (isEn ? `Show ${resolvedRecipients.length} Recipients` : `${resolvedRecipients.length} címzett megtekintése`)}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setComposeAudience('all')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                        composeAudience === 'all'
+                          ? 'border-[#1E3A8A] bg-blue-50/70 text-[#1E3A8A] shadow-xs'
+                          : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5" />
+                        <span>{t.comm_target_all || (isEn ? "All Residents" : "Minden lakó")}</span>
+                      </span>
+                      <span className="text-[10px] text-gray-500 line-clamp-1">
+                        {isEn ? "All registered flats" : "Minden nyilvántartott lakás"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setComposeAudience('arrears')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                        composeAudience === 'arrears'
+                          ? 'border-[#1E3A8A] bg-blue-50/70 text-[#1E3A8A] shadow-xs'
+                          : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                        <span>{t.comm_target_arrears || (isEn ? "Arrears Only" : "Csak hátralékosok")}</span>
+                      </span>
+                      <span className="text-[10px] text-gray-500 line-clamp-1">
+                        {isEn ? "Negative balance only" : "Tartozással rendelkezők"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setComposeAudience('szvb')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                        composeAudience === 'szvb'
+                          ? 'border-[#1E3A8A] bg-blue-50/70 text-[#1E3A8A] shadow-xs'
+                          : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <CheckCheck className="w-3.5 h-3.5 text-blue-600" />
+                        <span>{t.comm_target_szvb || (isEn ? "Audit Board" : "Csak SZVB")}</span>
+                      </span>
+                      <span className="text-[10px] text-gray-500 line-clamp-1">
+                        {isEn ? "Board members & audit" : "Felügyelő bizottsági tagok"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setComposeAudience('custom')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                        composeAudience === 'custom'
+                          ? 'border-[#1E3A8A] bg-blue-50/70 text-[#1E3A8A] shadow-xs'
+                          : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      <span className="text-xs font-bold flex items-center gap-1.5">
+                        <CheckSquare className="w-3.5 h-3.5 text-purple-600" />
+                        <span>{t.comm_target_custom || (isEn ? "Custom Selection" : "Egyéni albetétek")}</span>
+                      </span>
+                      <span className="text-[10px] text-gray-500 line-clamp-1">
+                        {isEn ? `${composeCustomFlats.length} flats chosen` : `${composeCustomFlats.length} lakás kiválasztva`}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Active Tenants Checkbox */}
+                  <div className="flex items-center justify-between pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-700 select-none">
+                      <input
+                        type="checkbox"
+                        checked={composeIncludeTenants}
+                        onChange={(e) => setComposeIncludeTenants(e.target.checked)}
+                        className="rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] w-4 h-4 cursor-pointer"
+                      />
+                      <span>{t.comm_include_tenants || (isEn ? "Include registered active tenants" : "Bejegyzett aktív bérlők bevonása a címzettek közé")}</span>
+                    </label>
+
+                    {/* Stats pill */}
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 font-bold">
+                        {recipientStats.uniqueFlatsCount} {isEn ? "flats" : "albetét"}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] font-bold border border-blue-200">
+                        {recipientStats.total} {isEn ? "recipients" : "címzett"}
+                      </span>
+                      {recipientStats.withoutEmail > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold border border-amber-200 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3 text-amber-600" />
+                          <span>{recipientStats.withoutEmail} {isEn ? "no email (in-app only)" : "nincs email (csak belső értesítés)"}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Custom Flat Multi-Select Grid */}
+                  {composeAudience === 'custom' && (
+                    <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200 space-y-2 mt-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-gray-700">
+                          {isEn ? "Select Target Flats:" : "Válaszd ki az érintett lakásokat:"}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSelectAllFlats}
+                            className="text-[11px] font-bold text-blue-700 hover:underline"
+                          >
+                            {isEn ? "Select All" : "Mind kijelölése"}
+                          </button>
+                          <span>&bull;</span>
+                          <button
+                            type="button"
+                            onClick={handleClearFlatSelection}
+                            className="text-[11px] font-bold text-gray-500 hover:underline"
+                          >
+                            {isEn ? "Clear" : "Kijelölés törlése"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-1">
+                        {(activeComposeBuilding?.flats || []).map(flat => {
+                          const isSelected = composeCustomFlats.includes(flat.flatNum);
+                          return (
+                            <button
+                              key={flat.flatNum}
+                              type="button"
+                              onClick={() => handleToggleCustomFlat(flat.flatNum)}
+                              className={`p-2 rounded-xl text-left border text-xs transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+                                isSelected
+                                  ? 'bg-[#1E3A8A] text-white border-[#1E3A8A] font-bold'
+                                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100 font-medium'
+                              }`}
+                            >
+                              <span className="truncate">{flat.flatNum}. {flat.ownerName || 'Lakó'}</span>
+                              {isSelected ? <CheckSquare className="w-3.5 h-3.5 flex-shrink-0" /> : <Square className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Expanded Recipient List Inspection */}
+                  {showRecipientList && (
+                    <div className="p-3.5 bg-blue-50/50 rounded-2xl border border-blue-200/80 space-y-2 max-h-56 overflow-y-auto">
+                      <div className="text-xs font-bold text-gray-800 flex items-center justify-between">
+                        <span>{isEn ? "Calculated Recipient List" : "Kiszámított címzettek listája"} ({resolvedRecipients.length})</span>
+                      </div>
+                      <div className="divide-y divide-blue-100 text-xs">
+                        {resolvedRecipients.map((r, idx) => (
+                          <div key={idx} className="py-1.5 flex items-center justify-between gap-2">
+                            <span className="font-semibold text-gray-900 truncate">
+                              {r.flatNum}. lakás: {r.name} {r.isTenant ? `(${isEn ? 'Tenant' : 'Bérlő'})` : ''}
+                            </span>
+                            <span className="font-mono text-[11px] text-gray-600 truncate">
+                              {r.email || <span className="text-amber-700 italic">{isEn ? "No email" : "Nincs e-mail"}</span>}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Subject Input */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                    {t.comm_subject || (isEn ? "Subject" : "Levél tárgya")} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={composeSubject}
+                    onChange={(e) => setComposeSubject(e.target.value)}
+                    placeholder={isEn ? "e.g. Important notice regarding scheduled water outage" : "pl. Fontos tájékoztató a tervezett karbantartásról"}
+                    className="w-full px-3.5 py-2.5 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#1E3A8A] font-semibold"
+                  />
+                </div>
+
+                {/* 4. Message Body & Dynamic Tags */}
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                    <label className="text-xs font-bold text-gray-700">
+                      {t.comm_body || (isEn ? "Message Body" : "Levél szövege")} <span className="text-red-500">*</span>
+                    </label>
+
+                    {/* Tag insert buttons */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-gray-400 font-semibold">{t.comm_insert_tag || (isEn ? "Insert Tag:" : "Változó beillesztése:")}</span>
+                      {[
+                        { tag: '{tulajdonosNeve}', label: isEn ? "Owner Name" : "Címzett neve" },
+                        { tag: '{lakasszam}', label: isEn ? "Flat #" : "Lakásszám" },
+                        { tag: '{tarsashazNeve}', label: isEn ? "Building" : "Ház neve" },
+                        { tag: '{egyenleg}', label: isEn ? "Balance" : "Egyenleg" }
+                      ].map(item => (
+                        <button
+                          key={item.tag}
+                          type="button"
+                          onClick={() => handleInsertTag(item.tag)}
+                          className="px-2 py-0.5 rounded-lg bg-gray-100 hover:bg-blue-100 text-[#1E3A8A] text-[10px] font-mono font-bold border border-gray-200 cursor-pointer transition-colors"
+                          title={`${item.label} (${item.tag})`}
+                        >
+                          +{item.tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <textarea
+                    rows={7}
+                    value={composeBody}
+                    onChange={(e) => setComposeBody(e.target.value)}
+                    placeholder={isEn 
+                      ? "Dear {tulajdonosNeve},\n\nWe hereby notify you regarding the {tarsashazNeve}..." 
+                      : "Tisztelt {tulajdonosNeve}!\n\nEzúton értesítjük a {lakasszam}. albetét kapcsán, hogy a(z) {tarsashazNeve} épületében..."}
+                    className="w-full p-3.5 text-xs font-mono bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#1E3A8A] leading-relaxed resize-y"
+                  />
+                </div>
+
+                {/* 5. Delivery Channels & Preview Toggle */}
+                <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-gray-100">
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs font-bold text-gray-700">{t.comm_channels || (isEn ? "Channels:" : "Kézbesítési csatornák:")}</span>
+                    
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-700 select-none">
+                      <input
+                        type="checkbox"
+                        checked={composeSendEmail}
+                        onChange={(e) => setComposeSendEmail(e.target.checked)}
+                        className="rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] w-4 h-4 cursor-pointer"
+                      />
+                      <Mail className="w-3.5 h-3.5 text-blue-600" />
+                      <span>{t.comm_channel_email || (isEn ? "Resend Transactional Email" : "E-mail küldése (Resend)")}</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-700 select-none">
+                      <input
+                        type="checkbox"
+                        checked={composeSendInApp}
+                        onChange={(e) => setComposeSendInApp(e.target.checked)}
+                        className="rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] w-4 h-4 cursor-pointer"
+                      />
+                      <Bell className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{t.comm_channel_inapp || (isEn ? "In-App Notification Bell" : "Belső faliújság / Értesítési harang")}</span>
+                    </label>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowLivePreview(!showLivePreview)}
+                    className="text-xs font-bold text-gray-600 hover:text-gray-900 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{showLivePreview ? (isEn ? "Hide Preview" : "Előnézet elrejtése") : (isEn ? "Live Preview" : "Élő előnézet")}</span>
+                  </button>
+                </div>
+
+                {/* 6. Live Sample Preview Card */}
+                {showLivePreview && (
+                  <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-2 animate-fadeIn">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                      {isEn ? "Live Sample Preview (with mock recipient data)" : "Élő mintanézet (minta adatokkal behelyettesítve)"}
+                    </span>
+                    <div className="font-bold text-gray-900 text-sm">
+                      {composeSubject || (isEn ? "(Empty Subject)" : "(Üres tárgy)")}
+                    </div>
+                    <div className="text-xs font-mono text-gray-700 whitespace-pre-wrap bg-white p-3.5 rounded-xl border border-gray-200">
+                      {(composeBody || '')
+                        .replace(/\{tulajdonosNeve\}/g, resolvedRecipients[0]?.name || "Minta János")
+                        .replace(/\{lakasszam\}/g, resolvedRecipients[0]?.flatNum || "12")
+                        .replace(/\{tarsashazNeve\}/g, activeComposeBuilding?.name || "Minta Társasház")
+                        .replace(/\{egyenleg\}/g, formatCurrency(resolvedRecipients[0]?.balance || 0))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 7. Dispatch Action Button */}
+                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                  <div className="text-xs text-gray-500">
+                    <span>
+                      {isEn 
+                        ? `Ready to broadcast to ${resolvedRecipients.length} recipients.` 
+                        : `Készen áll a kiküldésre ${resolvedRecipients.length} címzett részére.`}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!canManageComposeBuilding || isSendingNotice || resolvedRecipients.length === 0}
+                    onClick={handleSendCustomNotice}
+                    className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md ${
+                      !canManageComposeBuilding || resolvedRecipients.length === 0
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed shadow-none'
+                        : isSendingNotice
+                        ? 'bg-[#1E3A8A] text-white opacity-80 cursor-wait'
+                        : 'bg-[#1E3A8A] hover:bg-[#1e40af] text-white cursor-pointer active:scale-95'
+                    }`}
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>
+                      {isSendingNotice
+                        ? (t.comm_sending || (isEn ? "Sending notices..." : "Levél küldése folyamatban..."))
+                        : (t.comm_send_btn || (isEn ? "Send Notice" : "Levél kiküldése"))}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: AUTOMATED DUNNING & NOTIFICATION RULES */}
           {activeTab === 'rules' && (
             <div className="space-y-4 animate-fadeIn">
+              {/* Viewer restriction alert */}
+              {!canManageSelectedBuilding && (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-3 text-xs text-amber-900 shadow-2xs">
+                  <Eye className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                  <div>
+                    <strong className="block font-bold">{t.comm_viewer_badge || (isEn ? "View-Only Permission" : "Csak megtekintési jogosultság")}</strong>
+                    <span>{t.comm_viewer_banner_rules || (isEn ? "You have view-only access to this building. Automated dunning rules cannot be edited or modified." : "Csak megtekintési jogosultságod van erre a társasházra. A felszólítási szabályok nem módosíthatók.")}</span>
+                  </div>
+                </div>
+              )}
+
               {filteredRules.length === 0 ? (
                 <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center text-gray-400 space-y-3">
                   <Settings2 className="w-10 h-10 mx-auto text-gray-300" />
                   <p className="text-xs font-semibold text-gray-600">
                     {isEn ? "No automated notification rules configured." : "Nincs beállított automatikus felszólítási szabály."}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingRule(null);
-                      setIsEditRuleOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold transition-all shadow-sm"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>{isEn ? "Create First Rule" : "Első szabály létrehozása"}</span>
-                  </button>
+                  {canManageSelectedBuilding && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingRule(null);
+                        setIsEditRuleOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>{isEn ? "Create First Rule" : "Első szabály létrehozása"}</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
@@ -537,11 +1194,14 @@ export function CommunicationCenterModal({
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <button
                               type="button"
-                              onClick={() => toggleEmailRule(rule.id)}
-                              className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${
+                              disabled={!canManageSelectedBuilding}
+                              onClick={() => canManageSelectedBuilding && toggleEmailRule(rule.id)}
+                              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
                                 rule.enabled ? 'bg-emerald-600' : 'bg-gray-300'
-                              }`}
-                              title={rule.enabled ? (isEn ? "Click to pause" : "Kattints a szüneteltetéshez") : (isEn ? "Click to activate" : "Kattints az aktiváláshoz")}
+                              } ${!canManageSelectedBuilding ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                              title={!canManageSelectedBuilding 
+                                ? (isEn ? "View-only permission: Cannot toggle rule" : "Csak megtekintő: Szabály nem kapcsolható")
+                                : (rule.enabled ? (isEn ? "Click to pause" : "Kattints a szüneteltetéshez") : (isEn ? "Click to activate" : "Kattints az aktiváláshoz"))}
                             >
                               <div
                                 className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
@@ -587,43 +1247,47 @@ export function CommunicationCenterModal({
                               <span>{isEn ? "Dry Run / Preview" : "Száraz teszt / Előnézet"}</span>
                             </button>
 
-                            <button
-                              type="button"
-                              onClick={() => handleSimulateRuleDispatch(rule)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
-                              title={isEn ? "Generate and queue notices to Outbox log" : "Felszólítások bejegyzése a kiküldési naplóba"}
-                            >
-                              <Play className="w-3.5 h-3.5 text-emerald-700" />
-                              <span>{isEn ? "Queue to Outbox" : "Naplóba küldés"}</span>
-                            </button>
+                            {canManageSelectedBuilding && (
+                              <button
+                                type="button"
+                                onClick={() => handleSimulateRuleDispatch(rule)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                                title={isEn ? "Generate and queue notices to Outbox log" : "Felszólítások bejegyzése a kiküldési naplóba"}
+                              >
+                                <Play className="w-3.5 h-3.5 text-emerald-700" />
+                                <span>{isEn ? "Queue to Outbox" : "Naplóba küldés"}</span>
+                              </button>
+                            )}
                           </div>
 
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingRule(rule);
-                                setIsEditRuleOpen(true);
-                              }}
-                              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors cursor-pointer"
-                              title={isEn ? "Edit Rule" : "Szabály szerkesztése"}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
+                          {canManageSelectedBuilding && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingRule(rule);
+                                  setIsEditRuleOpen(true);
+                                }}
+                                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors cursor-pointer"
+                                title={isEn ? "Edit Rule" : "Szabály szerkesztése"}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm(isEn ? "Are you sure you want to delete this rule?" : "Biztosan törlöd ezt a szabályt?")) {
-                                  deleteEmailRule(rule.id);
-                                }
-                              }}
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
-                              title={isEn ? "Delete Rule" : "Szabály törlése"}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(isEn ? "Are you sure you want to delete this rule?" : "Biztosan törlöd ezt a szabályt?")) {
+                                    deleteEmailRule(rule.id);
+                                  }
+                                }}
+                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                                title={isEn ? "Delete Rule" : "Szabály törlése"}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -633,7 +1297,7 @@ export function CommunicationCenterModal({
             </div>
           )}
 
-          {/* TAB 3: OUTBOX & DELIVERY LOGS */}
+          {/* TAB 4: OUTBOX & DELIVERY LOGS */}
           {activeTab === 'outbox' && (
             <div className="bg-white rounded-2xl border border-gray-200 shadow-xs divide-y divide-gray-100 overflow-hidden animate-fadeIn">
               {outboxItems.length === 0 ? (
@@ -644,8 +1308,8 @@ export function CommunicationCenterModal({
                   </p>
                   <p className="text-[11px] text-gray-400 max-w-md mx-auto">
                     {isEn 
-                      ? "When rules trigger or you click 'Queue to Outbox', generated letters will be logged here with recipient status and preview."
-                      : "Amikor a szabályok lefutnak, vagy a 'Naplóba küldés' gombra kattintasz, a legenerált levelek itt kerülnek naplózásra megtekinthető formában."}
+                      ? "When rules trigger, or notices are sent via 'Compose Notice', letters will be logged here with recipient status and preview."
+                      : "Amikor a szabályok lefutnak, vagy körlevelet küldesz az 'Új levél írása' fülön, a kiküldött levelek itt kerülnek naplózásra megtekinthető formában."}
                   </p>
                 </div>
               ) : (
@@ -663,7 +1327,13 @@ export function CommunicationCenterModal({
                         <span className="px-2 py-0.5 rounded-full bg-blue-100 text-[#1E3A8A] text-[10px] font-bold">
                           {item.ruleName}
                         </span>
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          item.status === 'sent' || item.status === 'delivered'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : item.status === 'failed'
+                            ? 'bg-red-50 text-red-800 border-red-200'
+                            : 'bg-blue-50 text-blue-800 border-blue-200'
+                        }`}>
                           {item.status === 'simulated' ? (isEn ? "Simulated / Logged" : "Szimulálva / Naplózva") : item.status}
                         </span>
                       </div>
@@ -672,8 +1342,12 @@ export function CommunicationCenterModal({
                         <span>🏢 {item.buildingName} • {item.flatNum}. lakás</span>
                         <span>&bull;</span>
                         <span>👤 {item.recipientName} ({item.recipientEmail})</span>
-                        <span>&bull;</span>
-                        <span className="text-red-600 font-bold">{formatCurrency(item.debt)}</span>
+                        {item.debt !== undefined && item.debt !== null && item.debt !== 0 && (
+                          <>
+                            <span>&bull;</span>
+                            <span className="text-red-600 font-bold">{formatCurrency(item.debt)}</span>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -832,18 +1506,20 @@ export function CommunicationCenterModal({
                 {isEn ? "Close" : "Bezárás"}
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  handleSimulateRuleDispatch(ruleDryRunTarget);
-                  setRuleDryRunTarget(null);
-                  setActiveTab('outbox');
-                }}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5"
-              >
-                <Play className="w-3.5 h-3.5" />
-                <span>{isEn ? "Queue All to Outbox" : "Mind bejegyzése a naplóba"}</span>
-              </button>
+              {canManageSelectedBuilding && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSimulateRuleDispatch(ruleDryRunTarget);
+                    setRuleDryRunTarget(null);
+                    setActiveTab('outbox');
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  <span>{isEn ? "Queue All to Outbox" : "Mind bejegyzése a naplóba"}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

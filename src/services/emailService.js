@@ -174,3 +174,101 @@ export async function sendColleagueInviteCustomEmail({
     apiKey: effective.apiKey,
   });
 }
+
+/**
+ * Sends a custom broadcast / direct notice email to a condominium resident
+ * with automatic Reply-To routing matching the building's active manager or company contact.
+ */
+export async function sendResidentCustomNoticeEmail({
+  recipientEmail = '',
+  recipientName = '',
+  flatNum = '',
+  subject = '',
+  messageBody = '',
+  bodyText = '',
+  category = 'general',
+  targetBuilding = null,
+  repProfile = {},
+  organizations = [],
+  senderUser = null,
+  senderEmail = '',
+  isEn = false,
+  emailSettings = {},
+} = {}) {
+  const effective = resolveEffectiveEmailSettings(emailSettings);
+  if (!effective.isConfigured) {
+    return { success: false, skipped: true, error: 'not-configured', message: 'Nincs beállítva központi Resend API kulcs.' };
+  }
+
+  const effectiveBody = messageBody || bodyText || '';
+  const fallbackSender = normalizeEmail(senderEmail || senderUser?.email);
+  const dynamicReplyTo = (targetBuilding
+    ? resolveBuildingResidentEmail(targetBuilding, repProfile, organizations)
+    : '') || fallbackSender;
+
+  const buildingName = targetBuilding?.officialName || targetBuilding?.name || (isEn ? 'Condominium' : 'Társasház');
+  const greeting = recipientName 
+    ? (isEn ? `Dear ${recipientName} (Flat ${flatNum}),` : `Kedves ${recipientName} (${flatNum}. lakás)!`)
+    : (flatNum ? (isEn ? `Dear Resident of Flat ${flatNum},` : `Kedves ${flatNum}. lakás Tulajdonos / Lakó!`) : (isEn ? 'Dear Resident,' : 'Kedves Lakó!'));
+
+  const escapedBody = (effectiveBody || '')
+    .split('\n')
+    .map(p => p.trim() ? `<p style="margin: 0 0 14px 0; line-height: 1.6; color: #374151;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : '<br/>')
+    .join('');
+
+  const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background-color: #1E3A8A; padding: 24px 32px; text-align: left;">
+              <h2 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 700;">${buildingName}</h2>
+              <span style="color: #93c5fd; font-size: 12px;">${isEn ? 'Official Management Notice' : 'Hivatalos Közös Képviseleti Tájékoztató'}</span>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding: 32px; font-size: 14px; color: #1f2937;">
+              <p style="font-weight: 600; margin: 0 0 16px 0; color: #111827;">${greeting}</p>
+              ${escapedBody}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f9fafb; padding: 20px 32px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
+              <p style="margin: 0 0 4px 0;"><strong>${buildingName}</strong></p>
+              ${targetBuilding?.address ? `<p style="margin: 0 0 4px 0;">${targetBuilding.address}</p>` : ''}
+              ${dynamicReplyTo ? `<p style="margin: 0;">${isEn ? 'Direct reply to:' : 'Válasz közvetlenül ide:'} <a href="mailto:${dynamicReplyTo}" style="color: #1E3A8A; font-weight: 600;">${dynamicReplyTo}</a></p>` : ''}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const textBody = `${buildingName} - ${subject}\n\n${greeting}\n\n${messageBody}\n\n---\n${buildingName}\n${dynamicReplyTo ? `Reply-To: ${dynamicReplyTo}` : ''}`;
+
+  return sendTransactionalEmail({
+    to: recipientEmail,
+    subject: subject || (isEn ? 'Notice from Property Management' : 'Közös képviseleti tájékoztató'),
+    html: htmlBody,
+    text: textBody,
+    from: effective.senderEmail,
+    replyTo: dynamicReplyTo,
+    senderName: effective.senderName || buildingName || 'TarsasApp',
+    apiKey: effective.apiKey,
+  });
+}

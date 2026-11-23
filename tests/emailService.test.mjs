@@ -6,6 +6,7 @@ import {
   resolveEffectiveEmailSettings,
   resolveBuildingResidentEmail,
   sendColleagueInviteCustomEmail,
+  sendResidentCustomNoticeEmail,
 } from '../src/services/emailService.js';
 
 test('1. resolveEffectiveEmailSettings defaults strictly to Resend provider', () => {
@@ -147,3 +148,50 @@ test('5. sendColleagueInviteCustomEmail falls back to inviterEmail if no buildin
     globalThis.fetch = originalFetch;
   }
 });
+
+test('6. sendResidentCustomNoticeEmail builds branded HTML, dynamic reply_to and sends via Resend', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+
+  try {
+    globalThis.fetch = async (url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'resend-custom-notice-123' }),
+      };
+    };
+
+    const targetBuilding = {
+      id: 'b-batyu',
+      name: 'Batyu u. 21.',
+      email: 'kk@batyu21.hu',
+    };
+
+    const result = await sendResidentCustomNoticeEmail({
+      recipientEmail: 'lako12@batyu.hu',
+      recipientName: 'Kovács János',
+      flatNum: '12',
+      targetBuilding,
+      senderUser: { email: 'manager@kezelo.hu' },
+      subject: 'Fontos felújítási tájékoztató',
+      bodyText: 'Tisztelt Kovács János!\n\nA jövő héten liftjavítás lesz.',
+      category: 'general',
+      emailSettings: { apiKey: 're_valid_api_key_test' },
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.messageId, 'resend-custom-notice-123');
+    assert.deepEqual(capturedBody.to, ['lako12@batyu.hu']);
+    assert.equal(capturedBody.subject, 'Fontos felújítási tájékoztató');
+    assert.equal(capturedBody.reply_to, 'kk@batyu21.hu');
+    assert.ok(capturedBody.html.includes('Batyu u. 21.'));
+    assert.ok(capturedBody.html.includes('Kovács János'));
+    assert.ok(capturedBody.html.includes('12. lakás'));
+    assert.ok(capturedBody.html.includes('liftjavítás'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
