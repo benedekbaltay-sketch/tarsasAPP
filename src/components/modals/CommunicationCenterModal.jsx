@@ -26,7 +26,6 @@ import {
   CheckCircle2, 
   FileText,
   Play,
-  Calculator,
   Calendar,
   Users,
   CheckSquare,
@@ -799,50 +798,6 @@ export function CommunicationCenterModal({
                               />
                             </button>
                           </div>
-                        </div>
-
-                        {/* Middle: Formula & Schedule Badges */}
-                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100 text-xs">
-                          <span className="px-2.5 py-1 rounded-xl bg-gray-100 text-gray-700 font-semibold flex items-center gap-1.5">
-                            <Calculator className="w-3.5 h-3.5 text-gray-500" />
-                            <span>
-                              {rule.conditionType === 'months' && (
-                                rule.maxMonthThreshold 
-                                  ? `${isEn ? "Arrears" : "Hátralék"}: ${rule.monthThreshold} – ${rule.maxMonthThreshold} ${isEn ? "mo." : "hó"}`
-                                  : `${isEn ? "Arrears" : "Hátralék"} ≥ ${rule.monthThreshold} ${isEn ? "months" : "hó"}`
-                              )}
-                              {rule.conditionType === 'amount' && `${isEn ? "Arrears" : "Hátralék"} ≥ ${formatCurrency(rule.minAmountHuf)}`}
-                              {rule.conditionType === 'combined' && (
-                                rule.maxMonthThreshold
-                                  ? `${rule.monthThreshold} – ${rule.maxMonthThreshold} hó ${rule.operator} ≥ ${formatCurrency(rule.minAmountHuf)}`
-                                  : `≥ ${rule.monthThreshold} hó ${rule.operator} ≥ ${formatCurrency(rule.minAmountHuf)}`
-                              )}
-                            </span>
-                          </span>
-
-                          {rule.targetAccount === 'per_account' && (
-                            <span className="px-2.5 py-1 rounded-xl bg-blue-50 text-[#1E3A8A] font-semibold flex items-center gap-1 border border-blue-200">
-                              <span>⚡</span>
-                              <span>{isEn ? "Per-account" : "Alszámlánként"}</span>
-                            </span>
-                          )}
-
-                          {rule.crossRuleCooldown !== false && (
-                            <span className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 font-semibold flex items-center gap-1 border border-emerald-200" title={isEn ? "Cross-rule cooldown protection active" : "Kereszt-türelmi védelem aktív"}>
-                              <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>{isEn ? "Cross-Guard" : "Kereszt-védelem"}</span>
-                            </span>
-                          )}
-
-                          <span className="px-2.5 py-1 rounded-xl bg-purple-50 text-purple-800 font-semibold flex items-center gap-1.5 border border-purple-100">
-                            <Calendar className="w-3.5 h-3.5 text-purple-600" />
-                            <span>{isEn ? `Day ${rule.checkDayOfMonth || 15} of month` : `Minden hó ${rule.checkDayOfMonth || 15}. napján`}</span>
-                          </span>
-
-                          <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 font-semibold flex items-center gap-1.5 border border-amber-100">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            <span>{isEn ? `${rule.cooldownDays || 25}d cooldown` : `${rule.cooldownDays || 25} nap türelem`}</span>
-                          </span>
                         </div>
 
                         {/* Bottom Action Buttons */}
