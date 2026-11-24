@@ -28,7 +28,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
-import { getBudapestCalendarDate, getBudapestTodayYMD } from '../../utils/serverClock';
+import { getBudapestCalendarDate, getBudapestTodayYMD, subscribeServerClock } from '../../utils/serverClock';
 import { NavLogoButton } from '../NavLogoButton';
 
 function formatDateYMD(d) {
@@ -402,6 +402,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
   const backdropProps = useBackdropClose(onClose);
 
   // Active view states (anchored to authoritative Europe/Budapest server clock)
+  const [clockSyncTick, setClockSyncTick] = useState(0);
   const [viewMode, setViewMode] = useState('month'); // 'month' | 'week' | 'day'
   const [currentDate, setCurrentDate] = useState(() => getBudapestCalendarDate());
   const [selectedDayStr, setSelectedDayStr] = useState(() => getBudapestTodayYMD());
@@ -409,10 +410,25 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
     return (typeof initialBuildingId === 'string' && initialBuildingId.trim()) ? initialBuildingId : 'all';
   });
 
-  // Synchronize initialBuildingId prop whenever modal opens and ALWAYS default to Month view
+  // Reactively re-anchor calendar when Firebase `.info/serverTimeOffset` finishes syncing
+  useEffect(() => {
+    return subscribeServerClock(() => {
+      setClockSyncTick((n) => n + 1);
+      setCurrentDate(getBudapestCalendarDate());
+      setSelectedDayStr(getBudapestTodayYMD());
+      setFormDate(getBudapestTodayYMD());
+    });
+  }, []);
+
+  // Synchronize initialBuildingId & authoritative Budapest today whenever modal opens
   useEffect(() => {
     if (isOpen) {
       setViewMode('month');
+      const budapestTodayDate = getBudapestCalendarDate();
+      const budapestTodayStr = getBudapestTodayYMD();
+      setCurrentDate(budapestTodayDate);
+      setSelectedDayStr(budapestTodayStr);
+      setFormDate(budapestTodayStr);
       const validId = (typeof initialBuildingId === 'string' && initialBuildingId.trim()) ? initialBuildingId : 'all';
       setFilterBuildingId(validId);
     }
@@ -800,7 +816,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
   // Events on the selected day (including matching recurring events)
   const selectedDayEvents = filteredEvents.filter(ev => isEventOnDate(ev, selectedDayStr));
 
-  const todayStr = getBudapestTodayYMD();
+  const todayStr = useMemo(() => getBudapestTodayYMD(), [clockSyncTick, isOpen]);
 
   if (!isOpen) return null;
 

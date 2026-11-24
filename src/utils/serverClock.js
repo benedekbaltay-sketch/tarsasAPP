@@ -16,6 +16,33 @@ export const BUDAPEST_TIMEZONE = 'Europe/Budapest';
 let _serverTimeOffsetMs = 0;
 let _isSynced = false;
 let _lastSyncedAtMs = 0;
+const _listeners = new Set();
+
+function _notifyListeners() {
+  _listeners.forEach((fn) => {
+    try {
+      fn({
+        offsetMs: _serverTimeOffsetMs,
+        isSynced: _isSynced,
+        lastSyncedAtMs: _lastSyncedAtMs,
+      });
+    } catch {
+      // Ignore subscriber errors
+    }
+  });
+}
+
+/**
+ * Subscribe to server clock offset updates (e.g. when Firebase `.info/serverTimeOffset`
+ * resolves after initial component mount). Returns an unsubscribe function.
+ */
+export function subscribeServerClock(listener) {
+  if (typeof listener !== 'function') return () => {};
+  _listeners.add(listener);
+  return () => {
+    _listeners.delete(listener);
+  };
+}
 
 /**
  * Sets the millisecond offset between server time and local client time
@@ -24,9 +51,14 @@ let _lastSyncedAtMs = 0;
 export function setServerTimeOffset(offsetMs) {
   const num = Number(offsetMs);
   if (!Number.isFinite(num)) return;
-  _serverTimeOffsetMs = Math.round(num);
+  const rounded = Math.round(num);
+  const changed = !_isSynced || rounded !== _serverTimeOffsetMs;
+  _serverTimeOffsetMs = rounded;
   _isSynced = true;
   _lastSyncedAtMs = Date.now();
+  if (changed) {
+    _notifyListeners();
+  }
 }
 
 /**

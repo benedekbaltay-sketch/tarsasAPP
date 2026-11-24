@@ -15,6 +15,7 @@ import {
   getBudapestNowParts,
   getBudapestTodayYMD,
   getBudapestCalendarDate,
+  subscribeServerClock,
 } from '../src/utils/serverClock.js';
 import { getBudapestTimeParts, shouldRuleAutoDispatchToday } from '../src/utils/dunningRules.js';
 
@@ -140,6 +141,27 @@ test('4. Dunning scheduler uses server clock offset when client clock is drifted
     lastAutoDispatchedDate: null,
   };
   assert.equal(shouldRuleAutoDispatchToday(ruleLater), false);
+
+  resetServerClock();
+});
+
+test('5. subscribeServerClock notifies subscribers when serverTimeOffset arrives after mount', () => {
+  resetServerClock();
+  const events = [];
+  const unsub = subscribeServerClock((info) => events.push(info));
+
+  // Simulate client clock being 3 days behind server
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+  setServerTimeOffset(threeDaysMs);
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].offsetMs, threeDaysMs);
+  assert.equal(events[0].isSynced, true);
+
+  // Unsubscribing stops further notifications
+  unsub();
+  setServerTimeOffset(0);
+  assert.equal(events.length, 1);
 
   resetServerClock();
 });
