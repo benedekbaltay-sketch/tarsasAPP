@@ -60,6 +60,14 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       }
     }
 
+    // Clear today's local persistent lock if schedule was edited
+    try {
+      if (typeof localStorage !== 'undefined' && ruleData.id) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        localStorage.removeItem(`tarsas_dunning_rule_${ruleData.id}_${todayStr}`);
+      }
+    } catch (e) {}
+
     const updater = (prev) => {
       const currentRules = Array.isArray(prev.emailRules) && prev.emailRules.length > 0 
         ? prev.emailRules 
@@ -67,7 +75,16 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       const existingIdx = currentRules.findIndex((r) => r.id === ruleData.id);
       let updatedRules;
       if (existingIdx >= 0) {
-        updatedRules = currentRules.map((r, idx) => (idx === existingIdx ? { ...r, ...ruleData, updatedAt: new Date().toISOString() } : r));
+        const oldRule = currentRules[existingIdx];
+        const scheduleChanged = oldRule.dispatchTime !== ruleData.dispatchTime || 
+                               oldRule.checkDayOfMonth !== ruleData.checkDayOfMonth ||
+                               oldRule.enabled !== ruleData.enabled;
+        updatedRules = currentRules.map((r, idx) => (idx === existingIdx ? { 
+          ...r, 
+          ...ruleData, 
+          lastAutoDispatchedDate: scheduleChanged ? undefined : r.lastAutoDispatchedDate,
+          updatedAt: new Date().toISOString() 
+        } : r));
       } else {
         const newRule = {
           ...ruleData,
@@ -532,16 +549,19 @@ export function createEmailActions(optionsOrState, maybeSetState) {
             return sameBuilding && (sameEmail || sameFlat);
           });
 
-          const alreadyInOutboxToday = (curState.emailOutbox || []).some(o => {
+          const alreadySentToday = (curState.emailOutbox || []).some(o => {
             if (!o) return false;
-            const oDate = (o.queuedAt || o.sentAt || '').slice(0, 10);
+            // Simulated or failed notices do not block real sending
+            if (o.status !== 'sent') return false;
+            const oDate = (o.sentAt || o.queuedAt || '').slice(0, 10);
             if (oDate !== dateStr) return false;
             return o.buildingId === m.buildingId && String(o.flatNum) === String(m.flatNum);
           }) || newOutboxEntries.some(o => {
-            return o.buildingId === m.buildingId && String(o.flatNum) === String(m.flatNum);
+            return o.status === 'sent' && o.buildingId === m.buildingId && String(o.flatNum) === String(m.flatNum);
           });
 
-          if ((alreadyNotifiedToday || alreadyInOutboxToday) && !options.testDate) {
+          // Block duplicate sending only if already successfully sent today, unless explicitly forced
+          if (alreadySentToday && !options.testDate && !options.forceRuleId) {
             continue;
           }
 
