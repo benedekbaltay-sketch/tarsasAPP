@@ -68,8 +68,15 @@ export function AdminView({
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     !onOpenAddTransaction ||
-    (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding))
+    (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuilding))
   );
+
+  // Automatically reset flat grid edit mode and transaction edit mode if viewing in read-only mode
+  useEffect(() => {
+    if (isEffectiveReadOnly && isGridEditMode && typeof toggleGridEditMode === 'function') {
+      toggleGridEditMode();
+    }
+  }, [isEffectiveReadOnly, isGridEditMode, toggleGridEditMode]);
 
   const [txSearchQuery, setTxSearchQuery] = useState('');
   const [isTxEditMode, setIsTxEditMode] = useState(false);

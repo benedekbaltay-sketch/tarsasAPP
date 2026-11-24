@@ -809,19 +809,18 @@ function MainLayout() {
       <FlatsDataModal
         isOpen={Boolean(isAdmin && isFlatsDataOpen)}
         onClose={() => setIsFlatsDataOpen(false)}
+        isReadOnly={!isManagingCurrentBuilding}
         onOpenFlatDetail={(fNum) => {
           if (isAdmin) setFlatDetailNum(fNum);
         }}
         onOpenEditFlatMaster={(bId, fNum) => {
           if (isAdmin) setEditFlatMasterData({ buildingId: bId, flatNum: fNum });
         }}
-        onOpenBuildingSettings={() => {
-          if (isAdmin) {
-            setBuildingSettingsTargetId(state.currentBuildingId);
-            setGlobalBalancesMode('full');
-            setIsGlobalBalancesOpen(true);
-          }
-        }}
+        onOpenBuildingSettings={isManagingCurrentBuilding ? () => {
+          setBuildingSettingsTargetId(state.currentBuildingId);
+          setGlobalBalancesMode('full');
+          setIsGlobalBalancesOpen(true);
+        } : undefined}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}
       />

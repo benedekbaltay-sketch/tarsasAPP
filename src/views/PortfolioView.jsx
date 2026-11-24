@@ -17,7 +17,8 @@ import {
   Layers,
   Settings,
   LayoutGrid,
-  List
+  List,
+  Eye
 } from 'lucide-react';
 import { formatCurrency, getBuildingReserve, getBuildingRenovationFund } from '../utils/finances';
 import { formatTaxNumber } from '../utils/taxNumber';
@@ -25,6 +26,8 @@ import {
   getAccessibleBuildings,
   canUserCreateBuilding,
   canUserManageTeam,
+  canUserManageBuilding,
+  isUserBuildingViewer,
   resolveUserOrgContext,
 } from '../utils/teamPermissions';
 
@@ -333,9 +336,17 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                             <Building2 className="w-4 h-4" />
                           </div>
                           <div className="min-w-0">
-                            <span className="font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors font-display block truncate">
-                              {b.address || b.name || t.building_address}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors font-display block truncate">
+                                {b.address || b.name || t.building_address}
+                              </span>
+                              {(!canUserManageBuilding(currentUser, b, organizations, buildings) || isUserBuildingViewer(currentUser, b, organizations, buildings)) && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold">
+                                  <Eye className="w-2.5 h-2.5 text-amber-700" />
+                                  <span>{t.team_viewer_badge || (isEn ? "Viewer" : "Csak megtekintő")}</span>
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[11px] text-gray-500 block truncate">
                               {b.officialName || b.name}
                             </span>
@@ -453,6 +464,12 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                     </div>
 
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      {(!canUserManageBuilding(currentUser, b, organizations, buildings) || isUserBuildingViewer(currentUser, b, organizations, buildings)) && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                          <Eye className="w-3 h-3 text-amber-700" />
+                          <span>{t.team_viewer_badge || (isEn ? "Viewer" : "Csak megtekintő")}</span>
+                        </span>
+                      )}
                       {b.taxNumber && (
                         <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
                           {isEn ? "Tax:" : "Adószám:"} {formatTaxNumber(b.taxNumber)}
@@ -540,7 +557,11 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                     }}
                     className="w-full py-2.5 px-3 rounded-xl border border-gray-200 bg-white hover:bg-blue-50/70 hover:border-blue-300 text-[#1E3A8A] font-bold text-xs shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
                   >
-                    <span>{t.portfolio_manage_building || (isEn ? "Manage Building" : "Társasház kezelése")}</span>
+                    <span>
+                      {(!canUserManageBuilding(currentUser, b, organizations, buildings) || isUserBuildingViewer(currentUser, b, organizations, buildings))
+                        ? (t.portfolio_view_building || (isEn ? "View Condominium" : "Társasház megtekintése"))
+                        : (t.portfolio_manage_building || (isEn ? "Manage Building" : "Társasház kezelése"))}
+                    </span>
                     <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </button>
                 </div>

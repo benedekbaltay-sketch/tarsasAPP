@@ -1241,7 +1241,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Update Building Representative Contact Info
   const updateBuildingRepInfo = (buildingId, repData) => {
-    if (!requireAdmin()) return;
+    if (!requireAdmin(buildingId)) return;
     if (IS_FIRESTORE_MODE) {
       const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
       const curB = (state.buildings || []).find(b => b.id === targetId);
@@ -1297,7 +1297,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Update Building Master Data (Name, Tax Number, Default Bank, etc.)
   const updateBuildingData = (buildingId, data) => {
-    if (!requireAdmin()) return;
+    if (!requireAdmin(buildingId)) return;
     const sanitizedData = { ...(data || {}) };
     if (sanitizedData.bankApi && typeof sanitizedData.bankApi === 'object') {
       const { apiKey, clientSecret, secretKey, ...safeBankApi } = sanitizedData.bankApi;
@@ -1436,7 +1436,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
   // Update building bank accounts (bankKK, bankFA, and customBankAccounts)
   const updateBuildingBankAccounts = (buildingId, { bankKK, bankFA, customBankAccounts }) => {
-    if (!requireAdmin()) return;
+    if (!requireAdmin(buildingId)) return;
     const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
     const curB = (state.buildings || []).find(b => b.id === targetId);
     const bankChanges = curB ? detectBankAccountChanges(curB, bankKK, bankFA, customBankAccounts) : [];

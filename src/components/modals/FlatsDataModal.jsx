@@ -31,11 +31,18 @@ export function FlatsDataModal({
   onOpenEditFlatMaster,
   onOpenBuildingSettings,
   onOpenDrawer,
-  onOpenProfileSelector 
+  onOpenProfileSelector,
+  isReadOnly = false
 }) {
-  const { state, t } = useApp();
+  const { state, t, canUserManageBuilding } = useApp();
   const { flats, buildings, currentBuildingId, currentLang } = state;
   const isEn = currentLang === 'en';
+
+  const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings[0];
+  const isEffectiveReadOnly = Boolean(
+    isReadOnly ||
+    (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuilding))
+  );
 
   const [query, setQuery] = useState('');
   const [viewMode, setViewMode] = useState('list');
@@ -54,8 +61,6 @@ export function FlatsDataModal({
 
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   if (!isOpen || !isAdmin) return null;
-
-  const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings[0];
 
   const unitTypeConfig = {
     flat: { label: t.unit_type_flat || "Lakás", icon: Home, badgeClass: "bg-blue-50 text-blue-700 border-blue-200", dotClass: "bg-blue-600" },
@@ -237,7 +242,7 @@ export function FlatsDataModal({
                 <span className="text-gray-400 text-[10px] uppercase font-bold block">
                   {isEn ? "Ownership Share" : "Tulajdoni Hányad"}
                 </span>
-                {onOpenBuildingSettings && (
+                {!isEffectiveReadOnly && onOpenBuildingSettings && (
                   <button
                     type="button"
                     onClick={onOpenBuildingSettings}
@@ -434,9 +439,14 @@ export function FlatsDataModal({
                             <button
                               type="button"
                               onClick={() => onOpenEditFlatMaster(currentBuilding?.id || currentBuildingId, f.flatNum)}
-                              className="px-2.5 py-1 rounded-lg bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-xs font-bold transition-colors cursor-pointer"
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                                isEffectiveReadOnly
+                                  ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                                  : 'bg-[#1E3A8A] hover:bg-[#1e40af] text-white'
+                              }`}
+                              title={isEffectiveReadOnly ? (isEn ? "View master data" : "Törzsadatok megtekintése") : (isEn ? "Edit master data" : "Törzsadatok szerkesztése")}
                             >
-                              {isEn ? "Master" : "Törzsadat"}
+                              {isEffectiveReadOnly ? (isEn ? "View" : "Megtekintés") : (isEn ? "Master" : "Törzsadat")}
                             </button>
                           </div>
                         </td>
@@ -555,9 +565,13 @@ export function FlatsDataModal({
                       e.stopPropagation();
                       onOpenEditFlatMaster(currentBuilding?.id || currentBuildingId, f.flatNum);
                     }}
-                    className="w-full py-2 px-3 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center shadow-xs cursor-pointer group-hover:bg-[#1e40af]"
+                    className={`w-full py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center shadow-xs cursor-pointer ${
+                      isEffectiveReadOnly
+                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                        : 'bg-[#1E3A8A] hover:bg-[#1e40af] text-white group-hover:bg-[#1e40af]'
+                    }`}
                   >
-                    <span>{isEn ? "Master Data" : "Törzsadatok"}</span>
+                    <span>{isEffectiveReadOnly ? (isEn ? "View Master Data" : "Törzsadatok megtekintése") : (isEn ? "Master Data" : "Törzsadatok")}</span>
                   </button>
                 </div>
 

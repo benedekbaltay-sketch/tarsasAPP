@@ -750,7 +750,30 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
 
 ---
 
-## 28. Maintenance Checklist for Future Sessions
+## 30. Szigorú Csak Megtekintő (Viewer / Read-Only) Jogosultság Kényszerítés a Társasházakban, Albetéteknél és a Ház Adatai & Bank Modálban
+
+1. **Ház Adatai & Bank Modál (`GlobalBalancesModal.jsx`) Szigorú Írásvédelem**:
+   - A `GlobalBalancesModal` megkapja az `isReadOnly` propot és ellenőrzi az aktuális épülethez tartozó jogosultságot (`isEffectiveReadOnly = isReadOnly || !canUserManageBuilding(targetBuilding)`).
+   - **Mezők és Alszámlák Zárolása**: Ha a felhasználó csak megtekintő (`viewer`), az összes beviteli mező (társasház neve, hivatalos neve, címe, adószáma, teljes tulajdoni hányada, folyószámla és felújítási számla adatai, induló tartalékok, banki API adatok) automatikusan zárolt (`disabled`, szürke háttér és letiltott kurzor).
+   - **Gombok és Műveletek Elrejtése**: Az új alszámla hozzáadása (`+ Új alszámla`) és az egyedi számlák törlése (`Trash2`) elrejtésre kerül megtekintő profil esetén.
+   - **Lábléc és Mentés Tiltása**: A "Mentés" gomb helyett diszkrét, inaktív "Csak megtekintés" (`Lock` ikon) állapot jelenik meg, és a `handleSubmit` azonnal kilép hibaértesítéssel, megakadályozva bármilyen illetéktelen felhőbe írást.
+   - **Figyelmeztető Sáv és Fejléc Jelvény**: A modál tetején sárga figyelmeztető csík jelzi a csak megtekintő státuszt, a fejlécben pedig megjelenik az `Eye` ("Csak megtekintő") jelvény.
+
+2. **Albetétek Teljes Listája (`FlatsDataModal.jsx`) és Tulajdoni Hányad Ceruza Ikon Védelme**:
+   - A fejléc statisztikai dobozában a tulajdoni hányad melletti ceruza ikon (`Pencil` "Ház teljes tulajdoni hányadának szerkesztése") csak akkor jelenik meg, ha a felhasználó ténylegesen szerkesztési joggal rendelkezik (`!isEffectiveReadOnly && onOpenBuildingSettings`).
+   - A lakások sorában és kártyáján lévő törzsadat gomb felirata és stílusa megtekintő profil esetén módosul: aktív kék "Törzsadat" helyett szürke keretes "Megtekintés" (`View`) gombként viselkedik, amely az albetét törzsadatlapját olvasási módban nyitja meg.
+
+3. **Admin Főfelület (`AdminView.jsx`) és Portfólió Nézet (`PortfolioView.jsx`)**:
+   - Az `AdminView.jsx`-ben a lakások táblázatos szerkesztő üzemmódja (`isGridEditMode`) és a ceruza gomb letiltott és rejtett, továbbá egy reaktív `useEffect` garantálja, hogy ha a felhasználó megtekintő státusszal érkezik a házba, a szerkesztő mód nem maradhat bekapcsolva.
+   - A `PortfolioView.jsx`-ben a társasház kártyákon és a lista nézetben megjelenik a sárga `Eye` ("Csak megtekintő") jelvény, a gomb felirata pedig automatikusan "Társasház kezelése" helyett "Társasház megtekintése" (`portfolio_view_building`) szövegre vált.
+
+4. **Központi Jogosultságkezelés (`teamPermissions.js`, `buildingActions.js`)**:
+   - A `canUserManageBuilding` és `isUserBuildingViewer` függvények normalizált azonosító-kezeléssel (`String(id)`) működnek, támogatva mind numerikus, mind szöveges épület ID-kat.
+   - A `user.role === 'viewer'` és a munkatársi szintű globális/egyedi `role: 'viewer'` megbízhatóan blokkolja az írási műveleteket (`updateBuildingData`, `updateBuildingBankAccounts`, `updateBuildingRepInfo`).
+
+---
+
+## 31. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
 1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?

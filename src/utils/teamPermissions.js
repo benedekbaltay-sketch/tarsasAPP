@@ -308,28 +308,39 @@ export function canUserEditBankAccountNumbers(user, building, organizations = []
  */
 export function canUserManageBuilding(user, building, organizations = [], buildings = []) {
   if (!user) return false;
+  if (user.role === 'viewer' || user.isViewer === true) return false;
   const ctx = resolveUserOrgContext(user, organizations, buildings);
   if (ctx.isSuspended) return false;
   if (ctx.isSuperAdmin) return true;
   if (ctx.isOwner) {
-    const bObj = typeof building === 'string' ? (buildings || []).find((b) => b.id === building) : building;
+    const rawId = typeof building === 'object' && building !== null ? building.id : building;
+    const bId = rawId !== undefined && rawId !== null ? String(rawId) : '';
+    const bObj = typeof building === 'object' && building !== null ? building : (buildings || []).find((b) => String(b?.id) === bId);
     return bObj ? isBuildingInOrganization(bObj, ctx.org) : true;
   }
   if (ctx.isStaff) {
-    const bObj = typeof building === 'string' ? (buildings || []).find((b) => b.id === building) : building;
+    const rawId = typeof building === 'object' && building !== null ? building.id : building;
+    const bId = rawId !== undefined && rawId !== null ? String(rawId) : '';
+    const bObj = typeof building === 'object' && building !== null ? building : (buildings || []).find((b) => String(b?.id) === bId);
     if (bObj && !canUserAccessBuilding(user, bObj, organizations, buildings)) {
       return false;
     }
-    const bId = typeof building === 'string' ? building : building?.id;
     const member = (ctx.org?.members || []).find((m) => m && normalizeEmail(m.email) === normalizeEmail(user?.email));
     if (bId) {
-      const perBuilding = member?.buildingAssignments?.[bId];
+      const perBuilding = member?.buildingAssignments?.[bId] ||
+        (member?.buildingAssignments && Object.entries(member.buildingAssignments).find(([k]) => String(k) === bId)?.[1]);
       if (perBuilding && perBuilding.role === 'viewer') {
+        return false;
+      }
+      if (!perBuilding && (member?.role === 'viewer' || member?.defaultRole === 'viewer')) {
         return false;
       }
     } else {
       const assignments = Object.values(member?.buildingAssignments || {});
       if (assignments.length > 0 && assignments.every((a) => a?.role === 'viewer')) {
+        return false;
+      }
+      if (member?.role === 'viewer' || member?.defaultRole === 'viewer') {
         return false;
       }
     }
@@ -344,6 +355,7 @@ export function canUserManageBuilding(user, building, organizations = [], buildi
  */
 export function isUserBuildingViewer(user, building, organizations = [], buildings = []) {
   if (!user) return false;
+  if (user.role === 'viewer' || user.isViewer === true) return true;
   const ctx = resolveUserOrgContext(user, organizations, buildings);
   if (!ctx.isStaff || ctx.isSuperAdmin || ctx.isOwner || ctx.isSuspended) {
     return false;
@@ -351,17 +363,21 @@ export function isUserBuildingViewer(user, building, organizations = [], buildin
   const member = (ctx.org?.members || []).find((m) => m && normalizeEmail(m.email) === normalizeEmail(user?.email));
   if (!member) return false;
 
-  const bId = typeof building === 'string' ? building : building?.id;
+  const rawId = typeof building === 'object' && building !== null ? building.id : building;
+  const bId = rawId !== undefined && rawId !== null ? String(rawId) : '';
   if (bId) {
-    const assignment = member.buildingAssignments?.[bId];
+    const assignment = member.buildingAssignments?.[bId] ||
+      (member.buildingAssignments && Object.entries(member.buildingAssignments).find(([k]) => String(k) === bId)?.[1]);
     if (assignment?.role === 'viewer') return true;
     if (assignment?.role === 'manager') return false;
+    if (!assignment && (member?.role === 'viewer' || member?.defaultRole === 'viewer')) return true;
   }
 
   const assignments = Object.values(member.buildingAssignments || {});
   if (assignments.length > 0 && assignments.every((a) => a?.role === 'viewer')) {
     return true;
   }
+  if (member?.role === 'viewer' || member?.defaultRole === 'viewer') return true;
 
   return false;
 }

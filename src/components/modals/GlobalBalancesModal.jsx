@@ -21,7 +21,8 @@ import {
   UserCheck,
   Phone,
   Mail,
-  Clock
+  Clock,
+  Eye
 } from 'lucide-react';
 import { 
   getBuildingReserve, 
@@ -42,8 +43,8 @@ import {
   resolveBuildingResidentContact,
 } from '../../utils/teamPermissions';
 
-export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode = 'full' }) {
-  const { state, t, setGlobalBalances, persistState, showToast } = useApp();
+export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode = 'full', isReadOnly = false }) {
+  const { state, t, setGlobalBalances, persistState, showToast, canUserManageBuilding } = useApp();
   const { currentLang, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
   const isHu = !isEn;
@@ -52,6 +53,11 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
   // Active target building
   const targetBuildingId = (typeof buildingId === 'string' && buildingId.trim()) ? buildingId : (currentBuildingId || (buildings && buildings[0] && buildings[0].id));
   const targetBuilding = (buildings || []).find(b => b.id === targetBuildingId) || buildings[0];
+
+  const isEffectiveReadOnly = Boolean(
+    isReadOnly ||
+    (targetBuilding && canUserManageBuilding && !canUserManageBuilding(targetBuilding?.id || targetBuilding))
+  );
 
   // Active tab: 'general' (Building info & bank accounts) vs 'api' (Building-specific Banking API)
   const [activeTab, setActiveTab] = useState('general');
@@ -278,6 +284,15 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!isAdmin || isSaving) return;
+    if (isEffectiveReadOnly) {
+      showToast(
+        t.team_viewer_readonly_error || (isEn
+          ? "You have read-only (viewer) access to this condominium. Editing is not allowed."
+          : "Csak megtekintési jogosultságod van ezen a társasházon. A módosítás nem engedélyezett."),
+        "error"
+      );
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
 
@@ -426,11 +441,23 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
               {isAccountsOnly ? <Landmark className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
             </div>
             <div className="min-w-0">
-              <h3 className="text-base font-bold text-gray-900 font-display truncate">
-                {isAccountsOnly
-                  ? (t.bank_accounts_edit_title || (isEn ? "Edit Bank Accounts & Reserves" : "Folyószámlák és Tartalékok szerkesztése"))
-                  : (t.bld_settings_title || (isEn ? "Building Settings & Banking" : "Társasház Beállításai & Bank"))}
-              </h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-bold text-gray-900 font-display truncate">
+                  {isAccountsOnly
+                    ? (isEffectiveReadOnly
+                        ? (isEn ? "View Bank Accounts & Reserves" : "Folyószámlák és Tartalékok megtekintése")
+                        : (t.bank_accounts_edit_title || (isEn ? "Edit Bank Accounts & Reserves" : "Folyószámlák és Tartalékok szerkesztése")))
+                    : (isEffectiveReadOnly
+                        ? (isEn ? "Building Settings & Banking (View-Only)" : "Társasház Beállításai & Bank (Megtekintés)")
+                        : (t.bld_settings_title || (isEn ? "Building Settings & Banking" : "Társasház Beállításai & Bank")))}
+                </h3>
+                {isEffectiveReadOnly && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold">
+                    <Eye className="w-3 h-3 text-amber-700" />
+                    <span>{t.team_viewer_badge || (isEn ? "Viewer (Read-only)" : "Csak megtekintő")}</span>
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-gray-500 truncate">
                 {targetBuilding?.name}{targetBuilding?.address ? ` • ${targetBuilding.address}` : ''}
               </p>
@@ -484,6 +511,18 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col">
           <div className="p-5 space-y-6 flex-1 text-xs">
             
+            {/* Read-only notification banner */}
+            {isEffectiveReadOnly && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-semibold flex items-center gap-2">
+                <Eye className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                <span>
+                  {t.bld_settings_readonly_notice || (isEn
+                    ? "You have read-only permissions for this condominium. Building details and bank accounts cannot be edited."
+                    : "Kizárólag megtekintési jogosultsággal rendelkezel ehhez a társasházhoz. A ház adatai és bankszámlái nem szerkeszthetők.")}
+                </span>
+              </div>
+            )}
+
             {/* ============================================================== */}
             {/* TAB 1: ÉPÜLET ADATAI & FOLYÓSZÁMLÁK (vagy csak Bankszámlák)    */}
             {/* ============================================================== */}
@@ -506,9 +545,12 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={buildingName}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setBuildingName(e.target.value)}
                           placeholder={isEn ? "e.g. Batyu 21" : "pl. Batyu u. 21."}
-                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-[#1E3A8A]"
+                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-[#1E3A8A] ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                           required
                         />
                       </div>
@@ -520,9 +562,12 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={buildingOfficialName}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setBuildingOfficialName(e.target.value)}
                           placeholder={isEn ? "e.g. Batyu utca 21. Társasház" : "pl. Batyu utca 21. Társasház"}
-                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A]"
+                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                         />
                       </div>
 
@@ -533,9 +578,12 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={buildingAddress}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setBuildingAddress(e.target.value)}
                           placeholder={isEn ? "1051 Budapest, Example St. 1." : "1051 Budapest, Példa utca 1."}
-                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A]"
+                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                           required
                         />
                       </div>
@@ -547,9 +595,12 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={buildingTaxNumber}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setBuildingTaxNumber(formatTaxNumber(e.target.value))}
                           placeholder="12345678-1-42"
-                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A]"
+                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                         />
                       </div>
 
@@ -567,9 +618,12 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                           step="any"
                           min="1"
                           value={totalOwnershipShare}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setTotalOwnershipShare(e.target.value)}
                           placeholder="10000"
-                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono font-bold focus:outline-none focus:border-[#1E3A8A]"
+                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono font-bold focus:outline-none focus:border-[#1E3A8A] ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                           required
                         />
                         <p className="text-[10px] text-gray-500 mt-1">
@@ -688,8 +742,11 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={bankKKName}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setBankKKName(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A]"
+                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                         />
                       </div>
                       <div>
@@ -699,25 +756,28 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={bankKKBank}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setBankKKBank(e.target.value)}
                           placeholder="OTP Bank"
-                          className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A]"
+                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                         />
                       </div>
                       <div>
                         <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
                           <span>{isEn ? "Bank Account Number" : "Bankszámlaszám"}</span>
-                          {!canEditBankAcc && <Lock className="w-3 h-3 text-amber-600" />}
+                          {(!canEditBankAcc || isEffectiveReadOnly) && <Lock className="w-3 h-3 text-amber-600" />}
                         </label>
                         <input
                           type="text"
                           value={bankKKAccount}
-                          disabled={!canEditBankAcc}
+                          disabled={!canEditBankAcc || isEffectiveReadOnly}
                           onChange={(e) => setBankKKAccount(e.target.value)}
                           placeholder="11700000 00000000"
-                          title={!canEditBankAcc ? (t.team_bank_account_locked_error || (isEn ? "Locked by Owner" : "Tulajdonos által zárolva")) : undefined}
+                          title={isEffectiveReadOnly ? (t.view_only || (isEn ? "Read-Only" : "Csak megtekintés")) : (!canEditBankAcc ? (t.team_bank_account_locked_error || (isEn ? "Locked by Owner" : "Tulajdonos által zárolva")) : undefined)}
                           className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
-                            canEditBankAcc ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                            canEditBankAcc && !isEffectiveReadOnly ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
                           }`}
                         />
                       </div>
@@ -728,8 +788,11 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={commonBalance}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setCommonBalance(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-900 focus:outline-none focus:border-[#1E3A8A]"
+                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-[#1E3A8A] ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                         />
                       </div>
                     </div>
@@ -759,8 +822,11 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={bankFAName}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setBankFAName(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-600"
+                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-600 ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                         />
                       </div>
                       <div>
@@ -770,25 +836,28 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={bankFABank}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setBankFABank(e.target.value)}
                           placeholder="OTP Bank"
-                          className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-600"
+                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-600 ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                         />
                       </div>
                       <div>
                         <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
                           <span>{isEn ? "Bank Account Number" : "Bankszámlaszám"}</span>
-                          {!canEditBankAcc && <Lock className="w-3 h-3 text-amber-600" />}
+                          {(!canEditBankAcc || isEffectiveReadOnly) && <Lock className="w-3 h-3 text-amber-600" />}
                         </label>
                         <input
                           type="text"
                           value={bankFAAccount}
-                          disabled={!canEditBankAcc}
+                          disabled={!canEditBankAcc || isEffectiveReadOnly}
                           onChange={(e) => setBankFAAccount(e.target.value)}
                           placeholder="11700000 00000000"
-                          title={!canEditBankAcc ? (t.team_bank_account_locked_error || (isEn ? "Locked by Owner" : "Tulajdonos által zárolva")) : undefined}
+                          title={isEffectiveReadOnly ? (t.view_only || (isEn ? "Read-Only" : "Csak megtekintés")) : (!canEditBankAcc ? (t.team_bank_account_locked_error || (isEn ? "Locked by Owner" : "Tulajdonos által zárolva")) : undefined)}
                           className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-emerald-600 ${
-                            canEditBankAcc ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                            canEditBankAcc && !isEffectiveReadOnly ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
                           }`}
                         />
                       </div>
@@ -799,8 +868,11 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                         <input
                           type="text"
                           value={renovationBalance}
+                          disabled={isEffectiveReadOnly}
                           onChange={(e) => setRenovationBalance(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-900 focus:outline-none focus:border-emerald-600"
+                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-emerald-600 ${
+                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                          }`}
                         />
                       </div>
                     </div>
@@ -824,7 +896,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                       </p>
                     </div>
 
-                    {!isAddingNew && canEditBankAcc && (
+                    {!isAddingNew && canEditBankAcc && !isEffectiveReadOnly && (
                       <button
                         type="button"
                         onClick={() => setIsAddingNew(true)}
@@ -855,7 +927,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                               </span>
                             )}
                           </div>
-                          {canEditBankAcc && (
+                          {canEditBankAcc && !isEffectiveReadOnly && (
                             <button
                               type="button"
                               onClick={() => handleDeleteCustomAccount(acc.id)}
@@ -875,23 +947,26 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                             <input
                               type="text"
                               value={acc.bank || ''}
+                              disabled={isEffectiveReadOnly}
                               onChange={(e) =>
                                 setCustomAccounts(prev =>
                                   prev.map(item => (item.id === acc.id ? { ...item, bank: e.target.value } : item))
                                 )
                               }
-                              className="w-full px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs text-gray-800 focus:outline-none focus:border-[#1E3A8A]"
+                              className={`w-full px-2.5 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                                isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-800'
+                              }`}
                             />
                           </div>
                           <div>
                             <label className="text-[10px] text-gray-500 flex items-center gap-1 font-bold mb-0.5">
                               <span>{isEn ? "Account Number" : "Számlaszám"}</span>
-                              {!canEditBankAcc && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                              {(!canEditBankAcc || isEffectiveReadOnly) && <Lock className="w-2.5 h-2.5 text-amber-600" />}
                             </label>
                             <input
                               type="text"
                               value={acc.account || ''}
-                              disabled={!canEditBankAcc}
+                              disabled={!canEditBankAcc || isEffectiveReadOnly}
                               onChange={(e) =>
                                 setCustomAccounts(prev =>
                                   prev.map(item => (item.id === acc.id ? { ...item, account: e.target.value } : item))
@@ -899,7 +974,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                               }
                               placeholder="11700000 00000000"
                               className={`w-full px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
-                                canEditBankAcc ? 'bg-white text-gray-800' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                                canEditBankAcc && !isEffectiveReadOnly ? 'bg-white text-gray-800' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
                               }`}
                             />
                           </div>
@@ -910,8 +985,11 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                             <input
                               type="text"
                               value={customBalances[acc.id] !== undefined ? customBalances[acc.id] : ''}
+                              disabled={isEffectiveReadOnly}
                               onChange={(e) => setCustomBalances(prev => ({ ...prev, [acc.id]: e.target.value }))}
-                              className="w-full px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-900 focus:outline-none focus:border-[#1E3A8A]"
+                              className={`w-full px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-[#1E3A8A] ${
+                                isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                              }`}
                             />
                           </div>
                         </div>
@@ -1052,8 +1130,11 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                       </label>
                       <select
                         value={apiProvider}
+                        disabled={isEffectiveReadOnly}
                         onChange={(e) => setApiProvider(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A] ${
+                          isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-gray-50 text-gray-800'
+                        }`}
                       >
                         <option value="OTP CorpAPI">OTP Bank CorpAPI</option>
                         <option value="Erste Open Banking API">Erste Open Banking API</option>
@@ -1068,8 +1149,11 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                       </label>
                       <select
                         value={apiEnv}
+                        disabled={isEffectiveReadOnly}
                         onChange={(e) => setApiEnv(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A] ${
+                          isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-gray-50 text-gray-800'
+                        }`}
                       >
                         <option value="sandbox">{t.settings_api_env_sandbox || "Sandbox (Teszt üzemmód)"}</option>
                         <option value="production">{t.settings_api_env_prod || "Éles (Production)"}</option>
@@ -1083,9 +1167,12 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                       <input
                         type="text"
                         value={apiClientId}
+                        disabled={isEffectiveReadOnly}
                         onChange={(e) => setApiClientId(e.target.value)}
                         placeholder={isEn ? "e.g. corp-building-001" : "pl. corp-tarsashaz-001"}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A] ${
+                          isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-gray-50 text-gray-800'
+                        }`}
                       />
                     </div>
 
@@ -1107,10 +1194,11 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                   </div>
 
                   <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <label className={`flex items-center gap-2 ${isEffectiveReadOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                       <input
                         type="checkbox"
                         checked={apiAutoSync}
+                        disabled={isEffectiveReadOnly}
                         onChange={(e) => setApiAutoSync(e.target.checked)}
                         className="w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
                       />
@@ -1119,23 +1207,25 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
                       </span>
                     </label>
 
-                    <button
-                      type="button"
-                      onClick={handleTestConnection}
-                      className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#1E3A8A] font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      {apiTestStatus === 'server_managed' ? (
-                        <>
-                          <Lock className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                          <span>{isEn ? "Server-Side Verification Only" : "Szerveroldali ellenőrzés szükséges"}</span>
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 text-[#1E3A8A]" />
-                          <span>{t.bld_settings_api_test_btn || "Banki kapcsolat tesztelése"}</span>
-                        </>
-                      )}
-                    </button>
+                    {!isEffectiveReadOnly && (
+                      <button
+                        type="button"
+                        onClick={handleTestConnection}
+                        className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#1E3A8A] font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        {apiTestStatus === 'server_managed' ? (
+                          <>
+                            <Lock className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                            <span>{isEn ? "Server-Side Verification Only" : "Szerveroldali ellenőrzés szükséges"}</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                            <span>{t.bld_settings_api_test_btn || "Banki kapcsolat tesztelése"}</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1157,25 +1247,37 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
               onClick={onClose}
               className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-white hover:text-gray-900 cursor-pointer transition-colors disabled:opacity-40"
             >
-              {t.cancel || "Mégse"}
+              {isEffectiveReadOnly ? (t.close || (isEn ? "Close" : "Bezárás")) : (t.cancel || "Mégse")}
             </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="px-5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-60"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{t.saving || (isEn ? "Saving..." : "Mentés...")}</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  <span>{t.save || "Mentés"}</span>
-                </>
-              )}
-            </button>
+            {!isEffectiveReadOnly ? (
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-60"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{t.saving || (isEn ? "Saving..." : "Mentés...")}</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>{t.save || "Mentés"}</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="px-4 py-2 bg-gray-100 border border-gray-200 text-gray-400 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-not-allowed"
+                title={t.team_viewer_readonly_error || (isEn ? "Read-only access" : "Csak megtekintési jogosultság")}
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>{t.view_only || (isEn ? "Read-Only" : "Csak megtekintés")}</span>
+              </button>
+            )}
           </div>
         </form>
 

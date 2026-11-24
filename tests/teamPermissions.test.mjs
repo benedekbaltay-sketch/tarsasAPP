@@ -794,5 +794,65 @@ test('14. Viewers can view buildings and flat master data, but cannot manage or 
   assert.equal(isUserBuildingViewer(managerUser, 'b-view-1', [viewerOrg], [testBuilding]), false);
 });
 
+test('15. Viewers on building must be strictly blocked from building master & bank settings edits with robust ID matching', () => {
+  const org = {
+    id: 'org-viewer-test-15',
+    ownerEmail: 'owner@condo.hu',
+    members: [
+      {
+        id: 'm-viewer-15',
+        email: 'viewer15@condo.hu',
+        role: 'staff',
+        buildingScope: 'all',
+        buildingAssignments: {
+          '101': { role: 'viewer', canEditBankAccounts: false },
+          '102': { role: 'manager', canEditBankAccounts: true },
+        },
+        active: true,
+      },
+      {
+        id: 'm-global-viewer',
+        email: 'globalviewer@condo.hu',
+        role: 'viewer',
+        buildingScope: 'all',
+        buildingAssignments: {},
+        active: true,
+      }
+    ],
+  };
+
+  const b1 = { id: 101, name: 'Ház 101', organizationId: 'org-viewer-test-15' };
+  const b2 = { id: '102', name: 'Ház 102', organizationId: 'org-viewer-test-15' };
+  const allB = [b1, b2];
+
+  const viewerUser = { email: 'viewer15@condo.hu', role: 'admin' };
+  const globalViewerUser = { email: 'globalviewer@condo.hu', role: 'admin' };
+  const directViewerUser = { email: 'direct@condo.hu', role: 'viewer' };
+
+  // Building 101: viewerUser is viewer (checked by number, string, and object)
+  assert.equal(canUserManageBuilding(viewerUser, 101, [org], allB), false);
+  assert.equal(canUserManageBuilding(viewerUser, '101', [org], allB), false);
+  assert.equal(canUserManageBuilding(viewerUser, b1, [org], allB), false);
+  assert.equal(isUserBuildingViewer(viewerUser, 101, [org], allB), true);
+  assert.equal(isUserBuildingViewer(viewerUser, '101', [org], allB), true);
+  assert.equal(isUserBuildingViewer(viewerUser, b1, [org], allB), true);
+
+  // Building 102: viewerUser is manager (write enabled)
+  assert.equal(canUserManageBuilding(viewerUser, 102, [org], allB), true);
+  assert.equal(canUserManageBuilding(viewerUser, '102', [org], allB), true);
+  assert.equal(canUserManageBuilding(viewerUser, b2, [org], allB), true);
+  assert.equal(isUserBuildingViewer(viewerUser, b2, [org], allB), false);
+
+  // Global viewer with role 'viewer' and empty assignments is blocked on all buildings
+  assert.equal(canUserManageBuilding(globalViewerUser, 101, [org], allB), false);
+  assert.equal(canUserManageBuilding(globalViewerUser, 102, [org], allB), false);
+  assert.equal(isUserBuildingViewer(globalViewerUser, 101, [org], allB), true);
+  assert.equal(isUserBuildingViewer(globalViewerUser, 102, [org], allB), true);
+
+  // Direct user with role === 'viewer' is unconditionally blocked
+  assert.equal(canUserManageBuilding(directViewerUser, 101, [org], allB), false);
+  assert.equal(isUserBuildingViewer(directViewerUser, 101, [org], allB), true);
+});
+
 
 
