@@ -40,6 +40,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
   const canOpenCommCenter = isAdmin && Boolean(onOpenCommunicationCenter);
 
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState(null);
   const panelRef = useRef(null);
 
   useEffect(() => {
@@ -176,6 +177,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                     key={notif.id}
                     onClick={() => {
                       if (!notif.read) markNotificationRead(notif.id);
+                      setSelectedNotification(notif);
                     }}
                     className={`p-3.5 transition-colors cursor-pointer relative group border-l-4 ${
                       isCritical
@@ -294,6 +296,94 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Full Modal View for Selected System Notification */}
+      {selectedNotification && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn text-left">
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-scaleUp">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                  selectedNotification.severity === 'critical' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-[#1E3A8A]'
+                }`}>
+                  {selectedNotification.severity === 'critical' ? <ShieldAlert className="w-4 h-4" /> : <Info className="w-4 h-4" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 font-display">
+                    {t.notif_modal_title || (isEn ? "System Message Details" : "Rendszerüzenet részletei")}
+                  </h3>
+                  <span className="text-[10px] text-gray-500">
+                    {formatTime(selectedNotification.createdAt, isEn)}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedNotification(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
+              <div className="border-b border-gray-100 pb-3 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider mb-0.5">
+                    {isEn ? "Subject / Title" : "Tárgy / Cím"}
+                  </span>
+                  <h4 className="font-extrabold text-gray-900 text-base leading-snug">
+                    {isEn ? (selectedNotification.titleEn || selectedNotification.titleHu) : (selectedNotification.titleHu || selectedNotification.titleEn)}
+                  </h4>
+                </div>
+                {selectedNotification.buildingName && (
+                  <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold shrink-0">
+                    🏢 {selectedNotification.buildingName}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider mb-1.5">
+                  {isEn ? "Message Content" : "Üzenet szövege"}
+                </span>
+                <div className="bg-gray-50/80 p-5 rounded-2xl border border-gray-200 text-xs whitespace-pre-wrap text-gray-800 leading-relaxed font-sans select-text">
+                  {isEn ? (selectedNotification.messageEn || selectedNotification.messageHu) : (selectedNotification.messageHu || selectedNotification.messageEn)}
+                </div>
+              </div>
+
+              {/* Bank change breakdown if present */}
+              {Array.isArray(selectedNotification.changes) && selectedNotification.changes.length > 0 && (
+                <div className="space-y-1.5 bg-red-50/80 border border-red-200 rounded-2xl p-4">
+                  <span className="text-xs font-bold text-red-900 block mb-1">
+                    {isEn ? "Account Details Modification:" : "Módosított bankszámla adatok:"}
+                  </span>
+                  {selectedNotification.changes.map((ch, idx) => (
+                    <div key={idx} className="text-xs font-mono text-red-950 break-all">
+                      <span className="font-sans font-bold text-red-800">
+                        {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
+                      </span>{' '}
+                      <span className="line-through text-red-500">{ch.oldAccount}</span>{' '}
+                      →{' '}
+                      <span className="font-bold text-red-900">{ch.newAccount}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedNotification(null)}
+                className="px-5 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-blue-900 shadow-xs"
+              >
+                {isEn ? "Close" : "Bezárás"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

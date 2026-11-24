@@ -103,6 +103,7 @@ export function CommunicationCenterModal({
   const [editingRule, setEditingRule] = useState(null);
   const [isEditRuleOpen, setIsEditRuleOpen] = useState(false);
   const [viewingLetter, setViewingLetter] = useState(null);
+  const [viewingNotification, setViewingNotification] = useState(null);
   const [ruleDryRunTarget, setRuleDryRunTarget] = useState(null);
 
   // Compose Modal State: 2-step flow (1: Audience & Channels, 2: Compose & Tags)
@@ -430,19 +431,6 @@ export function CommunicationCenterModal({
     };
     const recipientCount = resolvedRecipients.length;
 
-    // Instantly close modal and switch to Outbox for zero perceived lag
-    setComposeSubject('');
-    setComposeBody('');
-    setComposeCustomFlats([]);
-    setComposeStep(1);
-    setIsComposeOpen(false);
-    setActiveTab('outbox');
-
-    showToast(
-      isEn ? `Dispatching notice to ${recipientCount} recipient(s)...` : `Levél kiküldése folyamatban (${recipientCount} címzett)...`,
-      "info"
-    );
-
     setIsSendingNotice(true);
     try {
       const result = await sendCustomResidentNotice(noticePayload);
@@ -453,6 +441,12 @@ export function CommunicationCenterModal({
             .replace('{count}', recipientCount),
           "success"
         );
+        setComposeSubject('');
+        setComposeBody('');
+        setComposeCustomFlats([]);
+        setComposeStep(1);
+        setIsComposeOpen(false);
+        setActiveTab('outbox');
       }
     } catch (err) {
       console.error('Error sending custom notice:', err);
@@ -460,6 +454,41 @@ export function CommunicationCenterModal({
     } finally {
       setIsSendingNotice(false);
     }
+  };
+
+  useEffect(() => {
+    if (!isSendingNotice && !isDispatchingRuleId) return;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isSendingNotice, isDispatchingRuleId]);
+
+  const handleRequestClose = () => {
+    if (isSendingNotice || isDispatchingRuleId) {
+      const warningText = t.comm_sending_leave_warning || (isEn
+        ? "Warning: Email sending is still in progress! The message has not been delivered yet. If you close the window now, sending will be cancelled. Are you sure you want to exit?"
+        : "Figyelem: A levél kiküldése még folyamatban van! Az üzenet még nem ment át a lakóknak. Ha most bezárod az ablakot, a küldés megszakad és a lakók nem kapják meg a levelet. Biztosan kilépsz?");
+      if (!window.confirm(warningText)) {
+        return;
+      }
+    }
+    onClose();
+  };
+
+  const handleCloseCompose = () => {
+    if (isSendingNotice) {
+      const warningText = t.comm_sending_leave_warning || (isEn
+        ? "Warning: Email sending is still in progress! The message has not been delivered yet. If you close the window now, sending will be cancelled. Are you sure you want to exit?"
+        : "Figyelem: A levél kiküldése még folyamatban van! Az üzenet még nem ment át a lakóknak. Ha most bezárod az ablakot, a küldés megszakad és a lakók nem kapják meg a levelet. Biztosan kilépsz?");
+      if (!window.confirm(warningText)) {
+        return;
+      }
+    }
+    setIsComposeOpen(false);
   };
 
   // Safe early return strictly after all hooks
@@ -473,7 +502,7 @@ export function CommunicationCenterModal({
         <div className="px-3 sm:px-6 md:px-8 py-3 flex items-center justify-between gap-3">
           {/* Left: Logo & Title */}
           <div className="flex items-center gap-3 min-w-0">
-            <NavLogoButton onClick={onClose} />
+            <NavLogoButton onClick={handleRequestClose} />
             <div className="hidden sm:block h-6 w-px bg-gray-200" />
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center flex-shrink-0 shadow-2xs">
@@ -511,7 +540,7 @@ export function CommunicationCenterModal({
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleRequestClose}
               className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-all cursor-pointer"
               title={isEn ? "Close" : "Bezárás"}
             >
@@ -663,6 +692,7 @@ export function CommunicationCenterModal({
                       key={notif.id}
                       onClick={() => {
                         if (!notif.read) markNotificationRead(notif.id);
+                        setViewingNotification(notif);
                       }}
                       className={`p-4 transition-colors cursor-pointer relative group border-l-4 flex items-start justify-between gap-4 ${
                         isCritical
@@ -1010,7 +1040,7 @@ export function CommunicationCenterModal({
               </div>
               <button
                 type="button"
-                onClick={() => setIsComposeOpen(false)}
+                onClick={handleCloseCompose}
                 className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -1454,7 +1484,7 @@ export function CommunicationCenterModal({
                 <>
                   <button
                     type="button"
-                    onClick={() => setIsComposeOpen(false)}
+                    onClick={handleCloseCompose}
                     className="px-4 py-2 border border-gray-200 bg-white hover:bg-gray-100 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
                   >
                     {isEn ? "Cancel" : "Mégse"}
@@ -1574,6 +1604,94 @@ export function CommunicationCenterModal({
                 type="button"
                 onClick={() => setViewingLetter(null)}
                 className="px-4 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                {isEn ? "Close" : "Bezárás"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUBMODAL: Full View for In-App System Messages / Notifications */}
+      {viewingNotification && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-scaleUp">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                  viewingNotification.severity === 'critical' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-[#1E3A8A]'
+                }`}>
+                  {viewingNotification.severity === 'critical' ? <ShieldAlert className="w-4 h-4" /> : <Info className="w-4 h-4" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 font-display">
+                    {t.notif_modal_title || (isEn ? "System Message Details" : "Rendszerüzenet részletei")}
+                  </h3>
+                  <span className="text-[10px] text-gray-500">
+                    {formatTime(viewingNotification.createdAt, isEn)}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingNotification(null)}
+                className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
+              <div className="border-b border-gray-100 pb-3 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider mb-0.5">
+                    {isEn ? "Subject / Title" : "Tárgy / Cím"}
+                  </span>
+                  <h4 className="font-extrabold text-gray-900 text-base leading-snug">
+                    {isEn ? (viewingNotification.titleEn || viewingNotification.titleHu) : (viewingNotification.titleHu || viewingNotification.titleEn)}
+                  </h4>
+                </div>
+                {viewingNotification.buildingName && (
+                  <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold shrink-0">
+                    🏢 {viewingNotification.buildingName}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider mb-1.5">
+                  {isEn ? "Message Content" : "Üzenet szövege"}
+                </span>
+                <div className="bg-gray-50/80 p-5 rounded-2xl border border-gray-200 text-xs whitespace-pre-wrap text-gray-800 leading-relaxed font-sans select-text">
+                  {isEn ? (viewingNotification.messageEn || viewingNotification.messageHu) : (viewingNotification.messageHu || viewingNotification.messageEn)}
+                </div>
+              </div>
+
+              {/* Bank change breakdown if present */}
+              {Array.isArray(viewingNotification.changes) && viewingNotification.changes.length > 0 && (
+                <div className="space-y-1.5 bg-red-50/80 border border-red-200 rounded-2xl p-4">
+                  <span className="text-xs font-bold text-red-900 block mb-1">
+                    {isEn ? "Account Details Modification:" : "Módosított bankszámla adatok:"}
+                  </span>
+                  {viewingNotification.changes.map((ch, idx) => (
+                    <div key={idx} className="text-xs font-mono text-red-950 break-all">
+                      <span className="font-sans font-bold text-red-800">
+                        {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
+                      </span>{' '}
+                      <span className="line-through text-red-500">{ch.oldAccount}</span>{' '}
+                      →{' '}
+                      <span className="font-bold text-red-900">{ch.newAccount}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewingNotification(null)}
+                className="px-5 py-2 bg-[#1E3A8A] text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-blue-900 shadow-xs"
               >
                 {isEn ? "Close" : "Bezárás"}
               </button>
