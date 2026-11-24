@@ -60,11 +60,24 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       }
     }
 
-    // Clear today's local persistent lock if schedule was edited
+    // Calculate Budapest time to check if a schedule change falls in the past today
+    const nowForSchedule = new Date();
+    const { day: curScheduleDay, hour: curScheduleH, minute: curScheduleM, dateStr: todayScheduleStr } = getBudapestTimeParts(nowForSchedule);
+    const curScheduleMinutes = curScheduleH * 60 + curScheduleM;
+    const targetScheduleDay = Number(ruleData.checkDayOfMonth || 15);
+    const targetScheduleTime = parseDispatchTime(ruleData.dispatchTime);
+    const targetScheduleMinutes = targetScheduleTime.hour * 60 + targetScheduleTime.minute;
+    const isTargetDayToday = targetScheduleDay === curScheduleDay;
+    const isTargetTimePastToday = isTargetDayToday && curScheduleMinutes >= targetScheduleMinutes;
+
+    // Clear today's local persistent lock ONLY if schedule was edited and new time has NOT already elapsed today
     try {
       if (typeof localStorage !== 'undefined' && ruleData.id) {
-        const todayStr = new Date().toISOString().slice(0, 10);
-        localStorage.removeItem(`tarsas_dunning_rule_${ruleData.id}_${todayStr}`);
+        if (!isTargetTimePastToday) {
+          localStorage.removeItem(`tarsas_dunning_rule_${ruleData.id}_${todayScheduleStr}`);
+        } else {
+          localStorage.setItem(`tarsas_dunning_rule_${ruleData.id}_${todayScheduleStr}`, todayScheduleStr);
+        }
       }
     } catch (e) {}
 
@@ -79,10 +92,20 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         const scheduleChanged = oldRule.dispatchTime !== ruleData.dispatchTime || 
                                oldRule.checkDayOfMonth !== ruleData.checkDayOfMonth ||
                                oldRule.enabled !== ruleData.enabled;
+
+        // If schedule changed:
+        // - If the new time has ALREADY PASSED today (e.g. at 14:25 user sets 08:00 today),
+        //   lock lastAutoDispatchedDate to today so it does NOT fire today in the past!
+        // - If the new time is in the future today or another day, reset to null to allow future dispatch.
+        let resolvedLastDispatched = oldRule.lastAutoDispatchedDate || null;
+        if (scheduleChanged) {
+          resolvedLastDispatched = isTargetTimePastToday ? todayScheduleStr : null;
+        }
+
         updatedRules = currentRules.map((r, idx) => (idx === existingIdx ? { 
           ...r, 
           ...ruleData, 
-          lastAutoDispatchedDate: scheduleChanged ? null : (r.lastAutoDispatchedDate || null),
+          lastAutoDispatchedDate: resolvedLastDispatched,
           updatedAt: new Date().toISOString() 
         } : r));
       } else {
@@ -555,9 +578,16 @@ export function createEmailActions(optionsOrState, maybeSetState) {
             if (o.status !== 'sent') return false;
             const oDate = (o.sentAt || o.queuedAt || '').slice(0, 10);
             if (oDate !== dateStr) return false;
-            return o.buildingId === m.buildingId && String(o.flatNum) === String(m.flatNum);
+            const sameBuilding = (!o.buildingId && !m.buildingId) || String(o.buildingId || '') === String(m.buildingId || '');
+            const sameFlat = String(o.flatNum || '') === String(m.flatNum || '');
+            const sameEmail = Boolean(o.recipientEmail && m.ownerEmail && o.recipientEmail.toLowerCase() === m.ownerEmail.toLowerCase());
+            return (sameBuilding && sameFlat) || sameEmail;
           }) || newOutboxEntries.some(o => {
-            return o.status === 'sent' && o.buildingId === m.buildingId && String(o.flatNum) === String(m.flatNum);
+            if (o.status !== 'sent') return false;
+            const sameBuilding = (!o.buildingId && !m.buildingId) || String(o.buildingId || '') === String(m.buildingId || '');
+            const sameFlat = String(o.flatNum || '') === String(m.flatNum || '');
+            const sameEmail = Boolean(o.recipientEmail && m.ownerEmail && o.recipientEmail.toLowerCase() === m.ownerEmail.toLowerCase());
+            return (sameBuilding && sameFlat) || sameEmail;
           });
 
           // Block duplicate sending only if already successfully sent today, unless explicitly forced

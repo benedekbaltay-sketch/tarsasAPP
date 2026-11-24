@@ -101,6 +101,25 @@ export const scheduledDailyDunningEmails = onSchedule(
 
             // Extract email from flat.email or flat.owners array
             const flatEmail = (flat.email || flat.owners?.find(o => o?.email)?.email || '').trim();
+
+            // Deduplication: if this flat or email already received a sent notice today, NEVER send again today!
+            const alreadySentToday = outbox.some(o => {
+              if (!o || o.status !== 'sent') return false;
+              const oDate = (o.sentAt || o.queuedAt || '').slice(0, 10);
+              if (oDate !== dateStr) return false;
+              const sameBuilding = String(o.buildingId || '') === String(b.id || '');
+              const sameFlat = String(o.flatNum || '') === String(flat.flatNum || '');
+              const sameEmail = Boolean(flatEmail && o.recipientEmail && o.recipientEmail.toLowerCase() === flatEmail.toLowerCase());
+              return (sameBuilding && sameFlat) || sameEmail;
+            }) || newOutboxEntries.some(o => {
+              if (o.status !== 'sent') return false;
+              const sameBuilding = String(o.buildingId || '') === String(b.id || '');
+              const sameFlat = String(o.flatNum || '') === String(flat.flatNum || '');
+              const sameEmail = Boolean(flatEmail && o.recipientEmail && o.recipientEmail.toLowerCase() === flatEmail.toLowerCase());
+              return (sameBuilding && sameFlat) || sameEmail;
+            });
+
+            if (alreadySentToday) continue;
             const flatOwner = flat.ownerName || flat.owner || flat.owners?.[0]?.name || `${flat.flatNum}. lakás tulajdonosa`;
             const bName = b.officialName || b.name || 'Társasház';
             const bEmail = (b.managerContact?.email || b.email || state.repProfile?.email || '').trim();
