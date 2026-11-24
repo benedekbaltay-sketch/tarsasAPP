@@ -828,13 +828,14 @@ function MainLayout() {
       <FinancialSituationModal
         isOpen={Boolean(currentUser && isFinancialSituationOpen)}
         initialTab={financeInitialTab}
+        isReadOnly={!isManagingCurrentBuilding}
         onClose={() => {
           setIsFinancialSituationOpen(false);
           setFinanceInitialTab('overview');
         }}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}
-        onOpenEditTx={isAdmin ? (id, type, initialEditMode = true) => setEditTxData({ id, type, initialEditMode }) : undefined}
+        onOpenEditTx={isAdmin && isManagingCurrentBuilding ? (id, type, initialEditMode = true) => setEditTxData({ id, type, initialEditMode }) : undefined}
       />
 
       <DocumentsModal
@@ -857,6 +858,7 @@ function MainLayout() {
 
       <LoansModal
         isOpen={Boolean(currentUser && (isAdmin || currentUser?.role === 'szvb') && isLoansOpen)}
+        isReadOnly={!isManagingCurrentBuilding}
         onClose={() => setIsLoansOpen(false)}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}

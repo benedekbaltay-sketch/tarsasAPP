@@ -42,11 +42,15 @@ import {
 import { NewLoanModal } from './LoanModals/NewLoanModal';
 import { RecordPaymentModal } from './LoanModals/RecordPaymentModal';
 
-export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelector, embedded = false }) {
-  const { state, t, deleteLoan, deleteLoanPayment } = useApp();
+export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelector, embedded = false, isReadOnly = false }) {
+  const { state, t, deleteLoan, deleteLoanPayment, canUserManageBuilding } = useApp();
   const { currentUser, currentLang, loans = [] } = state;
   const isEn = currentLang === 'en';
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const isEffectiveReadOnly = Boolean(
+    isReadOnly ||
+    (canUserManageBuilding && !canUserManageBuilding(state.currentBuildingId))
+  );
+  const isAdmin = (currentUser?.role === 'admin' || currentUser?.role === 'superadmin') && !isEffectiveReadOnly;
 
   // Navigation tab state: 'active' | 'participants' | 'history' | 'archive'
   const [activeTab, setActiveTab] = useState('active');

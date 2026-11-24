@@ -31,14 +31,19 @@ export function FinancialSituationModal({
   onOpenProfileSelector,
   onOpenEditTx,
   initialTab = 'overview',
+  isReadOnly = false,
 }) {
-  const { state, t } = useApp();
+  const { state, t, canUserManageBuilding } = useApp();
   const { flats, buildings, currentBuildingId, currentLang, currentUser } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const canViewUnitBreakdown = isAdmin || currentUser?.role === 'szvb';
   const canViewLoans = isAdmin || currentUser?.role === 'szvb';
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
+  const isEffectiveReadOnly = Boolean(
+    isReadOnly ||
+    (canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuildingId))
+  );
   const [selectedMonthData, setSelectedMonthData] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -52,7 +57,7 @@ export function FinancialSituationModal({
       },
     ];
 
-    if (isAdmin) {
+    if (isAdmin && !isEffectiveReadOnly) {
       tabs.push({
         id: 'bank-import',
         label: t.finance_tab_bank_import || (isEn ? 'Bank File Import' : 'Banki fájl importálás'),
@@ -69,7 +74,7 @@ export function FinancialSituationModal({
     }
 
     return tabs;
-  }, [isAdmin, canViewLoans, isEn, t]);
+  }, [isAdmin, isEffectiveReadOnly, canViewLoans, isEn, t]);
 
   useEffect(() => {
     if (isOpen) {
@@ -489,7 +494,7 @@ export function FinancialSituationModal({
         )}
 
         {/* TAB 2: Banki fájl importálás (Admin only, inline embedded) */}
-        {activeTab === 'bank-import' && isAdmin && (
+        {activeTab === 'bank-import' && isAdmin && !isEffectiveReadOnly && (
           <BankImportModal
             isOpen={true}
             embedded={true}
@@ -502,6 +507,7 @@ export function FinancialSituationModal({
           <LoansModal
             isOpen={true}
             embedded={true}
+            isReadOnly={isEffectiveReadOnly}
             onClose={() => setActiveTab('overview')}
           />
         )}
@@ -513,8 +519,9 @@ export function FinancialSituationModal({
     <MonthlyDetailModal
       isOpen={Boolean(selectedMonthData)}
       monthData={selectedMonthData}
+      isReadOnly={isEffectiveReadOnly}
       onClose={() => setSelectedMonthData(null)}
-      onOpenEditTx={onOpenEditTx}
+      onOpenEditTx={!isEffectiveReadOnly ? onOpenEditTx : undefined}
     />
   </div>
 );

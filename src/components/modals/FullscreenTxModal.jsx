@@ -34,15 +34,21 @@ export function FullscreenTxModal({
   isOpen,
   type, // 'global' | 'flat'
   flatNum,
+  isReadOnly = false,
   onClose,
   onOpenEditTx,
   onOpenDeleteTx,
   onNavigateToCase
 }) {
-  const { state, t, copiedTx, copyTransaction, pasteTransaction } = useApp();
+  const { state, t, copiedTx, copyTransaction, pasteTransaction, canUserManageBuilding } = useApp();
   const { transactions, expenses, currentLang } = state;
   const isEn = currentLang === 'en';
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
+  const isEffectiveReadOnly = Boolean(
+    isReadOnly ||
+    !isAdmin ||
+    (canUserManageBuilding && !canUserManageBuilding(state.currentBuildingId))
+  );
   const canViewAllFlats = isAdmin || state.currentUser?.role === 'szvb';
   const effectiveFlatNum = canViewAllFlats ? flatNum : state.currentUser?.flatNum;
 
@@ -183,7 +189,7 @@ export function FullscreenTxModal({
       const isCtrlOrCmd = e.ctrlKey || e.metaKey;
 
       if (isCtrlOrCmd && e.key.toLowerCase() === 'c') {
-        if (!isAdmin) return;
+        if (!isAdmin || isEffectiveReadOnly) return;
         // If user highlighted text on page, let browser copy text
         if (window.getSelection && window.getSelection().toString().trim().length > 0) {
           return;
@@ -196,7 +202,7 @@ export function FullscreenTxModal({
           }
         }
       } else if (isCtrlOrCmd && e.key.toLowerCase() === 'v') {
-        if (!isAdmin) return;
+        if (!isAdmin || isEffectiveReadOnly) return;
         e.preventDefault();
         const targetFlat = type === 'flat' ? effectiveFlatNum : null;
         pasteTransaction(targetFlat);
@@ -219,7 +225,7 @@ export function FullscreenTxModal({
           setSelectedId(filteredItems[idx - 1].id);
         }
       } else if (e.key === 'Delete') {
-        if (!isAdmin) return;
+        if (!isAdmin || isEffectiveReadOnly) return;
         if (window.getSelection && window.getSelection().toString().trim().length > 0) {
           return;
         }
@@ -236,7 +242,7 @@ export function FullscreenTxModal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isAdmin, selectedId, filteredItems, type, effectiveFlatNum, copyTransaction, pasteTransaction, onOpenDeleteTx]);
+  }, [isOpen, isAdmin, isEffectiveReadOnly, selectedId, filteredItems, type, effectiveFlatNum, copyTransaction, pasteTransaction, onOpenDeleteTx]);
 
   // Deselect item when clicking outside
   useEffect(() => {
@@ -305,7 +311,7 @@ export function FullscreenTxModal({
               )}
             </button>
 
-            {isAdmin && (
+            {isAdmin && !isEffectiveReadOnly && (
               <button
                 onClick={() => setIsEditMode(!isEditMode)}
                 className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
@@ -516,7 +522,7 @@ export function FullscreenTxModal({
                           )}
                         </div>
 
-                        {isEditMode && (
+                        {isEditMode && !isEffectiveReadOnly && (
                           <div className="flex items-center gap-1 border-l border-gray-100 pl-2">
                             <button
                               onClick={(e) => {

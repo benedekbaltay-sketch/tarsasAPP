@@ -767,7 +767,12 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
    - Az `AdminView.jsx`-ben a lakások táblázatos szerkesztő üzemmódja (`isGridEditMode`) és a ceruza gomb letiltott és rejtett, továbbá egy reaktív `useEffect` garantálja, hogy ha a felhasználó megtekintő státusszal érkezik a házba, a szerkesztő mód nem maradhat bekapcsolva.
    - A `PortfolioView.jsx`-ben a társasház kártyákon és a lista nézetben megjelenik a sárga `Eye` ("Csak megtekintő") jelvény, a gomb felirata pedig automatikusan "Társasház kezelése" helyett "Társasház megtekintése" (`portfolio_view_building`) szövegre vált.
 
-4. **Központi Jogosultságkezelés (`teamPermissions.js`, `buildingActions.js`)**:
+4. **Teljes Tranzakció Lista, Pénzügyi Helyzet, Havi Részletező és Hitelek (`FullscreenTxModal.jsx`, `FinancialSituationModal.jsx`, `MonthlyDetailModal.jsx`, `LoansModal.jsx`)**:
+   - A `FullscreenTxModal` figyelembe veszi az `isReadOnly` propot és a `canUserManageBuilding` jogosultságot: megtekintőként elrejti a fejlécbeli „Szerkesztés” (`Pencil`) gombot, a soronkénti szerkesztés/törlés ikonokat, valamint letiltja a `Ctrl+C`, `Ctrl+V` és `Delete` billentyűkombinációkat.
+   - A `FinancialSituationModal` megtekintőként elrejti a **Banki fájl importálás** (`bank-import`) fület, továbbá olvasási módot (`isReadOnly`) ad át a beágyazott `LoansModal` és `MonthlyDetailModal` nézeteknek.
+   - A `LoansModal` és `MonthlyDetailModal` megtekintőként elrejti az összes létrehozó, szerkesztő (`Pencil`) és törlő (`Trash2`) gombot.
+
+5. **Központi Jogosultságkezelés (`teamPermissions.js`, `buildingActions.js`)**:
    - A `canUserManageBuilding` és `isUserBuildingViewer` függvények normalizált azonosító-kezeléssel (`String(id)`) működnek, támogatva mind numerikus, mind szöveges épület ID-kat.
    - A `user.role === 'viewer'` és a munkatársi szintű globális/egyedi `role: 'viewer'` megbízhatóan blokkolja az írási műveleteket (`updateBuildingData`, `updateBuildingBankAccounts`, `updateBuildingRepInfo`).
 

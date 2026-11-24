@@ -24,12 +24,18 @@ export function MonthlyDetailModal({
   isOpen,
   monthData, // { year, month, name, inflow, outflow, margin }
   onClose,
-  onOpenEditTx
+  onOpenEditTx,
+  isReadOnly = false
 }) {
-  const { state, t } = useApp();
+  const { state, t, canUserManageBuilding } = useApp();
   const { transactions, expenses, flats, currentLang, currentUser, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const isEffectiveReadOnly = Boolean(
+    isReadOnly ||
+    !isAdmin ||
+    (canUserManageBuilding && !canUserManageBuilding(currentBuildingId))
+  );
   const canViewAllUnits = isAdmin || currentUser?.role === 'szvb';
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
@@ -466,7 +472,7 @@ export function MonthlyDetailModal({
                       </span>
 
                       {/* Admin Edit Button */}
-                      {isAdmin && onOpenEditTx && (
+                      {isAdmin && !isEffectiveReadOnly && onOpenEditTx && (
                         <button
                           type="button"
                           onClick={() => onOpenEditTx(item.id, isExpense ? 'Expense' : item.type, true)}
