@@ -455,7 +455,7 @@ export function EditEmailRuleModal({
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-gray-500" />
-                      <span>{t.comm_rule_dispatch_time_label || (isEn ? "Exact Dispatch Time (24h)" : "Kiküldés pontos ideje (24 órás)")}</span>
+                      <span>{t.comm_rule_dispatch_time_label || (isEn ? "Exact Dispatch Time" : "Kiküldés pontos ideje")}</span>
                     </label>
                     <div className="flex items-center gap-1.5">
                       <div className="flex-1">
@@ -481,7 +481,12 @@ export function EditEmailRuleModal({
                         <select
                           value={(() => {
                             const [, m] = (dispatchTime || '08:00').split(':');
-                            return m !== undefined ? String(Number(m)).padStart(2, '0') : '00';
+                            const num = Number(m) || 0;
+                            if ([0, 15, 30, 45].includes(num)) {
+                              return String(num).padStart(2, '0');
+                            }
+                            const snapped = (Math.round(num / 15) * 15) % 60;
+                            return String(snapped).padStart(2, '0');
                           })()}
                           onChange={(e) => {
                             const [h] = (dispatchTime || '08:00').split(':');
@@ -490,14 +495,14 @@ export function EditEmailRuleModal({
                           }}
                           className="w-full px-2 py-1.5 text-xs font-bold border border-gray-200 rounded-xl bg-white focus:outline-none cursor-pointer text-center"
                         >
-                          {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map(m => (
+                          {['00', '15', '30', '45'].map(m => (
                             <option key={m} value={m}>{m}</option>
                           ))}
                         </select>
                       </div>
                     </div>
                     <span className="text-[10px] text-gray-400 mt-0.5 block">
-                      {t.comm_rule_dispatch_time_hint || (isEn ? "24-hour format (e.g. 08:00, 14:30)" : "24 órás formátum (pl. 08:00, 14:30)")}
+                      {t.comm_rule_dispatch_time_hint || (isEn ? "Quarter-hour intervals (e.g. 08:00, 13:15, 14:30)" : "15 perces időközök (pl. 08:00, 13:15, 14:30)")}
                     </span>
                   </div>
 

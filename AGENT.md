@@ -706,7 +706,7 @@ A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhe
      - `functions/src/dunning.js`: A Cloud Functions ütemező 15 percenként fut (`schedule: 'every 15 minutes'`), így bármilyen napszakban beállított szabályok automatikusan lefutnak.
      - `src/context/AppContext.jsx`: A kliensoldali 60 másodperces ellenőrző ciklus azonnal elindítja a kiküldést, amint a böngésző nyitva van és a megadott perc elérkezik.
    - **Felhasználói Felület (`EditEmailRuleModal.jsx`, `CommunicationCenterModal.jsx`)**:
-     - Szigorúan 24-órás, két független `<select>` mezőből álló időválasztó (Óra: 00–23, Perc: 00–59), kiküszöbölve a böngészők angol nyelvű AM/PM formátumát.
+     - Szigorúan 24-órás időválasztó negyedórás lépésközzel (Óra: 00–23, Perc: 00, 15, 30, 45), pontosan illeszkedve a Cloud Scheduler 15 perces ütemezéséhez. A felirat letisztult: "Kiküldés pontos ideje".
      - A szabálykártyákon letisztult fejléc: a felesleges "aktív", "utolsó kiküldés" és csatorna jelvények helyén közvetlenül az ütemezés látható: `⏰ Minden hó {day}. – {time} (automatikusan)` és az épület chipje.
      - Kétnyelvű támogatás (`comm_rule_dispatch_time_label`, `comm_rule_dispatch_time_hint`, `comm_dispatch_now`) magyar és angol nyelven.
 
