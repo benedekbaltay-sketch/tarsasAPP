@@ -308,26 +308,39 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         );
       }
 
-      // 2. Dispatch transactional email (non-blocking in background)
-      let emailStatus = 'skipped';
+      // 2. Dispatch transactional email
+      let emailStatus = sendEmail && r.email ? 'queued' : 'in-app-only';
+      let emailErrorMessage = null;
+      let emailWasSent = false;
+
       if (sendEmail && r.email) {
-        emailStatus = 'sent';
-        sendResidentCustomNoticeEmail({
-          recipientEmail: r.email,
-          recipientName: r.name,
-          flatNum: r.flatNum,
-          subject,
-          messageBody: personalizedBody,
-          category,
-          targetBuilding: rBuilding,
-          repProfile: state?.repProfile || {},
-          organizations: state?.organizations || [],
-          senderUser: state?.currentUser,
-          isEn: isEn(),
-          emailSettings: rBuilding?.emailSettings || state?.emailSettings || {},
-        }).catch((err) => {
-          console.warn('sendResidentCustomNoticeEmail async error:', err.message);
-        });
+        try {
+          const sendRes = await sendResidentCustomNoticeEmail({
+            recipientEmail: r.email,
+            recipientName: r.name,
+            flatNum: r.flatNum,
+            subject,
+            messageBody: personalizedBody,
+            category,
+            targetBuilding: rBuilding,
+            repProfile: state?.repProfile || {},
+            organizations: state?.organizations || [],
+            senderUser: state?.currentUser,
+            isEn: isEn(),
+            emailSettings: rBuilding?.emailSettings || state?.emailSettings || {},
+          });
+
+          if (sendRes && sendRes.success) {
+            emailStatus = 'sent';
+            emailWasSent = true;
+          } else {
+            emailStatus = 'failed';
+            emailErrorMessage = sendRes?.message || 'E-mail küldési hiba';
+          }
+        } catch (err) {
+          emailStatus = 'failed';
+          emailErrorMessage = err?.message || 'Hálózati hiba a levélküldéskor';
+        }
       }
 
       // 3. Outbox log entry for representative
@@ -344,8 +357,12 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         body: personalizedBody,
         category,
         debt: r.balance,
-        status: (sendEmail && r.email) ? 'sent' : 'in-app-only',
+        status: emailStatus,
+        errorMessage: emailErrorMessage,
+        sendEmail,
+        sendInApp: sendInAppNotification,
         queuedAt: new Date().toISOString(),
+        sentAt: emailWasSent ? new Date().toISOString() : undefined,
       });
     }
 
@@ -367,15 +384,35 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       setState(updater);
     }
 
-    if (typeof showToast === 'function') {
+    const failedItems = newOutboxEntries.filter(it => it.status === 'failed');
+    if (failedItems.length > 0 && typeof showToast === 'function') {
+      const firstErr = failedItems[0]?.errorMessage || '';
+      const isSandboxIssue = firstErr.includes('only send testing emails') || firstErr.includes('verify a domain');
+      if (isSandboxIssue) {
+        showToast(
+          isEn()
+            ? "Notice logged, but Resend in testing sandbox mode only delivers to your registered account email. Verify a domain at resend.com/domains to send to all residents."
+            : "A levél rögzítve lett, de a Resend teszt módban csak a regisztrált fejlesztői e-mailre kézbesít. Bármilyen lakónak küldéshez domain hitelesítés szükséges a resend.com oldalon!",
+          "warning"
+        );
+      } else {
+        showToast(
+          isEn()
+            ? `Notice queued, but email delivery failed: ${firstErr}`
+            : `A levél naplózva lett, de az e-mail kézbesítés sikertelen: ${firstErr}`,
+          "warning"
+        );
+      }
+    } else if (typeof showToast === 'function') {
       showToast(
         isEn()
           ? `Notice successfully sent to ${recipients.length} recipients!`
-          : `Levél sikeresen elküldve ${recipients.length} címzettnek!`
+          : `Levél sikeresen elküldve ${recipients.length} címzettnek!`,
+        "success"
       );
     }
 
-    return { success: true, count: recipients.length };
+    return { success: true, count: recipients.length, failedCount: failedItems.length };
   };
 
   let isAutoDunningChecking = false;

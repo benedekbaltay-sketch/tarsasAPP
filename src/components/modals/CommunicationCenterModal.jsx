@@ -935,6 +935,11 @@ export function CommunicationCenterModal({
                           </>
                         )}
                       </div>
+                      {item.status === 'failed' && item.errorMessage && (
+                        <div className="text-[10px] text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200 mt-1 inline-block font-medium">
+                          ⚠️ {item.errorMessage}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-3 flex-shrink-0">
