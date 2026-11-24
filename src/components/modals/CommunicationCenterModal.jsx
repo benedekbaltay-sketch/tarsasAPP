@@ -764,32 +764,12 @@ export function CommunicationCenterModal({
                               <h3 className="text-sm sm:text-base font-bold text-gray-900 font-display">
                                 {ruleName}
                               </h3>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                rule.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'
-                              }`}>
-                                {rule.enabled ? (isEn ? "ACTIVE" : "AKTÍV") : (isEn ? "PAUSED" : "KIKAPCSOLVA")}
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-[#1E3A8A] text-[10px] font-bold border border-blue-200">
-                                🏢 {rule.buildingId === 'all' ? (isEn ? "All Buildings" : "Minden ház") : (bObj?.officialName || bObj?.name || 'Társasház')}
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 text-[10px] font-bold border border-amber-200">
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 text-[10px] font-bold border border-amber-200">
                                 ⏰ {t.comm_rule_schedule_chip ? t.comm_rule_schedule_chip.replace('{day}', rule.checkDayOfMonth || 15).replace('{time}', rule.dispatchTime || '08:00') : (isEn ? `Every month ${rule.checkDayOfMonth || 15}th – ${rule.dispatchTime || '08:00'}` : `Minden hó ${rule.checkDayOfMonth || 15}. – ${rule.dispatchTime || '08:00'}`)}
                               </span>
-                              {rule.lastAutoDispatchedDate && (
-                                <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[10px] font-medium border border-gray-200">
-                                  ✓ {t.comm_rule_last_run ? t.comm_rule_last_run.replace('{date}', rule.lastAutoDispatchedDate) : (isEn ? `Last run: ${rule.lastAutoDispatchedDate}` : `Utolsó kiküldés: ${rule.lastAutoDispatchedDate}`)}
-                                </span>
-                              )}
-                              {rule.sendEmail !== false && (
-                                <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 text-[10px] font-bold border border-sky-200">
-                                  ✉️ {isEn ? "Email" : "E-mail"}
-                                </span>
-                              )}
-                              {rule.sendInApp !== false && (
-                                <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 text-[10px] font-bold border border-purple-200">
-                                  🔔 {isEn ? "In-App" : "App értesítés"}
-                                </span>
-                              )}
+                              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-[#1E3A8A] text-[10px] font-bold border border-blue-200">
+                                🏢 {rule.buildingId === 'all' ? (isEn ? "All Buildings" : "Minden ház") : (bObj?.officialName || bObj?.name || 'Társasház')}
+                              </span>
                             </div>
                             {ruleDesc && (
                               <p className="text-xs text-gray-500">

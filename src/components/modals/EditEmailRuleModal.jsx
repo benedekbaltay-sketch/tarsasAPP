@@ -455,16 +455,49 @@ export function EditEmailRuleModal({
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-gray-500" />
-                      <span>{t.comm_rule_dispatch_time_label || (isEn ? "Exact Dispatch Time" : "Kiküldés pontos ideje")}</span>
+                      <span>{t.comm_rule_dispatch_time_label || (isEn ? "Exact Dispatch Time (24h)" : "Kiküldés pontos ideje (24 órás)")}</span>
                     </label>
-                    <input
-                      type="time"
-                      value={dispatchTime}
-                      onChange={(e) => setDispatchTime(e.target.value)}
-                      className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
-                    />
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex-1">
+                        <select
+                          value={(() => {
+                            const [h] = (dispatchTime || '08:00').split(':');
+                            return h !== undefined ? String(Number(h)).padStart(2, '0') : '08';
+                          })()}
+                          onChange={(e) => {
+                            const [, m] = (dispatchTime || '08:00').split(':');
+                            const minutePart = m !== undefined ? String(Number(m)).padStart(2, '0') : '00';
+                            setDispatchTime(`${e.target.value}:${minutePart}`);
+                          }}
+                          className="w-full px-2 py-1.5 text-xs font-bold border border-gray-200 rounded-xl bg-white focus:outline-none cursor-pointer text-center"
+                        >
+                          {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => (
+                            <option key={h} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <span className="font-extrabold text-gray-400 text-sm">:</span>
+                      <div className="flex-1">
+                        <select
+                          value={(() => {
+                            const [, m] = (dispatchTime || '08:00').split(':');
+                            return m !== undefined ? String(Number(m)).padStart(2, '0') : '00';
+                          })()}
+                          onChange={(e) => {
+                            const [h] = (dispatchTime || '08:00').split(':');
+                            const hourPart = h !== undefined ? String(Number(h)).padStart(2, '0') : '08';
+                            setDispatchTime(`${hourPart}:${e.target.value}`);
+                          }}
+                          className="w-full px-2 py-1.5 text-xs font-bold border border-gray-200 rounded-xl bg-white focus:outline-none cursor-pointer text-center"
+                        >
+                          {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')).map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                     <span className="text-[10px] text-gray-400 mt-0.5 block">
-                      {t.comm_rule_dispatch_time_hint || (isEn ? "Europe/Budapest timezone" : "Europe/Budapest idő szerint")}
+                      {t.comm_rule_dispatch_time_hint || (isEn ? "24-hour format (e.g. 08:00, 14:30)" : "24 órás formátum (pl. 08:00, 14:30)")}
                     </span>
                   </div>
 
