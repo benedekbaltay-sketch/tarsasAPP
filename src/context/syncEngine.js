@@ -334,19 +334,42 @@ export function mergeStateWithCloud(local, cloud) {
   );
   const localNotifMap = new Map(ensureArray(local.notifications).filter(n => n?.id).map(n => [String(n.id), n]));
   const cloudNotifMap = new Map(ensureArray(cloud.notifications).filter(n => n?.id).map(n => [String(n.id), n]));
-  merged.notifications = rawMergedNotifs.map(n => {
-    const ln = localNotifMap.get(String(n.id));
-    const cn = cloudNotifMap.get(String(n.id));
-    return {
-      ...n,
-      read: Boolean(n.read || ln?.read || cn?.read),
-      dismissed: Boolean(n.dismissed || ln?.dismissed || cn?.dismissed),
-    };
-  });
+  const seenNotifDedupeKeys = new Set();
+  merged.notifications = rawMergedNotifs
+    .map(n => {
+      const ln = localNotifMap.get(String(n.id));
+      const cn = cloudNotifMap.get(String(n.id));
+      return {
+        ...n,
+        read: Boolean(n.read || ln?.read || cn?.read),
+        dismissed: Boolean(n.dismissed || ln?.dismissed || cn?.dismissed),
+      };
+    })
+    .filter(n => {
+      if (!n) return false;
+      // Deduplicate identical alerts for the same recipient, building, title and date
+      const dayStr = (n.createdAt || '').slice(0, 10);
+      const key = `${n.type || 'info'}_${n.buildingId || ''}_${n.titleHu || n.titleEn || ''}_${n.recipientEmail || ''}_${dayStr}`;
+      if (seenNotifDedupeKeys.has(key)) return false;
+      seenNotifDedupeKeys.add(key);
+      return true;
+    });
 
   // 8. Merge email dunning rules (authoritative cloud wins when cloud is authoritative; deletedIds tombstone enforced)
   const cloudRules = Array.isArray(cloud.emailRules) ? cloud.emailRules : null;
   const localRules = Array.isArray(local.emailRules) ? local.emailRules : null;
+
+  if (cloudRules && localRules) {
+    // Preserve local lastAutoDispatchedDate so cloud sync never rolls back dispatch state
+    cloudRules.forEach(cr => {
+      const lr = localRules.find(r => r && r.id === cr.id);
+      if (lr && lr.lastAutoDispatchedDate && (!cr.lastAutoDispatchedDate || lr.lastAutoDispatchedDate >= cr.lastAutoDispatchedDate)) {
+        cr.lastAutoDispatchedDate = lr.lastAutoDispatchedDate;
+        cr.lastAutoDispatchedAt = lr.lastAutoDispatchedAt || cr.lastAutoDispatchedAt;
+        cr.lastAutoDispatchedCount = lr.lastAutoDispatchedCount !== undefined ? lr.lastAutoDispatchedCount : cr.lastAutoDispatchedCount;
+      }
+    });
+  }
 
   let mergedRules;
   if (isCloudAuthoritative && cloudRules !== null) {
