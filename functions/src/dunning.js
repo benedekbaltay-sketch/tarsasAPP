@@ -108,7 +108,7 @@ export const scheduledDailyDunningEmails = onSchedule(
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({
-                    from: 'TarsasApp <onboarding@resend.dev>',
+                    from: 'HazApp <ertesito@mail.hazapp.hu>',
                     to: [flatEmail],
                     subject,
                     text: body,

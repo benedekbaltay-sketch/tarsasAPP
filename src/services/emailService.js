@@ -41,7 +41,7 @@ export function resolveEffectiveEmailSettings(customSettings = {}) {
 
   const apiKey = String(customSettings?.apiKey || envResendKey || '').trim();
   const senderName = String(customSettings?.senderName || 'TarsasApp').trim();
-  const senderEmail = String(customSettings?.senderEmail || '').trim();
+  const senderEmail = String(customSettings?.senderEmail || 'ertesito@mail.hazapp.hu').trim();
 
   return {
     isConfigured: Boolean(apiKey),
@@ -79,10 +79,10 @@ export async function sendTransactionalEmail({
     ? normalizeEmail(replyTo)
     : undefined;
 
-  const cleanSenderName = String(senderName || 'TarsasApp').trim();
+  const cleanSenderName = String(senderName || 'HazApp').trim();
   const fromAddress = from && from.includes('@')
     ? (from.includes('<') ? from : `${cleanSenderName} <${from}>`)
-    : `${cleanSenderName} <onboarding@resend.dev>`;
+    : `${cleanSenderName} <ertesito@mail.hazapp.hu>`;
 
   const payload = {
     from: fromAddress,
