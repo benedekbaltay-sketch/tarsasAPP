@@ -112,6 +112,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         const newRule = {
           ...ruleData,
           id: ruleData.id || `rule-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          lastAutoDispatchedDate: isTargetTimePastToday ? todayScheduleStr : null,
           createdAt: new Date().toISOString()
         };
         updatedRules = [newRule, ...currentRules];

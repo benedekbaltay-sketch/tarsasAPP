@@ -609,6 +609,12 @@ test('19. shouldRuleAutoDispatchToday blocks execution before 08:00 AM, matches 
   // At 16:00 Budapest -> MUST run if not yet dispatched
   const time1600 = new Date('2026-11-24T15:00:00Z');
   assert.equal(shouldRuleAutoDispatchToday(ruleAfternoon, { currentDate: time1600 }), true);
+
+  // 8. Day 1 rule tested on Day 24 -> must NEVER run on Day 24
+  const ruleDay1 = { ...sampleRule, checkDayOfMonth: 1, dispatchTime: '08:00' };
+  assert.equal(shouldRuleAutoDispatchToday(ruleDay1, { currentDate: time800 }), false);
+  assert.equal(shouldRuleAutoDispatchToday(ruleDay1, { currentDate: time1430 }), false);
+  assert.equal(shouldRuleAutoDispatchToday(ruleDay1, { currentDate: time1600 }), false);
 });
 
 test('20. evaluateRulesForAutoDispatch and executeAutomatedDunningDailyCheck automatically process due rules, mark lastAutoDispatchedDate, and log to outbox', async () => {
