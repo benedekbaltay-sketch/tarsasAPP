@@ -80,10 +80,10 @@ export async function sendTransactionalEmail({
     ? normalizeEmail(replyTo)
     : undefined;
 
-  const cleanSenderName = String(senderName || 'HazApp').trim();
+  const cleanSenderName = String(senderName || (isEn ? 'Property Management' : 'Közös Képviselet')).trim();
   const fromAddress = from && from.includes('@')
     ? (from.includes('<') ? from : `${cleanSenderName} <${from}>`)
-    : `${cleanSenderName} <ertesito@mail.hazapp.hu>`;
+    : `${cleanSenderName} <kozoskepviselet@mail.hazapp.hu>`;
 
   const payload = {
     from: fromAddress,
@@ -279,9 +279,7 @@ export async function sendResidentCustomNoticeEmail({
           </tr>
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f9fafb; padding: 20px 32px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
-              <p style="margin: 0 0 4px 0;"><strong>${buildingName}</strong></p>
-              ${targetBuilding?.address ? `<p style="margin: 0 0 4px 0;">${targetBuilding.address}</p>` : ''}
+            <td style="background-color: #f9fafb; padding: 18px 32px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280;">
               ${dynamicReplyTo ? `<p style="margin: 0;">${isEn ? 'Direct reply to:' : 'Válasz közvetlenül ide:'} <a href="mailto:${dynamicReplyTo}" style="color: #1E3A8A; font-weight: 600;">${dynamicReplyTo}</a></p>` : ''}
             </td>
           </tr>
@@ -293,7 +291,7 @@ export async function sendResidentCustomNoticeEmail({
 </html>
   `.trim();
 
-  const textBody = `${isEn ? 'Official Management Notice' : 'Hivatalos Közös Képviseleti Tájékoztató'}: ${subject}\n\n${includeGreeting ? `${greeting}\n\n` : ''}${messageBody}\n\n---\n${buildingName}\n${dynamicReplyTo ? `Reply-To: ${dynamicReplyTo}` : ''}`;
+  const textBody = `${isEn ? 'Official Management Notice' : 'Hivatalos Közös Képviseleti Tájékoztató'}: ${subject}\n\n${includeGreeting ? `${greeting}\n\n` : ''}${messageBody}${dynamicReplyTo ? `\n\n---\n${isEn ? 'Direct reply to:' : 'Válasz közvetlenül ide:'} ${dynamicReplyTo}` : ''}`;
 
   return sendTransactionalEmail({
     to: recipientEmail,
@@ -302,7 +300,7 @@ export async function sendResidentCustomNoticeEmail({
     text: textBody,
     from: effective.senderEmail,
     replyTo: dynamicReplyTo,
-    senderName: effective.senderName || buildingName || 'TarsasApp',
+    senderName: effective.senderName || (isEn ? 'Property Management' : 'Közös Képviselet'),
     apiKey: effective.apiKey,
   });
 }

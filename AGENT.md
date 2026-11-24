@@ -716,7 +716,9 @@ A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhe
    - A válaszcím (`Reply-To`) dinamikusan a társasház képviselőjének közvetlen e-mail címe, így a lakók válaszai nem vesznek el.
    - **Valódi Kiküldés Gomb**: A Kommunikációs Központban a szabályok azonnal elindíthatók a "Kiküldés most" gombbal (nem csak szimulációként), ami valós e-maileket küld ki és `sent` státusszal jegyzi be a kiküldési naplóba.
    - **Azonnali Optimista Levélküldési Felület**: A "+ Új levél írása" gomb megnyomásakor a felugró ablak azonnal bezáródik, és a felhasználó átvált az Outbox naplóra, miközben a küldés párhuzamosan a háttérben fut, kiküszöbölve a betöltési várakozást.
-   - **Letisztult E-mail Sablon**: Az e-mail tetején lévő kék fejléc kizárólag a hivatalos "Hivatalos Közös Képviseleti Tájékoztató" feliratot tartalmazza, elkerülve a felesleges épületnév- és megszólítás-duplikációt.
+   - **Letisztult E-mail Sablon**: Az e-mail tetején lévő kék fejléc kizárólag a hivatalos "Hivatalos Közös Képviseleti Tájékoztató" feliratot tartalmazza, elkerülve a felesleges épületnév- és megszólítás-duplikációt. A levél láblécéből szintén kikerült a felesleges épületnév és cím is, így kizárólag a közvetlen válaszadási e-mail link szerepel benne.
+   - **Kézbesítés és Feladó Cím Frissítés (`kozoskepviselet@mail.hazapp.hu`)**: A korábbi `ertesito@mail.hazapp.hu` helyett `kozoskepviselet@mail.hazapp.hu` címet és `Közös Képviselet` megjelenített nevet állítottunk be feladóként mind a Cloud Functions-ben (`functions/src/dunning.js`), mind a kliensoldali `emailService.js`-ben, megelőzve, hogy a Gmail automatikus gépértesítőként a "Frissítések" fülre tegye a leveleket.
+   - **Adminisztrátori Felület Letisztítás**: Az elmaradások (Arrears) KPI kártyáján lévő "+ Új tétel rögzítése" gomb mellől eltávolításra került a redundáns "Naptár" gomb, a rögzítés gomb pedig teljes szélességű lett (`src/views/AdminView.jsx`).
 
 
 ---

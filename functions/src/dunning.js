@@ -120,7 +120,7 @@ export const scheduledDailyDunningEmails = onSchedule(
             if (shouldSendEmail && resendKey && flatEmail && flatEmail.includes('@')) {
               try {
                 const mailPayload = {
-                  from: 'HazApp <ertesito@mail.hazapp.hu>',
+                  from: 'Közös Képviselet <kozoskepviselet@mail.hazapp.hu>',
                   to: [flatEmail],
                   subject,
                   text: body,
@@ -240,10 +240,10 @@ export const sendTransactionalEmail = onCall(
       throw new HttpsError('failed-precondition', 'Nincs beállítva szerveroldali RESEND_API_KEY.');
     }
 
-    const cleanSenderName = String(senderName || 'HazApp').trim();
+    const cleanSenderName = String(senderName || 'Közös Képviselet').trim();
     const fromAddress = from && from.includes('@')
       ? (from.includes('<') ? from : `${cleanSenderName} <${from}>`)
-      : `${cleanSenderName} <ertesito@mail.hazapp.hu>`;
+      : `${cleanSenderName} <kozoskepviselet@mail.hazapp.hu>`;
 
     const payload = {
       from: fromAddress,

@@ -345,26 +345,14 @@ export function AdminView({
             </span>
           </div>
 
-          <div className="border-t border-gray-100 pt-3.5 mt-3.5 flex items-center gap-2">
+          <div className="border-t border-gray-100 pt-3.5 mt-3.5">
             {!isEffectiveReadOnly && onOpenAddTransaction && (
               <button
                 onClick={() => onOpenAddTransaction()}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-[#1E3A8A] hover:bg-[#1e40af] text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>{isEn ? "+ Record New Item" : "+ Új tétel rögzítése"}</span>
-              </button>
-            )}
-            {onOpenCalendar && (
-              <button
-                onClick={onOpenCalendar}
-                className={`flex items-center justify-center gap-1.5 py-2.5 px-3 bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] font-bold text-xs rounded-xl border border-blue-200 transition-all cursor-pointer ${
-                  isEffectiveReadOnly ? 'w-full' : ''
-                }`}
-                title={isEn ? "Building Calendar & Deadlines" : "Ház naptára és eseményei"}
-              >
-                <Calendar className="w-4 h-4" />
-                <span>{isEn ? "Calendar" : "Naptár"}</span>
               </button>
             )}
           </div>

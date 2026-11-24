@@ -187,7 +187,8 @@ test('6. sendResidentCustomNoticeEmail builds branded HTML, dynamic reply_to and
     assert.deepEqual(capturedBody.to, ['lako12@batyu.hu']);
     assert.equal(capturedBody.subject, 'Fontos felújítási tájékoztató');
     assert.equal(capturedBody.reply_to, 'kk@batyu21.hu');
-    assert.ok(capturedBody.html.includes('Batyu u. 21.'));
+    assert.ok(capturedBody.html.includes('kk@batyu21.hu'));
+    assert.ok(!capturedBody.html.includes('<strong>Batyu u. 21.</strong>'));
     assert.ok(capturedBody.html.includes('Kovács János'));
     assert.ok(capturedBody.html.includes('12. lakás'));
     assert.ok(capturedBody.html.includes('liftjavítás'));
