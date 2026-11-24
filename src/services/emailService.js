@@ -15,6 +15,8 @@ import {
   resolveBuildingResidentContact,
   normalizeEmail,
 } from '../utils/teamPermissions.js';
+import { httpsCallable } from 'firebase/functions';
+import { getFirebaseInstance } from '../constants/firebaseConfig.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -40,11 +42,15 @@ export function resolveEffectiveEmailSettings(customSettings = {}) {
     : '';
 
   const apiKey = String(customSettings?.apiKey || envResendKey || '').trim();
-  const senderName = String(customSettings?.senderName || 'TarsasApp').trim();
+  const senderName = String(customSettings?.senderName || 'HazApp').trim();
   const senderEmail = String(customSettings?.senderEmail || 'ertesito@mail.hazapp.hu').trim();
 
+  // In the browser runtime, Firebase Cloud Functions executes transactional emails server-side.
+  const isBrowser = typeof window !== 'undefined';
+  const isConfigured = Boolean(apiKey || isBrowser);
+
   return {
-    isConfigured: Boolean(apiKey),
+    isConfigured,
     provider: 'resend',
     apiKey,
     senderName,
@@ -70,11 +76,6 @@ export async function sendTransactionalEmail({
     return { success: false, error: 'invalid-recipient', message: 'Érvénytelen címzett e-mail cím.' };
   }
 
-  const cleanApiKey = String(apiKey || '').trim();
-  if (!cleanApiKey) {
-    return { success: false, error: 'missing-api-key', message: 'Nincs beállítva központi Resend API kulcs.' };
-  }
-
   const cleanReplyTo = replyTo && EMAIL_RE.test(normalizeEmail(replyTo))
     ? normalizeEmail(replyTo)
     : undefined;
@@ -87,12 +88,39 @@ export async function sendTransactionalEmail({
   const payload = {
     from: fromAddress,
     to: [cleanTo],
-    subject: subject || 'TarsasApp értesítés',
+    subject: subject || 'HazApp értesítés',
     html: html || '',
     text: text || '',
   };
   if (cleanReplyTo) {
     payload.reply_to = cleanReplyTo;
+  }
+
+  // 1. Try Firebase Callable Cloud Function (executes server-side on Google Cloud, no browser CORS/CSP blocks)
+  try {
+    const { functions } = getFirebaseInstance();
+    if (functions) {
+      const fn = httpsCallable(functions, 'sendTransactionalEmail');
+      const res = await fn(payload);
+      if (res?.data?.success) {
+        return { success: true, messageId: res.data.messageId, provider: 'resend', replyTo: cleanReplyTo };
+      }
+      if (res?.data && res.data.success === false) {
+        return { success: false, error: res.data.error || 'resend-failed', message: res.data.message || 'Hiba a levélküldéskor.' };
+      }
+    }
+  } catch (fnErr) {
+    console.warn('[sendTransactionalEmail] Cloud Function attempt notice:', fnErr?.message);
+    // If running in browser without local API key, return the function error message
+    if (!apiKey && !(typeof import.meta !== 'undefined' && import.meta.env?.VITE_RESEND_API_KEY)) {
+      return { success: false, error: 'cloud-function-failed', message: fnErr?.message || 'Hiba a levélküldéskor.' };
+    }
+  }
+
+  // 2. Direct fetch fallback (for unit tests / Node.js test runners)
+  const cleanApiKey = String(apiKey || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_RESEND_API_KEY) || '').trim();
+  if (!cleanApiKey) {
+    return { success: false, error: 'missing-api-key', message: 'Nincs beállítva központi Resend API kulcs.' };
   }
 
   try {

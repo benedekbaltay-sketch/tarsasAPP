@@ -81,6 +81,7 @@ export function CommunicationCenterModal({
     queueOutboxItems,
     clearOutboxItems,
     sendCustomResidentNotice,
+    executeAutomatedDunningDailyCheck,
     showToast
   } = useApp();
 
@@ -119,6 +120,7 @@ export function CommunicationCenterModal({
   const [composeSendEmail, setComposeSendEmail] = useState(true);
   const [composeSendInApp, setComposeSendInApp] = useState(true);
   const [isSendingNotice, setIsSendingNotice] = useState(false);
+  const [isDispatchingRuleId, setIsDispatchingRuleId] = useState(null);
   const [showRecipientList, setShowRecipientList] = useState(false);
   const [showLivePreview, setShowLivePreview] = useState(false);
 
@@ -295,7 +297,7 @@ export function CommunicationCenterModal({
     });
   }, [emailOutbox, searchQuery]);
 
-  const handleSimulateRuleDispatch = (rule) => {
+  const handleSimulateRuleDispatch = async (rule, { sendReal = true } = {}) => {
     if (!canManageAnyBuilding) {
       showToast(t.comm_viewer_action_blocked || (isEn ? "Action blocked: Viewers cannot trigger notices." : "Művelet megtagadva: Megtekintők nem futtathatnak felszólításokat."), "error");
       return;
@@ -303,6 +305,28 @@ export function CommunicationCenterModal({
     const matches = runDunningDryRun(rule, buildings || [], {}, { isEn, repProfile });
     if (matches.length === 0) {
       showToast(isEn ? "No units currently match this rule condition." : "Jelenleg egyetlen lakás sem felel meg a szabály feltételeinek.", "info");
+      return;
+    }
+
+    if (sendReal && executeAutomatedDunningDailyCheck) {
+      setIsDispatchingRuleId(rule.id);
+      try {
+        const result = await executeAutomatedDunningDailyCheck({ forceRuleId: rule.id });
+        if (result?.ran) {
+          showToast(isEn 
+            ? `Successfully dispatched notices to ${result.totalSent || matches.length} units!` 
+            : `Sikeresen kiküldve ${result.totalSent || matches.length} érintett lakásnak!`, "success");
+        } else if (result?.reason === 'no-matching-flats') {
+          showToast(isEn ? "No units match this rule condition." : "Jelenleg egyetlen lakás sem felel meg a feltételeknek.", "info");
+        } else {
+          showToast(isEn ? "Notices processed and logged." : "Értesítők feldolgozva és naplózva.", "info");
+        }
+      } catch (err) {
+        console.error('Error dispatching rule:', err);
+        showToast(err?.message || (isEn ? "Error dispatching notices." : "Hiba a levelek kiküldésekor."), "error");
+      } finally {
+        setIsDispatchingRuleId(null);
+      }
       return;
     }
 
@@ -816,12 +840,17 @@ export function CommunicationCenterModal({
                             {canManageAnyBuilding && (
                               <button
                                 type="button"
-                                onClick={() => handleSimulateRuleDispatch(rule)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
-                                title={isEn ? "Generate and queue notices to Outbox log" : "Felszólítások bejegyzése a kiküldési naplóba"}
+                                disabled={isDispatchingRuleId === rule.id}
+                                onClick={() => handleSimulateRuleDispatch(rule, { sendReal: true })}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                                title={t.comm_dispatch_now_desc || (isEn ? "Execute rule now and send real emails" : "Szabály azonnali futtatása és e-mailek valós kiküldése")}
                               >
                                 <Play className="w-3.5 h-3.5 text-emerald-700" />
-                                <span>{isEn ? "Queue to Outbox" : "Naplóba küldés"}</span>
+                                <span>
+                                  {isDispatchingRuleId === rule.id 
+                                    ? (t.comm_dispatching || (isEn ? "Dispatching..." : "Kiküldés...")) 
+                                    : (t.comm_dispatch_now || (isEn ? "Dispatch Now" : "Kiküldés most"))}
+                                </span>
                               </button>
                             )}
                           </div>
@@ -1612,15 +1641,21 @@ export function CommunicationCenterModal({
               {canManageAnyBuilding && (
                 <button
                   type="button"
-                  onClick={() => {
-                    handleSimulateRuleDispatch(ruleDryRunTarget);
+                  disabled={isDispatchingRuleId === ruleDryRunTarget.id}
+                  onClick={async () => {
+                    const target = ruleDryRunTarget;
                     setRuleDryRunTarget(null);
+                    await handleSimulateRuleDispatch(target, { sendReal: true });
                     setActiveTab('outbox');
                   }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Play className="w-3.5 h-3.5" />
-                  <span>{isEn ? "Queue All to Outbox" : "Mind bejegyzése a naplóba"}</span>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>
+                    {isDispatchingRuleId === ruleDryRunTarget.id
+                      ? (t.comm_dispatching || (isEn ? "Dispatching..." : "Kiküldés..."))
+                      : (isEn ? "Dispatch to All Matching Units Now" : "Valódi kiküldés az érintett lakásoknak")}
+                  </span>
                 </button>
               )}
             </div>

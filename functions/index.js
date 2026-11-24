@@ -13,7 +13,7 @@ if (!getApps().length) {
 
 export { mutateTransaction, calibrateBuildingBalances } from './src/transactions.js';
 export { scheduledMonthlyAssessments, triggerMonthlyAssessments } from './src/assessments.js';
-export { scheduledDailyDunningEmails } from './src/dunning.js';
+export { scheduledDailyDunningEmails, sendTransactionalEmail } from './src/dunning.js';
 export { provisionBuilding, manageBuildingMember, manageUnitLifecycle } from './src/members.js';
 export { mutateLoan } from './src/loans.js';
 export {

@@ -706,13 +706,16 @@ A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhe
      - `functions/src/dunning.js`: A Cloud Functions ütemező 15 percenként fut (`schedule: 'every 15 minutes'`), így bármilyen napszakban beállított szabályok automatikusan lefutnak.
      - `src/context/AppContext.jsx`: A kliensoldali 60 másodperces ellenőrző ciklus azonnal elindítja a kiküldést, amint a böngésző nyitva van és a megadott perc elérkezik.
    - **Felhasználói Felület (`EditEmailRuleModal.jsx`, `CommunicationCenterModal.jsx`)**:
-     - Modern `<input type="time" ... />` időválasztó mező és 4 oszlopos reszponzív rács.
-     - A szabálykártyákon a chip mostantól a pontos időt jeleníti meg: `Minden hó {day}. – {time} (automatikusan)`.
-     - Kétnyelvű támogatás (`comm_rule_dispatch_time_label`, `comm_rule_dispatch_time_hint`) magyar és angol nyelven.
+     - Szigorúan 24-órás, két független `<select>` mezőből álló időválasztó (Óra: 00–23, Perc: 00–59), kiküszöbölve a böngészők angol nyelvű AM/PM formátumát.
+     - A szabálykártyákon letisztult fejléc: a felesleges "aktív", "utolsó kiküldés" és csatorna jelvények helyén közvetlenül az ütemezés látható: `⏰ Minden hó {day}. – {time} (automatikusan)` és az épület chipje.
+     - Kétnyelvű támogatás (`comm_rule_dispatch_time_label`, `comm_rule_dispatch_time_hint`, `comm_dispatch_now`) magyar és angol nyelven.
 
-2. **Resend Hitelesített Domain Integráció (`mail.hazapp.hu`)**:
-   - Feladó: `HazApp <ertesito@mail.hazapp.hu>`, DKIM/SPF/DMARC rekordokkal hitelesítve.
-   - A válaszcím (`Reply-To`) továbbra is dinamikusan a társasház képviselőjének közvetlen e-mail címe, így a lakók válaszai nem vesznek el.
+2. **Resend Hitelesített Domain Integráció (`mail.hazapp.hu`) & Serverless Cloud Functions**:
+   - Feladó: `HazApp <ertesito@mail.hazapp.hu>`, DKIM/SPF/DMARC rekordokkal hitelesítve a Rackhost DNS-ben.
+   - **CORS és Biztonsági Védelem**: A Resend API nem engedélyezi a közvetlen böngészőből történő hívást (CORS hiba / `Failed to fetch`). Ennek elhárítására egy Firebase Callable Cloud Function (`sendTransactionalEmail`, europe-west1) végzi a levelek szerveroldali kiküldését, titkosítva tárolt `RESEND_API_KEY` környezeti változóval.
+   - A válaszcím (`Reply-To`) dinamikusan a társasház képviselőjének közvetlen e-mail címe, így a lakók válaszai nem vesznek el.
+   - **Valódi Kiküldés Gomb**: A Kommunikációs Központban a szabályok azonnal elindíthatók a "Kiküldés most" gombbal (nem csak szimulációként), ami valós e-maileket küld ki és `sent` státusszal jegyzi be a kiküldési naplóba.
+
 
 ---
 

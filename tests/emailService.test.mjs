@@ -14,7 +14,7 @@ test('1. resolveEffectiveEmailSettings defaults strictly to Resend provider', ()
   assert.equal(resolved.isConfigured, false);
   assert.equal(resolved.provider, 'resend');
   assert.equal(resolved.apiKey, '');
-  assert.equal(resolved.senderName, 'TarsasApp');
+  assert.equal(resolved.senderName, 'HazApp');
 });
 
 test('2. resolveBuildingResidentEmail dynamically extracts building resident contact email', () => {

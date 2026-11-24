@@ -978,6 +978,10 @@ export const translations = {
     comm_channel_inapp_title: "Appon belüli értesítés",
     comm_channel_inapp_desc: "Belső rendszerértesítés a lakói portál vezérlőpultján.",
     comm_channel_none_warning: "Figyelem: Kérlek válassz legalább egy csatornát (E-mail vagy Appon belüli értesítés)!",
+    comm_dispatch_now: "Kiküldés most",
+    comm_dispatch_now_desc: "Szabály azonnali futtatása és e-mailek valós kiküldése",
+    comm_dispatching: "Kiküldés...",
+    comm_dispatch_confirm: "Valóban ki szeretnéd küldeni a felszólításokat az érintett lakásoknak most?",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Csapat & Jogosultságok",
     team_modal_subtitle: "Munkatársak e-mail csatolása, társasházak kiosztása és jogosultságok kezelése.",
@@ -2139,6 +2143,10 @@ export const translations = {
     comm_channel_inapp_title: "In-App Notification",
     comm_channel_inapp_desc: "Displays an alert banner on the resident portal dashboard.",
     comm_channel_none_warning: "Warning: Please select at least one delivery channel (Email or In-App)!",
+    comm_dispatch_now: "Dispatch Now",
+    comm_dispatch_now_desc: "Execute rule now and send real emails",
+    comm_dispatching: "Dispatching...",
+    comm_dispatch_confirm: "Are you sure you want to dispatch notices to all matching units now?",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Team & Access Permissions",
     team_modal_subtitle: "Attach colleagues by email, assign condominiums, and manage security permissions.",

@@ -7,6 +7,7 @@
  */
 
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getDatabase } from 'firebase-admin/database';
 import { getFirestore } from 'firebase-admin/firestore';
 
@@ -206,6 +207,77 @@ export const scheduledDailyDunningEmails = onSchedule(
       console.log(`[scheduledDailyDunningEmails] Finished. ${newOutboxEntries.length} notices logged.`);
     } catch (err) {
       console.error('[scheduledDailyDunningEmails] Execution failed:', err);
+    }
+  }
+);
+
+/**
+ * Callable Cloud Function: sendTransactionalEmail
+ * Sends a transactional email securely from Google Cloud via Resend API,
+ * bypassing client-side browser CORS restrictions and keeping API keys secure.
+ */
+export const sendTransactionalEmail = onCall(
+  {
+    region: 'europe-west1',
+    cors: true,
+  },
+  async (request) => {
+    const { to, subject, html, text, from, replyTo, senderName } = request.data || {};
+
+    const cleanTo = Array.isArray(to) ? to[0] : to;
+    if (!cleanTo || typeof cleanTo !== 'string' || !cleanTo.includes('@')) {
+      throw new HttpsError('invalid-argument', 'Érvénytelen címzett e-mail cím.');
+    }
+
+    const resendKey = (process.env.RESEND_API_KEY || '').trim();
+    if (!resendKey) {
+      throw new HttpsError('failed-precondition', 'Nincs beállítva szerveroldali RESEND_API_KEY.');
+    }
+
+    const cleanSenderName = String(senderName || 'HazApp').trim();
+    const fromAddress = from && from.includes('@')
+      ? (from.includes('<') ? from : `${cleanSenderName} <${from}>`)
+      : `${cleanSenderName} <ertesito@mail.hazapp.hu>`;
+
+    const payload = {
+      from: fromAddress,
+      to: [cleanTo.trim()],
+      subject: subject || 'HazApp értesítés',
+      html: html || '',
+      text: text || '',
+    };
+    if (replyTo && typeof replyTo === 'string' && replyTo.includes('@')) {
+      payload.reply_to = replyTo.trim();
+    }
+
+    try {
+      const resp = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data?.id) {
+        return { success: true, messageId: data.id, provider: 'resend' };
+      }
+
+      console.warn('[sendTransactionalEmail] Resend API error:', resp.status, data);
+      return {
+        success: false,
+        error: data?.name || 'resend-error',
+        message: data?.message || `Resend HTTP ${resp.status}`,
+      };
+    } catch (err) {
+      console.error('[sendTransactionalEmail] Network exception:', err);
+      return {
+        success: false,
+        error: 'network-error',
+        message: err.message,
+      };
     }
   }
 );

@@ -420,11 +420,11 @@ export function createEmailActions(optionsOrState, maybeSetState) {
 
   const executeAutomatedDunningDailyCheck = async (options = {}) => {
     // 1. In-memory mutex & rate-limit check (cannot run concurrently or within 30s)
-    if (isAutoDunningChecking && !options.testDate) {
+    if (isAutoDunningChecking && !options.testDate && !options.forceRuleId) {
       return { ran: false, reason: 'already-checking' };
     }
     const nowMs = Date.now();
-    if (!options.testDate && nowMs - lastAutoDunningCheckTimestamp < 30000) {
+    if (!options.testDate && !options.forceRuleId && nowMs - lastAutoDunningCheckTimestamp < 30000) {
       return { ran: false, reason: 'rate-limited' };
     }
 
@@ -444,35 +444,56 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         ? curState.emailRules
         : DEFAULT_DUNNING_RULES;
 
-      const evaluation = evaluateRulesForAutoDispatch(
-        currentRules,
-        curState.buildings || [],
-        {
+      let effectiveDueResults = [];
+
+      if (options.forceRuleId) {
+        const targetRule = currentRules.find(r => r.id === options.forceRuleId);
+        if (!targetRule) {
+          return { ran: false, reason: 'rule-not-found' };
+        }
+        const now = options.testDate || new Date();
+        const { dateStr } = getBudapestTimeParts(now);
+        const matches = runDunningDryRun(targetRule, curState.buildings || [], {}, {
           isEn: isEn(),
           repProfile: curState.repProfile,
-          currentDate: options.testDate || new Date(),
+          currentDate: now,
           history: curState.emailOutbox || []
+        });
+        if (matches.length === 0) {
+          return { ran: false, reason: 'no-matching-flats' };
         }
-      );
-
-      if (!evaluation.shouldRun) {
-        return { ran: false, ...evaluation };
-      }
-
-      // 2. Persistent LocalStorage Lock per rule: ensures even if cloud sync overwrites in-memory state,
-      // a rule NEVER fires more than once per calendar day in this browser!
-      const effectiveDueResults = evaluation.resultsByRule.filter(({ rule, dateStr }) => {
-        try {
-          if (typeof localStorage !== 'undefined' && !options.testDate) {
-            const ruleLock = localStorage.getItem(`tarsas_dunning_rule_${rule.id}_${dateStr}`);
-            if (ruleLock === dateStr) return false;
+        effectiveDueResults = [{ rule: targetRule, dateStr, matches }];
+      } else {
+        const evaluation = evaluateRulesForAutoDispatch(
+          currentRules,
+          curState.buildings || [],
+          {
+            isEn: isEn(),
+            repProfile: curState.repProfile,
+            currentDate: options.testDate || new Date(),
+            history: curState.emailOutbox || []
           }
-        } catch (e) {}
-        return true;
-      });
+        );
 
-      if (effectiveDueResults.length === 0) {
-        return { ran: false, reason: 'already-dispatched-today-local' };
+        if (!evaluation.shouldRun) {
+          return { ran: false, ...evaluation };
+        }
+
+        // 2. Persistent LocalStorage Lock per rule: ensures even if cloud sync overwrites in-memory state,
+        // a rule NEVER fires more than once per calendar day in this browser!
+        effectiveDueResults = evaluation.resultsByRule.filter(({ rule, dateStr }) => {
+          try {
+            if (typeof localStorage !== 'undefined' && !options.testDate) {
+              const ruleLock = localStorage.getItem(`tarsas_dunning_rule_${rule.id}_${dateStr}`);
+              if (ruleLock === dateStr) return false;
+            }
+          } catch (e) {}
+          return true;
+        });
+
+        if (effectiveDueResults.length === 0) {
+          return { ran: false, reason: 'already-dispatched-today-local' };
+        }
       }
 
       const newOutboxEntries = [];
