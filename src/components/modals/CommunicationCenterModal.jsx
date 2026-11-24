@@ -772,16 +772,6 @@ export function CommunicationCenterModal({
           {/* TAB 2: AUTOMATED DUNNING & NOTIFICATION RULES */}
           {activeTab === 'rules' && (
             <div className="space-y-4 animate-fadeIn">
-              {!canManageAnyBuilding && (
-                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-3 text-xs text-amber-900 shadow-2xs">
-                  <Eye className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                  <div>
-                    <strong className="block font-bold">{t.comm_viewer_badge || (isEn ? "View-Only Permission" : "Csak megtekintési jogosultság")}</strong>
-                    <span>{t.comm_viewer_banner_rules || (isEn ? "You have view-only access. Automated dunning rules cannot be edited or modified." : "Csak megtekintési jogosultságod van. A felszólítási szabályok nem módosíthatók.")}</span>
-                  </div>
-                </div>
-              )}
-
               {filteredRules.length === 0 ? (
                 <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center text-gray-400 space-y-3">
                   <Settings2 className="w-10 h-10 mx-auto text-gray-300" />

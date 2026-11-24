@@ -792,7 +792,27 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
 
 ---
 
-## 32. Maintenance Checklist for Future Sessions
+## 32. UI és Naptár Finomhangolások (Naptár Eseményszámok, Dunning Nézet & Értesítési Dropdown)
+
+1. **Naptár Napi Nézet Tipp Doboz Eltávolítása és Eseményszám Igazítása (`CalendarModal.jsx`)**:
+   - A napi nézet tetején található zavaró tipp doboz (`💡 Tipp: Dupla kattintással részletek megnyitása`) eltávolításra került.
+   - A napi események száma (`selectedDayEvents.length`) átkerült a társasház-választó mellé egy diszkrét szürke badge-be (`text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md`), pontosan megegyezve a havi és heti nézet stílusával és pozíciójával.
+
+2. **Heti és Havi Nézet Eseményszámításának Pontosítása (`CalendarModal.jsx`)**:
+   - Korábban a fejléc a teljes naptár eseményeinek összegét mutatta (`filteredEvents.length`), emiatt esemény nélküli heteken és hónapokon is pl. "1 esemény" felirat jelent meg.
+   - **Heti nézet (`weekEventsCount`)**: Kiszámítja az aktív hét 7 napjára (hétfőtől vasárnapig) eső események és ismétlődések összegét.
+   - **Havi nézet (`monthEventsCount`)**: Kiszámítja az aktuális hónap napjaira (`calendarGridDays.filter(c => c.isCurrentMonth)`) eső események és ismétlődések összegét.
+
+3. **Felszólítási Szabályok (Dunning) Nézet Csak Megtekintő Sáv Eltávolítása (`CommunicationCenterModal.jsx`)**:
+   - A felesleges, nagy felületet foglaló sárga figyelmeztető doboz (`Csak megtekintési jogosultságod van...`) eltávolításra került a Dunning szabályok fülről.
+   - A jobb felső sarokban található diszkrét `Eye` ("Csak megtekintő") jelvény változatlanul tájékoztatja a felhasználót.
+
+4. **Fejléc Értesítési / Levél Gomb Felugró Ablak Ikon Finomhangolása (`NotificationBell.jsx`)**:
+   - A felugró kis ablak fejlécéből eltávolításra került a jobb felső sarokban lévő egymással ellentétes nyíl (`Maximize2`), így kizárólag a kényelmes alsó "Kommunikációs Központ megnyitása" gomb navigál át a teljes modálba.
+
+---
+
+## 33. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
 1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?

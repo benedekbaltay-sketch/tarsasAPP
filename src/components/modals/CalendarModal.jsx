@@ -814,7 +814,28 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
   };
 
   // Events on the selected day (including matching recurring events)
-  const selectedDayEvents = filteredEvents.filter(ev => isEventOnDate(ev, selectedDayStr));
+  const selectedDayEvents = useMemo(() => {
+    return filteredEvents.filter(ev => isEventOnDate(ev, selectedDayStr));
+  }, [filteredEvents, selectedDayStr]);
+
+  // Events occurring in the active week (Monday to Sunday)
+  const weekEventsCount = useMemo(() => {
+    let count = 0;
+    for (const day of weekDays) {
+      count += filteredEvents.filter(ev => isEventOnDate(ev, day.dateStr)).length;
+    }
+    return count;
+  }, [weekDays, filteredEvents]);
+
+  // Events occurring in the active month (only current month dates)
+  const monthEventsCount = useMemo(() => {
+    let count = 0;
+    const currentMonthDays = calendarGridDays.filter(c => c.isCurrentMonth);
+    for (const cell of currentMonthDays) {
+      count += filteredEvents.filter(ev => isEventOnDate(ev, cell.dateStr)).length;
+    }
+    return count;
+  }, [calendarGridDays, filteredEvents]);
 
   const todayStr = useMemo(() => getBudapestTodayYMD(), [clockSyncTick, isOpen]);
 
@@ -982,6 +1003,10 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
                   </select>
                 </div>
 
+                <div className="text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                  {selectedDayEvents.length} {isEn ? "events" : "esemény"}
+                </div>
+
                 {isAdmin && (
                   <button
                     onClick={() => handleOpenAddEvent(selectedDayStr)}
@@ -994,17 +1019,6 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
                 )}
               </div>
 
-            </div>
-
-            {/* Hint alert */}
-            <div className="bg-blue-50/70 border border-blue-100 rounded-xl px-3.5 py-2 text-xs text-blue-900 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <span className="font-bold">💡 {isEn ? "Tip:" : "Tipp:"}</span>
-                <span>{t.calendar_double_click_hint || (isEn ? "Double-click any event to view details, edit or delete." : "Kattints duplán bármelyik eseményre a részletek megtekintéséhez, szerkesztéséhez vagy törléséhez.")}</span>
-              </span>
-              <span className="font-semibold text-[11px] text-blue-700">
-                {selectedDayEvents.length} {isEn ? "events" : "esemény"}
-              </span>
             </div>
 
             {/* Day Events Container */}
@@ -1205,7 +1219,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
                 </div>
 
                 <div className="text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md whitespace-nowrap">
-                  {filteredEvents.length} {isEn ? "events" : "esemény"}
+                  {weekEventsCount} {isEn ? "events" : "esemény"}
                 </div>
               </div>
             </div>
@@ -1358,7 +1372,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
                 </div>
 
                 <div className="text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md whitespace-nowrap">
-                  {filteredEvents.length} {isEn ? "events" : "esemény"}
+                  {monthEventsCount} {isEn ? "events" : "esemény"}
                 </div>
               </div>
             </div>

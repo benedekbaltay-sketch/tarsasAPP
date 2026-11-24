@@ -138,20 +138,6 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                   <span className="hidden sm:inline">{t.notif_mark_all_read || (isEn ? 'Mark all' : 'Mind olvasott')}</span>
                 </button>
               )}
-              {canOpenCommCenter && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsOpen(false);
-                    onOpenCommunicationCenter();
-                  }}
-                  className="p-1 rounded-lg text-gray-500 hover:text-[#1E3A8A] hover:bg-blue-50 transition-colors cursor-pointer"
-                  title={t.open_communication_center || (isEn ? 'Open Full Communication Center' : 'Kommunikációs Központ megnyitása')}
-                  aria-label={t.open_communication_center || (isEn ? 'Open Full Communication Center' : 'Kommunikációs Központ megnyitása')}
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
           </div>
 
