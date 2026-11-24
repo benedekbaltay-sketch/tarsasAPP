@@ -948,6 +948,96 @@ test('23. executeAutomatedDunningDailyCheck dispatches notices to all co-owners 
   assert.equal(state.notifications.length, 2, 'Notifications must be created for both co-owners');
 });
 
+test('24. Same owner across multiple buildings receives distinct arrears notices for each building without cross-building suppression', async () => {
+  const activeRule = {
+    id: 'rule-multi-building',
+    name: 'Több házas szabály',
+    enabled: true,
+    buildingId: 'all',
+    checkDayOfMonth: 24,
+    monthThreshold: 1.0,
+    minAmountHuf: 5000,
+    operator: 'OR',
+    templateSubject: 'Felszólítás: {{tarsashaz_neve}} - {{lakas_szam}}. lakás',
+    templateBody: 'Kedves {{lakas_tulajdonosa}}! Ház: {{tarsashaz_neve}}, lakás: {{lakas_szam}}, hátralék: {{hatralek_osszeg}}, számla: {{szamlaszam}}.'
+  };
+
+  // Same owner (Kovács István, istvan@kovacs.hu) owns flats in both Building A and Building B
+  const buildingA = {
+    id: 'bld-alpha',
+    name: 'Napfény Társasház',
+    officialName: 'Napfény Társasház 12.',
+    bankKK: '11701001-11111111-00000000',
+    flats: [
+      {
+        id: 'f-a-5',
+        flatNum: '5',
+        ownerName: 'Kovács István',
+        email: 'istvan@kovacs.hu',
+        monthlyFee: 15000,
+        balance: -30000 // 2 months debt in Building A
+      }
+    ]
+  };
+
+  const buildingB = {
+    id: 'bld-beta',
+    name: 'Duna Társasház',
+    officialName: 'Duna Társasház 4.',
+    bankKK: '11702002-22222222-00000000',
+    flats: [
+      {
+        id: 'f-b-5',
+        flatNum: '5', // Same flat number, different building!
+        ownerName: 'Kovács István',
+        email: 'istvan@kovacs.hu',
+        monthlyFee: 25000,
+        balance: -50000 // 2 months debt in Building B
+      }
+    ]
+  };
+
+  let state = {
+    currentUser: { id: 'admin-1', email: 'admin@tarsasapp.hu', role: 'admin' },
+    buildings: [buildingA, buildingB],
+    emailRules: [activeRule],
+    emailOutbox: [],
+    notifications: [],
+    organizations: [{ id: 'org-1', ownerUid: 'admin-1' }],
+    repProfile: { name: 'Közös Képviselő Kft.' }
+  };
+
+  const emailActions = createEmailActions({
+    state,
+    getState: () => state,
+    persistState: (u) => { state = typeof u === 'function' ? u(state) : u; }
+  });
+
+  const res = await emailActions.executeAutomatedDunningDailyCheck({
+    testDate: new Date('2026-11-24T07:00:00Z'),
+    dryRunOnly: true
+  });
+
+  assert.equal(res.ran, true);
+  // Both buildings must generate separate outbox entries for Kovács István
+  assert.equal(state.emailOutbox.length, 2, 'Kovács István must receive 2 notices: 1 for Building A and 1 for Building B');
+
+  const noticeA = state.emailOutbox.find(o => o.buildingId === 'bld-alpha');
+  const noticeB = state.emailOutbox.find(o => o.buildingId === 'bld-beta');
+
+  assert.ok(noticeA, 'Notice for Building A must exist');
+  assert.equal(noticeA.recipientEmail, 'istvan@kovacs.hu');
+  assert.ok(noticeA.subject.includes('Napfény Társasház 12.'));
+  assert.ok(noticeA.body.includes('11701001-11111111-00000000'));
+  assert.ok(noticeA.body.includes('30') && noticeA.body.includes('Ft'));
+
+  assert.ok(noticeB, 'Notice for Building B must exist');
+  assert.equal(noticeB.recipientEmail, 'istvan@kovacs.hu');
+  assert.ok(noticeB.subject.includes('Duna Társasház 4.'));
+  assert.ok(noticeB.body.includes('11702002-22222222-00000000'));
+  assert.ok(noticeB.body.includes('50') && noticeB.body.includes('Ft'));
+});
+
 
 
 

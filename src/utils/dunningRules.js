@@ -629,6 +629,9 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
   if (cooldownDays > 0 && Array.isArray(options.history)) {
     const cutoffTime = now.getTime() - (cooldownDays * 24 * 60 * 60 * 1000);
     const recentSent = options.history.some(log => {
+      const isSameBuilding = !log.buildingId || !building.id || String(log.buildingId) === String(building.id);
+      if (!isSameBuilding) return false;
+
       const isTargetFlat = (String(log.flatNum) === String(flat.flatNum)) || (log.unitId && log.unitId === flat.id);
       if (!isTargetFlat) return false;
 
