@@ -318,6 +318,8 @@ export function CommunicationCenterModal({
       body: m.renderedBody,
       debt: m.balance,
       arrearsMonths: m.arrearsMonths,
+      sendEmail: rule.sendEmail !== false,
+      sendInApp: rule.sendInApp !== false,
       status: 'simulated'
     }));
 
@@ -776,6 +778,16 @@ export function CommunicationCenterModal({
                               {rule.lastAutoDispatchedDate && (
                                 <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[10px] font-medium border border-gray-200">
                                   ✓ {t.comm_rule_last_run ? t.comm_rule_last_run.replace('{date}', rule.lastAutoDispatchedDate) : (isEn ? `Last run: ${rule.lastAutoDispatchedDate}` : `Utolsó kiküldés: ${rule.lastAutoDispatchedDate}`)}
+                                </span>
+                              )}
+                              {rule.sendEmail !== false && (
+                                <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 text-[10px] font-bold border border-sky-200">
+                                  ✉️ {isEn ? "Email" : "E-mail"}
+                                </span>
+                              )}
+                              {rule.sendInApp !== false && (
+                                <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 text-[10px] font-bold border border-purple-200">
+                                  🔔 {isEn ? "In-App" : "App értesítés"}
                                 </span>
                               )}
                             </div>

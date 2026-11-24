@@ -698,6 +698,106 @@ test('20. evaluateRulesForAutoDispatch and executeAutomatedDunningDailyCheck aut
   assert.equal(state.emailOutbox.length, 1, 'Outbox must NOT have duplicates on the same day');
 });
 
+test('21. Channel selection: respect sendEmail and sendInApp toggles independently', async () => {
+  const sampleBuilding = {
+    id: 'b-chan',
+    name: 'Csatorna Ház',
+    officialName: 'Csatorna Társasház',
+    bankKK: '11700000-11111111',
+    flats: [
+      {
+        id: 'f-c1',
+        flatNum: '201',
+        ownerName: 'Varga Péter',
+        email: 'peter@varga.hu',
+        monthlyFee: 15000,
+        balance: -30000 // 2 months debt
+      }
+    ]
+  };
+
+  // Case A: in-app only rule (sendEmail: false, sendInApp: true)
+  const inAppOnlyRule = {
+    id: 'rule-inapp-only',
+    name: 'Csak app értesítés',
+    enabled: true,
+    checkDayOfMonth: 24,
+    monthThreshold: 1.0,
+    sendEmail: false,
+    sendInApp: true,
+    templateSubject: 'Belső értesítő: {{lakas_szam}}.',
+    templateBody: 'Tartozás: {{hatralek_osszeg}}.'
+  };
+
+  let stateA = {
+    currentUser: { id: 'admin-1', email: 'admin@tarsasapp.hu', role: 'admin' },
+    buildings: [sampleBuilding],
+    emailRules: [inAppOnlyRule],
+    emailOutbox: [],
+    notifications: [],
+    organizations: [{ id: 'org-1', ownerUid: 'admin-1' }],
+    repProfile: { name: 'Közös Képviselő Kft.' }
+  };
+
+  const actionsA = createEmailActions({
+    state: stateA,
+    getState: () => stateA,
+    persistState: (u) => { stateA = typeof u === 'function' ? u(stateA) : u; }
+  });
+
+  const resA = await actionsA.executeAutomatedDunningDailyCheck({
+    testDate: new Date('2026-11-24T07:00:00Z'), // 08:00 Budapest
+    dryRunOnly: false
+  });
+
+  assert.equal(resA.ran, true);
+  assert.equal(stateA.notifications.length, 1, 'In-app notification must be created');
+  assert.equal(stateA.emailOutbox.length, 1);
+  assert.equal(stateA.emailOutbox[0].status, 'in-app-only');
+  assert.equal(stateA.emailOutbox[0].sendEmail, false);
+  assert.equal(stateA.emailOutbox[0].sendInApp, true);
+
+  // Case B: email only rule (sendEmail: true, sendInApp: false)
+  const emailOnlyRule = {
+    id: 'rule-email-only',
+    name: 'Csak e-mail',
+    enabled: true,
+    checkDayOfMonth: 24,
+    monthThreshold: 1.0,
+    sendEmail: true,
+    sendInApp: false,
+    templateSubject: 'E-mail fizetési felszólítás: {{lakas_szam}}.',
+    templateBody: 'Tartozás: {{hatralek_osszeg}}.'
+  };
+
+  let stateB = {
+    currentUser: { id: 'admin-1', email: 'admin@tarsasapp.hu', role: 'admin' },
+    buildings: [sampleBuilding],
+    emailRules: [emailOnlyRule],
+    emailOutbox: [],
+    notifications: [],
+    organizations: [{ id: 'org-1', ownerUid: 'admin-1' }],
+    repProfile: { name: 'Közös Képviselő Kft.' }
+  };
+
+  const actionsB = createEmailActions({
+    state: stateB,
+    getState: () => stateB,
+    persistState: (u) => { stateB = typeof u === 'function' ? u(stateB) : u; }
+  });
+
+  const resB = await actionsB.executeAutomatedDunningDailyCheck({
+    testDate: new Date('2026-11-24T07:00:00Z'),
+    dryRunOnly: true
+  });
+
+  assert.equal(resB.ran, true);
+  assert.equal(stateB.notifications.length, 0, 'In-app notification must NOT be created when sendInApp is false');
+  assert.equal(stateB.emailOutbox.length, 1);
+  assert.equal(stateB.emailOutbox[0].sendEmail, true);
+  assert.equal(stateB.emailOutbox[0].sendInApp, false);
+});
+
 
 
 

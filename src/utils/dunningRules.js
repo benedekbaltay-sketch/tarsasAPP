@@ -43,6 +43,8 @@ export const DEFAULT_DUNNING_RULES = [
     checkDayOfMonth: 24,
     cooldownDays: 25,
     crossRuleCooldown: true, // Prevents duplicate notice if another dunning rule triggered within cooldown
+    sendEmail: true,
+    sendInApp: true,
     templateSubject: 'Egyenleg-értesítő: {{tarsashaz_neve}}, {{lakas_szam}}. lakás',
     templateSubjectEn: 'Balance Notice: {{tarsashaz_neve}}, Flat #{{lakas_szam}}',
     templateBody: `Kedves {{lakas_tulajdonosa}}!
@@ -93,6 +95,8 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
     checkDayOfMonth: 25,
     cooldownDays: 25,
     crossRuleCooldown: true,
+    sendEmail: true,
+    sendInApp: true,
     templateSubject: 'FIZETÉSI FELSZÓLÍTÁS: {{tarsashaz_neve}} – {{lakas_szam}}. lakás',
     templateSubjectEn: 'OVERDUE PAYMENT DEMAND: {{tarsashaz_neve}} – Flat #{{lakas_szam}}',
     templateBody: `Tisztelt {{lakas_tulajdonosa}}!
@@ -147,6 +151,8 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
     checkDayOfMonth: 25,
     cooldownDays: 30,
     crossRuleCooldown: true,
+    sendEmail: true,
+    sendInApp: true,
     templateSubject: 'VÉGSŐ FIGYELMEZTETÉS JOGI ELJÁRÁS ELŐTT – {{tarsashaz_neve}}, {{lakas_szam}}. lakás',
     templateSubjectEn: 'FINAL WARNING BEFORE LEGAL PROCEEDINGS – {{tarsashaz_neve}}, Flat #{{lakas_szam}}',
     templateBody: `Tisztelt {{lakas_tulajdonosa}}!

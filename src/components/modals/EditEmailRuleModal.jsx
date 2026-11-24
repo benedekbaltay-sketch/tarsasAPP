@@ -49,6 +49,8 @@ export function EditEmailRuleModal({
   const [templateBody, setTemplateBody] = useState(rule?.templateBody || '');
   const [templateBodyEn, setTemplateBodyEn] = useState(rule?.templateBodyEn || '');
   const [enabled, setEnabled] = useState(rule?.enabled !== undefined ? rule.enabled : true);
+  const [sendEmail, setSendEmail] = useState(rule?.sendEmail !== undefined ? Boolean(rule.sendEmail) : true);
+  const [sendInApp, setSendInApp] = useState(rule?.sendInApp !== undefined ? Boolean(rule.sendInApp) : true);
 
   const [activeTab, setActiveTab] = useState('formula'); // 'formula' | 'template' | 'dryrun'
   const [sampleSeedIndex, setSampleSeedIndex] = useState(0);
@@ -74,9 +76,11 @@ export function EditEmailRuleModal({
       templateSubjectEn,
       templateBody,
       templateBodyEn,
-      enabled
+      enabled,
+      sendEmail,
+      sendInApp
     };
-  }, [rule, name, buildingId, targetAccount, conditionType, monthThreshold, maxMonthThreshold, minAmountHuf, operator, checkDayOfMonth, cooldownDays, crossRuleCooldown, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, isEn]);
+  }, [rule, name, buildingId, targetAccount, conditionType, monthThreshold, maxMonthThreshold, minAmountHuf, operator, checkDayOfMonth, cooldownDays, crossRuleCooldown, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, sendEmail, sendInApp, isEn]);
 
   // Real-time realistic sample preview for any picked or random flat
   const samplePreview = useMemo(() => {
@@ -108,6 +112,10 @@ export function EditEmailRuleModal({
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (!sendEmail && !sendInApp) {
+      alert(t?.comm_channel_none_warning || (isEn ? "Please select at least one delivery channel (Email or In-App)." : "Kérlek válassz legalább egy kiküldési csatornát (E-mail vagy Appon belüli értesítés)!"));
+      return;
+    }
     onSave({
       ...liveRule,
       id: rule?.id || `rule-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -353,6 +361,72 @@ export function EditEmailRuleModal({
                     )}
                   </span>
                 </div>
+              </div>
+
+              {/* Delivery Channels: Email and/or In-App */}
+              <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                    <Mail className="w-4 h-4 text-blue-600" />
+                    <span>{t?.comm_channel_select_title || (isEn ? "Delivery Channels" : "Kiküldési csatornák")}</span>
+                  </label>
+                  <span className="text-[10px] text-gray-400">
+                    {t?.comm_channel_select_hint || (isEn ? "Select where notices should be delivered" : "Válaszd ki, hova érkezzenek az értesítések")}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
+                    sendEmail ? 'bg-blue-50/60 border-blue-300 text-blue-950' : 'bg-gray-50 border-gray-200 text-gray-600'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={sendEmail}
+                      onChange={(e) => setSendEmail(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A]"
+                    />
+                    <div>
+                      <div className="text-xs font-bold flex items-center gap-1.5">
+                        <span>✉️</span>
+                        <span>{t?.comm_channel_email_title || (isEn ? "Send Email" : "E-mail küldése")}</span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {t?.comm_channel_email_desc || (isEn 
+                          ? "Dispatches transactional email to the resident's email inbox." 
+                          : "Hivatalos e-mailt küld a lakó megadott e-mail címére.")}
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
+                    sendInApp ? 'bg-purple-50/60 border-purple-300 text-purple-950' : 'bg-gray-50 border-gray-200 text-gray-600'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={sendInApp}
+                      onChange={(e) => setSendInApp(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A]"
+                    />
+                    <div>
+                      <div className="text-xs font-bold flex items-center gap-1.5">
+                        <span>🔔</span>
+                        <span>{t?.comm_channel_inapp_title || (isEn ? "In-App Notification" : "Appon belüli értesítés")}</span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {t?.comm_channel_inapp_desc || (isEn 
+                          ? "Displays an alert banner on the resident portal dashboard." 
+                          : "Belső rendszerértesítés a lakói portál vezérlőpultján.")}
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {!sendEmail && !sendInApp && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <span>{t?.comm_channel_none_warning || (isEn ? "Warning: Please select at least one delivery channel (Email or In-App)." : "Figyelem: Kérlek válassz legalább egy csatornát (E-mail vagy Appon belüli értesítés)!")}</span>
+                  </div>
+                )}
               </div>
 
               {/* Timing & Deduplication */}

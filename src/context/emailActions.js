@@ -414,13 +414,15 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     const emailSettings = resolveEffectiveEmailSettings(curState.globalSettings?.emailSettings || curState.repProfile?.emailSettings);
 
     for (const { rule, dateStr, matches } of evaluation.resultsByRule) {
+      const shouldSendEmail = rule.sendEmail !== false;
+      const shouldSendInApp = rule.sendInApp !== false;
       let sentCountForRule = 0;
 
       for (const m of matches) {
         const hasValidEmail = Boolean(m.ownerEmail && m.ownerEmail.includes('@'));
         let wasSent = false;
 
-        if (hasValidEmail && emailSettings.isConfigured && !options.dryRunOnly) {
+        if (shouldSendEmail && hasValidEmail && emailSettings.isConfigured && !options.dryRunOnly) {
           try {
             const bld = (curState.buildings || []).find(b => b.id === m.buildingId);
             const sendResult = await sendResidentCustomNoticeEmail({
@@ -435,7 +437,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
               organizations: curState?.organizations || [],
               senderUser: curState?.currentUser,
               isEn: isEn(),
-              emailSettings: bld?.emailSettings || curState?.emailSettings || {},
+              emailSettings: bld?.emailSettings || curState?.emailSettings || emailSettings,
             });
             wasSent = Boolean(sendResult?.success);
           } catch (err) {
@@ -446,6 +448,17 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         if (wasSent) {
           sentCountForRule++;
           totalEmailsSent++;
+        }
+
+        // Determine outbox delivery status
+        let outboxStatus = 'simulated';
+        if (shouldSendEmail) {
+          if (wasSent) outboxStatus = 'sent';
+          else if (hasValidEmail && !emailSettings.isConfigured) outboxStatus = 'queued';
+          else if (!hasValidEmail) outboxStatus = shouldSendInApp ? 'in-app-only' : 'failed';
+          else outboxStatus = 'failed';
+        } else {
+          outboxStatus = 'in-app-only';
         }
 
         // Add outbox log entry
@@ -462,28 +475,32 @@ export function createEmailActions(optionsOrState, maybeSetState) {
           body: m.renderedBody,
           debt: m.balance,
           arrearsMonths: m.arrearsMonths,
-          status: wasSent ? 'sent' : (hasValidEmail && !emailSettings.isConfigured ? 'queued' : 'in-app-only'),
+          status: outboxStatus,
+          sendEmail: shouldSendEmail,
+          sendInApp: shouldSendInApp,
           autoDispatched: true,
           queuedAt: new Date().toISOString(),
           sentAt: wasSent ? new Date().toISOString() : undefined,
         });
 
-        // Add in-app notification
-        newNotifications.push(
-          buildNotification({
-            type: 'finance',
-            severity: 'warning',
-            recipientEmail: m.ownerEmail || '',
-            recipientScope: 'flat',
-            buildingId: m.buildingId,
-            buildingName: m.buildingName,
-            actorUser: curState.currentUser,
-            titleHu: m.renderedSubject,
-            titleEn: m.renderedSubject,
-            messageHu: m.renderedBody,
-            messageEn: m.renderedBody,
-          })
-        );
+        // Add in-app notification only if in-app delivery is enabled
+        if (shouldSendInApp) {
+          newNotifications.push(
+            buildNotification({
+              type: 'finance',
+              severity: 'warning',
+              recipientEmail: m.ownerEmail || '',
+              recipientScope: 'flat',
+              buildingId: m.buildingId,
+              buildingName: m.buildingName,
+              actorUser: curState.currentUser,
+              titleHu: m.renderedSubject,
+              titleEn: m.renderedSubject,
+              messageHu: m.renderedBody,
+              messageEn: m.renderedBody,
+            })
+          );
+        }
       }
 
       updatedRuleMarkers[rule.id] = {

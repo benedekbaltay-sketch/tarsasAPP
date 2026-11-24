@@ -624,6 +624,11 @@ A rendszer jobb felső sarkában található Értesítési / E-mail felület kib
        - *Szerveroldali felhő scheduler (`functions/src/dunning.js: scheduledDailyDunningEmails`)*: Minden nap 08:00-kor (Budapest időzóna szerint) a Cloud Scheduler önállóan is lefut.
      - *Napi idempotencia védelem*: A szabály `lastAutoDispatchedDate` mezője (`YYYY-MM-DD`) és az `emailOutbox` bejegyzések garantálják, hogy ugyanazon a napon soha ne menjen ki kétszer értesítés.
      - Ismétlési védelem (`cooldownDays`, pl. 25-30 nap) és kereszt-türelmi védelem (`crossRuleCooldown`), amely megakadályozza a duplikált kiküldést ugyanabban a számlázási ciklusban.
+   - **Kiküldési Csatornák Kiválasztása (`sendEmail`, `sendInApp`)**:
+     - Minden szabályban külön-külön ki- és bekapcsolható a két független értesítési csatorna:
+       - ✉️ **E-mail küldése**: Hivatalos tranzakciós e-mail kiküldése a lakó e-mail címére a Resend API-n keresztül.
+       - 🔔 **Appon belüli értesítés**: Belső figyelmeztető és felszólító rendszerértesítés a lakói portál felületén (`notifications`).
+       - Akár mindkettő, akár csak az egyik csatorna önállóan is választható; a szabályszerkesztő validációja megköveteli, hogy legalább az egyik be legyen jelölve.
    - **Dinamikus sablonkezelő & Merge tagek**:
      - Változók beillesztése: `{{tulajdonos_neve}}`, `{{lakas_szam}}`, `{{hatralek_osszeg}}`, `{{hatralek_honapok}}`, `{{alapterulet}}`, `{{tarsashaz_neve}}`, `{{szamlaszam}}`, `{{kozlemeny}}`, `{{fizetesi_hatarido}}`, `{{kepviselo_neve}}`, `{{kepviselo_telefon}}`, `{{kepviselo_email}}`, `{{datum}}`.
      - Változó beillesztő chipek a szerkesztőben a könnyű kattintásos sablonépítéshez.
@@ -639,12 +644,12 @@ A rendszer jobb felső sarkában található Értesítési / E-mail felület kib
    - Készen áll a külső e-mail szolgáltatók (pl. SendGrid, Mailgun, Brevo, Firebase Extension) közvetlen API bekötésére.
 
 5. **Adatperzisztencia és Biztonság**:
-   - `src/context/emailActions.js`: Reducer és state műveletek (`saveEmailRule`, `deleteEmailRule`, `toggleEmailRule`, `queueOutboxItems`, `clearOutboxItems`).
+   - `src/context/emailActions.js`: Reducer és state műveletek (`saveEmailRule`, `deleteEmailRule`, `toggleEmailRule`, `queueOutboxItems`, `clearOutboxItems`, `executeAutomatedDunningDailyCheck`).
    - `src/context/syncEngine.js`: `emailRules` és `emailOutbox` integrálva a helyi perzisztenciába és a felhőszinkronba.
    - Szerepkör alapú hozzáférés: Lakók nem férhetnek hozzá a felszólítási motorhoz, csak adminisztrátorok és kijelölt képviselők.
 
 6. **Automatizált Egységtesztek**:
-   - `tests/dunningRules.test.mjs` (`npm run test:dunning`): 20 determinisztikus teszt fedi le a sablonbehelyettesítést, a pozitív/nulla egyenlegek kizárását, a havi arányszámítást, a kombinált logikát, a cooldown védelmet, a többházas száraz tesztet, a valósághű minta lakás előnézet-generálást, a budapesti időzóna-számítást, a reggel 8:00 előtti blokkolást és az automatikus reggel 8:00-i kiküldést és idempotencia védelmet.
+   - `tests/dunningRules.test.mjs` (`npm run test:dunning`): 21 determinisztikus teszt fedi le a sablonbehelyettesítést, a pozitív/nulla egyenlegek kizárását, a havi arányszámítást, a kombinált logikát, a cooldown védelmet, a többházas száraz tesztet, a valósághű minta lakás előnézet-generálást, a budapesti időzóna-számítást, a reggel 8:00 előtti blokkolást, az automatikus reggel 8:00-i kiküldést, az idempotencia védelmet és a független kiküldési csatorna-kezelést (e-mail, appon belüli vagy mindkettő).
 
 ---
 

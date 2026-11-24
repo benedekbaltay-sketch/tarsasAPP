@@ -62,10 +62,14 @@ export const scheduledDailyDunningEmails = onSchedule(
 
       const buildings = Array.isArray(state.buildings) ? state.buildings : [];
       const outbox = Array.isArray(state.emailOutbox) ? state.emailOutbox : [];
+      const notifications = Array.isArray(state.notifications) ? state.notifications : [];
       const newOutboxEntries = [];
+      const newNotifications = [];
       const updatedRules = [...rules];
 
       for (const rule of enabledDueRules) {
+        const shouldSendEmail = rule.sendEmail !== false;
+        const shouldSendInApp = rule.sendInApp !== false;
         const ruleTargetBuilding = rule.buildingId || 'all';
         const targetBuildings = ruleTargetBuilding === 'all'
           ? buildings
@@ -80,8 +84,6 @@ export const scheduledDailyDunningEmails = onSchedule(
             if (bal >= 0) continue; // Zero debt
 
             const flatEmail = (flat.email || '').trim();
-            if (!flatEmail || !flatEmail.includes('@')) continue;
-
             const flatOwner = flat.ownerName || flat.owner || `${flat.flatNum}. lakás tulajdonosa`;
             const bName = b.officialName || b.name || 'Társasház';
             const debtAmount = Math.abs(bal).toLocaleString('hu-HU') + ' Ft';
@@ -97,7 +99,7 @@ export const scheduledDailyDunningEmails = onSchedule(
               .replace(/\{\{\s*hatralek_osszeg\s*\}\}/gi, debtAmount);
 
             let wasSent = false;
-            if (resendKey) {
+            if (shouldSendEmail && resendKey && flatEmail && flatEmail.includes('@')) {
               try {
                 const resp = await fetch('https://api.resend.com/emails', {
                   method: 'POST',
@@ -123,6 +125,11 @@ export const scheduledDailyDunningEmails = onSchedule(
               sentForRule++;
             }
 
+            let status = 'in-app-only';
+            if (shouldSendEmail) {
+              status = wasSent ? 'sent' : (flatEmail ? 'failed' : (shouldSendInApp ? 'in-app-only' : 'failed'));
+            }
+
             newOutboxEntries.push({
               id: `outbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
               ruleId: rule.id,
@@ -131,15 +138,34 @@ export const scheduledDailyDunningEmails = onSchedule(
               buildingName: bName,
               flatNum: flat.flatNum,
               recipientName: flatOwner,
-              recipientEmail: flatEmail,
+              recipientEmail: flatEmail || 'Nincs e-mail',
               subject,
               body,
               debt: bal,
-              status: wasSent ? 'sent' : 'queued',
+              status,
+              sendEmail: shouldSendEmail,
+              sendInApp: shouldSendInApp,
               autoDispatched: true,
               queuedAt: new Date().toISOString(),
               sentAt: wasSent ? new Date().toISOString() : undefined,
             });
+
+            if (shouldSendInApp) {
+              newNotifications.push({
+                id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                type: 'finance',
+                severity: 'warning',
+                recipientEmail: flatEmail,
+                recipientScope: 'flat',
+                buildingId: b.id,
+                buildingName: bName,
+                titleHu: subject,
+                titleEn: subject,
+                messageHu: body,
+                messageEn: body,
+                createdAt: new Date().toISOString(),
+              });
+            }
           }
         }
 
@@ -158,6 +184,7 @@ export const scheduledDailyDunningEmails = onSchedule(
       await rtdb.ref('condo_state').update({
         emailRules: updatedRules,
         emailOutbox: [...newOutboxEntries, ...outbox].slice(0, 500),
+        notifications: [...newNotifications, ...notifications].slice(0, 300),
         lastUpdated: new Date().toISOString(),
       });
 
