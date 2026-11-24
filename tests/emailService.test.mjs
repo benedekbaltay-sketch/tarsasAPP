@@ -178,6 +178,7 @@ test('6. sendResidentCustomNoticeEmail builds branded HTML, dynamic reply_to and
       subject: 'Fontos felújítási tájékoztató',
       bodyText: 'Tisztelt Kovács János!\n\nA jövő héten liftjavítás lesz.',
       category: 'general',
+      includeGreeting: true,
       emailSettings: { apiKey: 're_valid_api_key_test' },
     });
 

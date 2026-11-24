@@ -94,6 +94,7 @@ export async function sendTransactionalEmail({
   };
   if (cleanReplyTo) {
     payload.reply_to = cleanReplyTo;
+    payload.replyTo = cleanReplyTo;
   }
 
   // 1. Try Firebase Callable Cloud Function (executes server-side on Google Cloud, no browser CORS/CSP blocks)
@@ -222,6 +223,7 @@ export async function sendResidentCustomNoticeEmail({
   senderEmail = '',
   isEn = false,
   emailSettings = {},
+  includeGreeting = false,
 } = {}) {
   const effective = resolveEffectiveEmailSettings(emailSettings);
   if (!effective.isConfigured) {
@@ -243,6 +245,11 @@ export async function sendResidentCustomNoticeEmail({
     .split('\n')
     .map(p => p.trim() ? `<p style="margin: 0 0 14px 0; line-height: 1.6; color: #374151;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : '<br/>')
     .join('');
+
+  // Only prepend greeting if explicitly requested or if body doesn't contain custom text
+  const greetingHtml = includeGreeting
+    ? `<p style="font-weight: 600; margin: 0 0 16px 0; color: #111827;">${greeting}</p>`
+    : '';
 
   const htmlBody = `
 <!DOCTYPE html>
@@ -267,7 +274,7 @@ export async function sendResidentCustomNoticeEmail({
           <!-- Body -->
           <tr>
             <td style="padding: 32px; font-size: 14px; color: #1f2937;">
-              <p style="font-weight: 600; margin: 0 0 16px 0; color: #111827;">${greeting}</p>
+              ${greetingHtml}
               ${escapedBody}
             </td>
           </tr>
@@ -287,7 +294,7 @@ export async function sendResidentCustomNoticeEmail({
 </html>
   `.trim();
 
-  const textBody = `${buildingName} - ${subject}\n\n${greeting}\n\n${messageBody}\n\n---\n${buildingName}\n${dynamicReplyTo ? `Reply-To: ${dynamicReplyTo}` : ''}`;
+  const textBody = `${buildingName} - ${subject}\n\n${includeGreeting ? `${greeting}\n\n` : ''}${messageBody}\n\n---\n${buildingName}\n${dynamicReplyTo ? `Reply-To: ${dynamicReplyTo}` : ''}`;
 
   return sendTransactionalEmail({
     to: recipientEmail,

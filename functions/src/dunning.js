@@ -222,7 +222,7 @@ export const sendTransactionalEmail = onCall(
     cors: true,
   },
   async (request) => {
-    const { to, subject, html, text, from, replyTo, senderName } = request.data || {};
+    const { to, subject, html, text, from, replyTo, reply_to, senderName } = request.data || {};
 
     const cleanTo = Array.isArray(to) ? to[0] : to;
     if (!cleanTo || typeof cleanTo !== 'string' || !cleanTo.includes('@')) {
@@ -246,8 +246,9 @@ export const sendTransactionalEmail = onCall(
       html: html || '',
       text: text || '',
     };
-    if (replyTo && typeof replyTo === 'string' && replyTo.includes('@')) {
-      payload.reply_to = replyTo.trim();
+    const effectiveReplyTo = String(replyTo || reply_to || '').trim();
+    if (effectiveReplyTo && effectiveReplyTo.includes('@')) {
+      payload.reply_to = effectiveReplyTo;
     }
 
     try {

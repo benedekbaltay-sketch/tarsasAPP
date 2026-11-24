@@ -275,7 +275,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     const newNotifications = [];
     const newOutboxEntries = [];
 
-    for (const r of recipients) {
+    await Promise.all(recipients.map(async (r) => {
       const rBuilding = (state?.buildings || []).find((b) => b.id === (r.buildingId || buildingId)) || defaultBld;
       const bldName = rBuilding?.officialName || rBuilding?.name || r.buildingName || (isEn() ? 'Condominium' : 'Társasház');
       const bldId = r.buildingId || buildingId || rBuilding?.id || 'general';
@@ -381,7 +381,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         queuedAt: new Date().toISOString(),
         sentAt: emailWasSent ? new Date().toISOString() : undefined,
       });
-    }
+    }));
 
     const updater = (prev) => {
       const curOutbox = Array.isArray(prev.emailOutbox) ? prev.emailOutbox : [];
