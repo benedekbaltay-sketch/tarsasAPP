@@ -315,7 +315,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                     {t.notif_modal_title || (isEn ? "System Message Details" : "Rendszerüzenet részletei")}
                   </h3>
                   <span className="text-[10px] text-gray-500">
-                    {formatTime(selectedNotification.createdAt, isEn)}
+                    {formatNotifTime(selectedNotification.createdAt, isEn)}
                   </span>
                 </div>
               </div>
