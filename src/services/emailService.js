@@ -266,9 +266,8 @@ export async function sendResidentCustomNoticeEmail({
         <table width="100%" max-width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
           <!-- Header -->
           <tr>
-            <td style="background-color: #1E3A8A; padding: 24px 32px; text-align: left;">
-              <h2 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 700;">${buildingName}</h2>
-              <span style="color: #93c5fd; font-size: 12px;">${isEn ? 'Official Management Notice' : 'Hivatalos Közös Képviseleti Tájékoztató'}</span>
+            <td style="background-color: #1E3A8A; padding: 22px 32px; text-align: left;">
+              <h2 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 700; letter-spacing: 0.3px;">${isEn ? 'Official Management Notice' : 'Hivatalos Közös Képviseleti Tájékoztató'}</h2>
             </td>
           </tr>
           <!-- Body -->
@@ -294,7 +293,7 @@ export async function sendResidentCustomNoticeEmail({
 </html>
   `.trim();
 
-  const textBody = `${buildingName} - ${subject}\n\n${includeGreeting ? `${greeting}\n\n` : ''}${messageBody}\n\n---\n${buildingName}\n${dynamicReplyTo ? `Reply-To: ${dynamicReplyTo}` : ''}`;
+  const textBody = `${isEn ? 'Official Management Notice' : 'Hivatalos Közös Képviseleti Tájékoztató'}: ${subject}\n\n${includeGreeting ? `${greeting}\n\n` : ''}${messageBody}\n\n---\n${buildingName}\n${dynamicReplyTo ? `Reply-To: ${dynamicReplyTo}` : ''}`;
 
   return sendTransactionalEmail({
     to: recipientEmail,

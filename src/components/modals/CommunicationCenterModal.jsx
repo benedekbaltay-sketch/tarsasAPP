@@ -419,31 +419,44 @@ export function CommunicationCenterModal({
 
     if (!window.confirm(confirmMsg)) return;
 
+    const noticePayload = {
+      buildingId: composeTargetBuildingId,
+      recipients: resolvedRecipients,
+      category: 'general',
+      subject: composeSubject.trim(),
+      body: composeBody.trim(),
+      sendEmail: composeSendEmail,
+      sendInAppNotification: composeSendInApp
+    };
+    const recipientCount = resolvedRecipients.length;
+
+    // Instantly close modal and switch to Outbox for zero perceived lag
+    setComposeSubject('');
+    setComposeBody('');
+    setComposeCustomFlats([]);
+    setComposeStep(1);
+    setIsComposeOpen(false);
+    setActiveTab('outbox');
+
+    showToast(
+      isEn ? `Dispatching notice to ${recipientCount} recipient(s)...` : `Levél kiküldése folyamatban (${recipientCount} címzett)...`,
+      "info"
+    );
+
     setIsSendingNotice(true);
     try {
-      const result = await sendCustomResidentNotice({
-        buildingId: composeTargetBuildingId,
-        recipients: resolvedRecipients,
-        category: 'general',
-        subject: composeSubject.trim(),
-        body: composeBody.trim(),
-        sendEmail: composeSendEmail,
-        sendInAppNotification: composeSendInApp
-      });
+      const result = await sendCustomResidentNotice(noticePayload);
 
       if (result && result.success) {
         showToast(
           (t.comm_sent_toast || (isEn ? "Letter successfully sent to {count} recipient(s)!" : "Levél sikeresen kiküldve {count} címzettnek!"))
-            .replace('{count}', resolvedRecipients.length),
+            .replace('{count}', recipientCount),
           "success"
         );
-        setComposeSubject('');
-        setComposeBody('');
-        setComposeCustomFlats([]);
-        setComposeStep(1);
-        setIsComposeOpen(false);
-        setActiveTab('outbox');
       }
+    } catch (err) {
+      console.error('Error sending custom notice:', err);
+      showToast(err?.message || (isEn ? "Error dispatching notices." : "Hiba a levélküldéskor."), "error");
     } finally {
       setIsSendingNotice(false);
     }

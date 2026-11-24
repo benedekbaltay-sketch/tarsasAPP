@@ -715,6 +715,8 @@ A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhe
    - **CORS és Biztonsági Védelem**: A Resend API nem engedélyezi a közvetlen böngészőből történő hívást (CORS hiba / `Failed to fetch`). Ennek elhárítására egy Firebase Callable Cloud Function (`sendTransactionalEmail`, europe-west1) végzi a levelek szerveroldali kiküldését, titkosítva tárolt `RESEND_API_KEY` környezeti változóval.
    - A válaszcím (`Reply-To`) dinamikusan a társasház képviselőjének közvetlen e-mail címe, így a lakók válaszai nem vesznek el.
    - **Valódi Kiküldés Gomb**: A Kommunikációs Központban a szabályok azonnal elindíthatók a "Kiküldés most" gombbal (nem csak szimulációként), ami valós e-maileket küld ki és `sent` státusszal jegyzi be a kiküldési naplóba.
+   - **Azonnali Optimista Levélküldési Felület**: A "+ Új levél írása" gomb megnyomásakor a felugró ablak azonnal bezáródik, és a felhasználó átvált az Outbox naplóra, miközben a küldés párhuzamosan a háttérben fut, kiküszöbölve a betöltési várakozást.
+   - **Letisztult E-mail Sablon**: Az e-mail tetején lévő kék fejléc kizárólag a hivatalos "Hivatalos Közös Képviseleti Tájékoztató" feliratot tartalmazza, elkerülve a felesleges épületnév- és megszólítás-duplikációt.
 
 
 ---
