@@ -6,7 +6,10 @@ import {
   DEFAULT_DUNNING_RULES, 
   buildPaymentDetailsBlock, 
   resolveFlatOwnerName,
+  resolveFlatOwnerRecipients,
   getBudapestTimeParts,
+  parseDispatchTime,
+  renderEmailTemplate,
   shouldRuleAutoDispatchToday,
   evaluateRulesForAutoDispatch
 } from '../utils/dunningRules.js';
@@ -318,10 +321,12 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         : `${dueDate.getFullYear()}. ${String(dueDate.getMonth() + 1).padStart(2, '0')}. ${String(dueDate.getDate()).padStart(2, '0')}.`;
 
       const resolvedOwner = r.name || resolveFlatOwnerName(rFlat, isEn());
+      const compositeOwners = resolveFlatOwnerName(rFlat, isEn());
 
       // Personalize body for tags
       const personalizedBody = body
         .replace(/\{lakasTulajdonosa\}|\{flatOwner\}|\{tulajdonosNeve\}|\{ownerName\}|\{\{\s*lakas_tulajdonosa\s*\}\}|\{\{\s*flat_owner\s*\}\}|\{\{\s*tulajdonos_neve\s*\}\}|\{\{\s*owner_name\s*\}\}/gi, resolvedOwner)
+        .replace(/\{osszesTulajdonos\}|\{allOwners\}|\{\{\s*osszes_tulajdonos\s*\}\}|\{\{\s*all_owners\s*\}\}/gi, compositeOwners)
         .replace(/\{lakasszam\}|\{flatNum\}|\{\{\s*lakas_szam\s*\}\}|\{\{\s*flat_num\s*\}\}/gi, r.flatNum || '')
         .replace(/\{tarsashazNeve\}|\{buildingName\}|\{\{\s*tarsashaz_neve\s*\}\}|\{\{\s*building_name\s*\}\}/gi, bldName)
         .replace(/\{aktualisEgyenleg\}|\{egyenleg\}|\{balance\}|\{\{\s*hatralek_osszeg\s*\}\}|\{\{\s*arrears_amount\s*\}\}/gi, r.balanceFormatted || '')
@@ -557,126 +562,147 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         } catch (e) {}
 
         for (const m of matches) {
-          // 3. Flat-level deduplication: check if this flat already received notice today
-          const alreadyNotifiedToday = (curState.notifications || []).some(n => {
-            if (!n) return false;
-            const notifDate = (n.createdAt || '').slice(0, 10);
-            if (notifDate !== dateStr) return false;
-            const sameBuilding = n.buildingId === m.buildingId;
-            const sameEmail = n.recipientEmail && m.ownerEmail && n.recipientEmail.toLowerCase() === m.ownerEmail.toLowerCase();
-            const sameFlat = (n.titleHu && n.titleHu.includes(`${m.flatNum}.`)) || (n.messageHu && n.messageHu.includes(`${m.flatNum}.`));
-            return sameBuilding && (sameEmail || sameFlat);
-          }) || newNotifications.some(n => {
-            const sameBuilding = n.buildingId === m.buildingId;
-            const sameEmail = n.recipientEmail && m.ownerEmail && n.recipientEmail.toLowerCase() === m.ownerEmail.toLowerCase();
-            const sameFlat = (n.titleHu && n.titleHu.includes(`${m.flatNum}.`));
-            return sameBuilding && (sameEmail || sameFlat);
-          });
+          const bld = (curState.buildings || []).find(b => b.id === m.buildingId);
+          const flat = (bld?.flats || []).find(f => String(f.flatNum) === String(m.flatNum));
+          const ownerRecs = (Array.isArray(m.ownerRecipients) && m.ownerRecipients.length > 0)
+            ? m.ownerRecipients
+            : resolveFlatOwnerRecipients(flat || { flatNum: m.flatNum, ownerName: m.ownerName, email: m.ownerEmail }, { isEn: isEn() });
 
-          const alreadySentToday = (curState.emailOutbox || []).some(o => {
-            if (!o) return false;
-            // Simulated or failed notices do not block real sending
-            if (o.status !== 'sent') return false;
-            const oDate = (o.sentAt || o.queuedAt || '').slice(0, 10);
-            if (oDate !== dateStr) return false;
-            const sameBuilding = (!o.buildingId && !m.buildingId) || String(o.buildingId || '') === String(m.buildingId || '');
-            const sameFlat = String(o.flatNum || '') === String(m.flatNum || '');
-            const sameEmail = Boolean(o.recipientEmail && m.ownerEmail && o.recipientEmail.toLowerCase() === m.ownerEmail.toLowerCase());
-            return (sameBuilding && sameFlat) || sameEmail;
-          }) || newOutboxEntries.some(o => {
-            if (o.status !== 'sent') return false;
-            const sameBuilding = (!o.buildingId && !m.buildingId) || String(o.buildingId || '') === String(m.buildingId || '');
-            const sameFlat = String(o.flatNum || '') === String(m.flatNum || '');
-            const sameEmail = Boolean(o.recipientEmail && m.ownerEmail && o.recipientEmail.toLowerCase() === m.ownerEmail.toLowerCase());
-            return (sameBuilding && sameFlat) || sameEmail;
-          });
+          const effectiveRecipients = ownerRecs.length > 0
+            ? ownerRecs
+            : [{ name: m.ownerName, email: m.ownerEmail, sendEmailNotification: true }];
 
-          // Block duplicate sending only if already successfully sent today, unless explicitly forced
-          if (alreadySentToday && !options.testDate && !options.forceRuleId) {
-            continue;
-          }
+          for (const rec of effectiveRecipients) {
+            const ownerName = rec.name || m.ownerName;
+            const ownerEmail = (rec.email || '').trim();
+            const hasValidEmail = Boolean(ownerEmail && ownerEmail.includes('@'));
+            const canSendEmailToThisOwner = shouldSendEmail && hasValidEmail && (rec.sendEmailNotification !== false);
 
-          const hasValidEmail = Boolean(m.ownerEmail && m.ownerEmail.includes('@'));
-          let wasSent = false;
+            // 3. Flat + Owner level deduplication: check if this specific owner already received notice today
+            const alreadySentToday = (curState.emailOutbox || []).some(o => {
+              if (!o) return false;
+              if (o.status !== 'sent') return false;
+              const oDate = (o.sentAt || o.queuedAt || '').slice(0, 10);
+              if (oDate !== dateStr) return false;
+              const sameBuilding = (!o.buildingId && !m.buildingId) || String(o.buildingId || '') === String(m.buildingId || '');
+              const sameFlat = String(o.flatNum || '') === String(m.flatNum || '');
+              const sameEmail = Boolean(ownerEmail && o.recipientEmail && o.recipientEmail.toLowerCase() === ownerEmail.toLowerCase());
+              return (sameBuilding && sameFlat && sameEmail);
+            }) || newOutboxEntries.some(o => {
+              if (o.status !== 'sent') return false;
+              const sameBuilding = (!o.buildingId && !m.buildingId) || String(o.buildingId || '') === String(m.buildingId || '');
+              const sameFlat = String(o.flatNum || '') === String(m.flatNum || '');
+              const sameEmail = Boolean(ownerEmail && o.recipientEmail && o.recipientEmail.toLowerCase() === ownerEmail.toLowerCase());
+              return (sameBuilding && sameFlat && sameEmail);
+            });
 
-          if (shouldSendEmail && hasValidEmail && emailSettings.isConfigured && !options.dryRunOnly) {
-            try {
-              const bld = (curState.buildings || []).find(b => b.id === m.buildingId);
-              const sendResult = await sendResidentCustomNoticeEmail({
-                recipientEmail: m.ownerEmail,
-                recipientName: m.ownerName,
-                flatNum: m.flatNum,
-                subject: m.renderedSubject,
-                messageBody: m.renderedBody,
-                category: 'finance',
-                targetBuilding: bld,
-                repProfile: curState?.repProfile || {},
-                organizations: curState?.organizations || [],
-                senderUser: curState?.currentUser,
-                isEn: isEn(),
-                emailSettings: bld?.emailSettings || curState?.emailSettings || emailSettings,
-              });
-              wasSent = Boolean(sendResult?.success);
-            } catch (err) {
-              console.warn('[autoDunningDispatch] Failed to send email to', m.ownerEmail, err?.message);
+            // Block duplicate sending only if already successfully sent today, unless explicitly forced
+            if (alreadySentToday && !options.testDate && !options.forceRuleId) {
+              continue;
             }
-          }
 
-          if (wasSent) {
-            sentCountForRule++;
-            totalEmailsSent++;
-          }
+            // Personalize subject and body for this individual owner
+            const ownerContext = {
+              ...m.context,
+              lakas_tulajdonosa: ownerName,
+              lakasTulajdonosa: ownerName,
+              flat_owner: ownerName,
+              flatOwner: ownerName,
+              tulajdonos_neve: ownerName,
+              owner_name: ownerName,
+              tulajdonosNeve: ownerName,
+              ownerName: ownerName,
+              osszes_tulajdonos: m.ownerName,
+              all_owners: m.ownerName,
+              osszesTulajdonos: m.ownerName,
+              allOwners: m.ownerName
+            };
 
-          // Determine outbox delivery status
-          let outboxStatus = 'simulated';
-          if (shouldSendEmail) {
-            if (wasSent) outboxStatus = 'sent';
-            else if (hasValidEmail && !emailSettings.isConfigured) outboxStatus = 'queued';
-            else if (!hasValidEmail) outboxStatus = shouldSendInApp ? 'in-app-only' : 'failed';
-            else outboxStatus = 'failed';
-          } else {
-            outboxStatus = 'in-app-only';
-          }
+            const subjTpl = isEn() && rule.templateSubjectEn ? rule.templateSubjectEn : rule.templateSubject;
+            const bodyTpl = isEn() && rule.templateBodyEn ? rule.templateBodyEn : rule.templateBody;
+            const renderedSubject = subjTpl ? renderEmailTemplate(subjTpl, ownerContext) : m.renderedSubject;
+            const renderedBody = bodyTpl ? renderEmailTemplate(bodyTpl, ownerContext) : m.renderedBody;
 
-          // Add outbox log entry
-          newOutboxEntries.push({
-            id: `outbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            ruleId: rule.id,
-            ruleName: isEn() ? (rule.nameEn || rule.name) : rule.name,
-            buildingId: m.buildingId,
-            buildingName: m.buildingName,
-            flatNum: m.flatNum,
-            recipientName: m.ownerName,
-            recipientEmail: m.ownerEmail || (isEn() ? "No email provided" : "Nincs e-mail"),
-            subject: m.renderedSubject,
-            body: m.renderedBody,
-            debt: m.balance,
-            arrearsMonths: m.arrearsMonths,
-            status: outboxStatus,
-            sendEmail: shouldSendEmail,
-            sendInApp: shouldSendInApp,
-            autoDispatched: true,
-            queuedAt: new Date().toISOString(),
-            sentAt: wasSent ? new Date().toISOString() : undefined,
-          });
+            let wasSent = false;
 
-          // Add in-app notification only if in-app delivery is enabled
-          if (shouldSendInApp) {
-            newNotifications.push(
-              buildNotification({
-                type: 'finance',
-                severity: 'warning',
-                recipientEmail: m.ownerEmail || '',
-                recipientScope: 'flat',
-                buildingId: m.buildingId,
-                buildingName: m.buildingName,
-                actorUser: curState.currentUser,
-                titleHu: m.renderedSubject,
-                titleEn: m.renderedSubject,
-                messageHu: m.renderedBody,
-                messageEn: m.renderedBody,
-              })
-            );
+            if (canSendEmailToThisOwner && emailSettings.isConfigured && !options.dryRunOnly) {
+              try {
+                const sendResult = await sendResidentCustomNoticeEmail({
+                  recipientEmail: ownerEmail,
+                  recipientName: ownerName,
+                  flatNum: m.flatNum,
+                  subject: renderedSubject,
+                  messageBody: renderedBody,
+                  category: 'finance',
+                  targetBuilding: bld,
+                  repProfile: curState?.repProfile || {},
+                  organizations: curState?.organizations || [],
+                  senderUser: curState?.currentUser,
+                  isEn: isEn(),
+                  emailSettings: bld?.emailSettings || curState?.emailSettings || emailSettings,
+                });
+                wasSent = Boolean(sendResult?.success);
+              } catch (err) {
+                console.warn('[autoDunningDispatch] Failed to send email to', ownerEmail, err?.message);
+              }
+            }
+
+            if (wasSent) {
+              sentCountForRule++;
+              totalEmailsSent++;
+            }
+
+            // Determine outbox delivery status
+            let outboxStatus = 'simulated';
+            if (shouldSendEmail) {
+              if (wasSent) outboxStatus = 'sent';
+              else if (hasValidEmail && !emailSettings.isConfigured) outboxStatus = 'queued';
+              else if (!hasValidEmail || rec.sendEmailNotification === false) outboxStatus = shouldSendInApp ? 'in-app-only' : 'failed';
+              else outboxStatus = 'failed';
+            } else {
+              outboxStatus = 'in-app-only';
+            }
+
+            // Add outbox log entry for this owner
+            newOutboxEntries.push({
+              id: `outbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              ruleId: rule.id,
+              ruleName: isEn() ? (rule.nameEn || rule.name) : rule.name,
+              buildingId: m.buildingId,
+              buildingName: m.buildingName,
+              flatNum: m.flatNum,
+              recipientName: ownerName,
+              recipientEmail: ownerEmail || (isEn() ? "No email provided" : "Nincs e-mail"),
+              subject: renderedSubject,
+              body: renderedBody,
+              debt: m.balance,
+              arrearsMonths: m.arrearsMonths,
+              status: outboxStatus,
+              sendEmail: shouldSendEmail,
+              sendInApp: shouldSendInApp,
+              autoDispatched: true,
+              queuedAt: new Date().toISOString(),
+              sentAt: wasSent ? new Date().toISOString() : undefined,
+            });
+
+            // Add in-app notification only if in-app delivery is enabled
+            if (shouldSendInApp) {
+              newNotifications.push(
+                buildNotification({
+                  type: 'finance',
+                  severity: 'warning',
+                  recipientEmail: ownerEmail || '',
+                  recipientScope: 'flat',
+                  buildingId: m.buildingId,
+                  buildingName: m.buildingName,
+                  actorUser: curState.currentUser,
+                  titleHu: renderedSubject,
+                  titleEn: renderedSubject,
+                  messageHu: renderedBody,
+                  messageEn: renderedBody,
+                })
+              );
+            }
           }
         }
 

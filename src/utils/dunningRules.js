@@ -7,8 +7,9 @@
 import { formatCurrency, getCurrentFee } from './finances.js';
 
 export const MERGE_VARIABLES = [
-  { key: 'lakas_tulajdonosa', alt: 'flat_owner', labelHu: 'A lakás tulajdonosa', labelEn: 'Flat Owner' },
+  { key: 'lakas_tulajdonosa', alt: 'flat_owner', labelHu: 'A lakás tulajdonosa (vagy megszólított tulajdonos)', labelEn: 'Flat Owner (or Addressed Owner)' },
   { key: 'tulajdonos_neve', alt: 'owner_name', labelHu: 'Tulajdonos neve', labelEn: 'Owner Name' },
+  { key: 'osszes_tulajdonos', alt: 'all_owners', labelHu: 'Összes tulajdonos neve (társtulajdonosok is)', labelEn: 'All Owners (Including Co-owners)' },
   { key: 'lakas_szam', alt: 'flat_num', labelHu: 'Lakásszám', labelEn: 'Flat Number' },
   { key: 'tarsashaz_neve', alt: 'building_name', labelHu: 'Társasház hivatalos neve', labelEn: 'Condominium Name' },
   { key: 'tarsashaz_cime', alt: 'building_address', labelHu: 'Társasház címe', labelEn: 'Condominium Address' },
@@ -244,10 +245,113 @@ export function resolveFlatOwnerEmail(flat = {}) {
     return flat.email.trim();
   }
   if (Array.isArray(flat.owners) && flat.owners.length > 0) {
+    const primaryWithEmail = flat.owners.find(o => o?.isPrimaryContact && o?.email && String(o.email).trim());
+    if (primaryWithEmail) return String(primaryWithEmail.email).trim();
     const firstWithEmail = flat.owners.find(o => o?.email && String(o.email).trim());
     if (firstWithEmail) return String(firstWithEmail.email).trim();
   }
   return '';
+}
+
+/**
+ * Resolves all distinct owner recipients for a flat.
+ * When a flat has multiple owners (in flat.owners), each owner with their name and email
+ * is returned so every co-owner receives communications addressed to the flat.
+ * If multiple owners share the exact same email address, their names are merged
+ * (e.g. "Kiss János és Kiss Éva") so that their shared inbox receives one combined notice.
+ * If flat.owners is missing or empty, falls back to legacy flat.ownerName / flat.owner / flat.email.
+ *
+ * @param {Object} flat - The flat data object
+ * @param {Object} options - Options: { isEn, onlyEmailable }
+ * @returns {Array<Object>} List of recipient objects: { name, email, share, role, isPrimary, sendEmailNotification }
+ */
+export function resolveFlatOwnerRecipients(flat = {}, options = {}) {
+  if (!flat) return [];
+  const isEn = Boolean(options.isEn);
+  const onlyEmailable = Boolean(options.onlyEmailable);
+
+  if (Array.isArray(flat.owners) && flat.owners.length > 0) {
+    // 1. Clean valid owners
+    const validOwners = flat.owners
+      .map(o => ({
+        name: (o?.name || '').trim(),
+        email: (o?.email || '').trim(),
+        share: (o?.share || '').trim(),
+        role: o?.role || 'owner',
+        isPrimary: Boolean(o?.isPrimaryContact),
+        sendEmailNotification: o?.sendEmailNotification !== false
+      }))
+      .filter(o => Boolean(o.name));
+
+    if (validOwners.length > 0) {
+      // If any owner has an empty email, but flat.email is defined and only one owner exists, inherit flat.email
+      if (validOwners.length === 1 && !validOwners[0].email && flat.email) {
+        validOwners[0].email = String(flat.email).trim();
+      }
+
+      // Group owners who share the exact same non-empty email address:
+      const emailMap = new Map();
+      const recipients = [];
+
+      for (const owner of validOwners) {
+        if (onlyEmailable && (!owner.email || !owner.sendEmailNotification)) {
+          continue;
+        }
+
+        if (owner.email) {
+          const lowerEmail = owner.email.toLowerCase();
+          if (emailMap.has(lowerEmail)) {
+            // Merge with existing recipient with same email
+            const existing = emailMap.get(lowerEmail);
+            const conjunction = isEn ? ' and ' : ' és ';
+            if (!existing.name.toLowerCase().includes(owner.name.toLowerCase())) {
+              existing.name = `${existing.name}${conjunction}${owner.name}`;
+            }
+            if (owner.share && existing.share) {
+              existing.share = `${existing.share}, ${owner.share}`;
+            }
+            if (owner.isPrimary) existing.isPrimary = true;
+          } else {
+            const entry = { ...owner };
+            emailMap.set(lowerEmail, entry);
+            recipients.push(entry);
+          }
+        } else {
+          // Owner without email
+          recipients.push({ ...owner });
+        }
+      }
+
+      if (recipients.length > 0) {
+        return recipients;
+      }
+    }
+  }
+
+  // Fallback to legacy fields on flat
+  const fallbackName = resolveFlatOwnerName(flat, isEn);
+  const fallbackEmail = (flat.email || '').trim();
+
+  if (onlyEmailable && !fallbackEmail) {
+    return [];
+  }
+
+  return [{
+    name: fallbackName,
+    email: fallbackEmail,
+    share: flat.ownershipShare ? `${flat.ownershipShare}%` : '',
+    role: 'owner',
+    isPrimary: true,
+    sendEmailNotification: true
+  }];
+}
+
+/**
+ * Returns an array of all distinct, non-empty email addresses for owners of this flat.
+ */
+export function resolveFlatOwnerEmails(flat = {}) {
+  const recipients = resolveFlatOwnerRecipients(flat, { onlyEmailable: true });
+  return Array.from(new Set(recipients.map(r => r.email).filter(Boolean)));
 }
 
 /**
@@ -547,6 +651,8 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
   // Primary owner contact (safely extracted from flat.ownerName, flat.owner, flat.owners)
   const ownerName = resolveFlatOwnerName(flat, options.isEn);
   const ownerEmail = resolveFlatOwnerEmail(flat);
+  const ownerRecipients = resolveFlatOwnerRecipients(flat, { isEn: options.isEn });
+  const ownerEmails = resolveFlatOwnerEmails(flat);
   const buildingName = building.officialName || building.name || (options.isEn ? 'Condominium' : 'Társasház');
   const buildingAddress = building.address || '';
 
@@ -603,6 +709,10 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
     owner_name: ownerName,
     tulajdonosNeve: ownerName,
     ownerName: ownerName,
+    osszes_tulajdonos: ownerName,
+    all_owners: ownerName,
+    osszesTulajdonos: ownerName,
+    allOwners: ownerName,
     lakas_szam: flat.flatNum,
     flat_num: flat.flatNum,
     lakasszam: flat.flatNum,
@@ -653,12 +763,16 @@ export function evaluateFlatAgainstRule(rule, flat, building = {}, options = {})
     buildingName,
     ownerName,
     ownerEmail,
+    ownerEmails,
+    ownerRecipients,
     balance,
     arrearsHuf,
     arrearsMonths,
     monthlyFee,
     targetAccount,
     context,
+    subjectTemplate,
+    bodyTemplate,
     renderedSubject: renderEmailTemplate(subjectTemplate, context),
     renderedBody: renderEmailTemplate(bodyTemplate, context)
   };

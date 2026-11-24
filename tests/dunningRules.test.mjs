@@ -8,6 +8,8 @@ import {
   DEFAULT_DUNNING_RULES,
   MERGE_VARIABLES,
   resolveFlatOwnerName,
+  resolveFlatOwnerRecipients,
+  resolveFlatOwnerEmails,
   getBudapestTimeParts,
   shouldRuleAutoDispatchToday,
   evaluateRulesForAutoDispatch
@@ -813,6 +815,137 @@ test('21. Channel selection: respect sendEmail and sendInApp toggles independent
   assert.equal(stateB.emailOutbox.length, 1);
   assert.equal(stateB.emailOutbox[0].sendEmail, true);
   assert.equal(stateB.emailOutbox[0].sendInApp, false);
+});
+
+test('22. resolveFlatOwnerRecipients resolves every co-owner individually, merges shared emails, and respects notification preferences', () => {
+  // Case A: 2 distinct co-owners with different emails
+  const multiOwnerFlat = {
+    flatNum: '10',
+    owners: [
+      { name: 'Kiss János', email: 'janos@kiss.hu', share: '1/2', sendEmailNotification: true, isPrimaryContact: true },
+      { name: 'Kiss Éva', email: 'eva@kiss.hu', share: '1/2', sendEmailNotification: true, isPrimaryContact: false }
+    ]
+  };
+
+  const recsA = resolveFlatOwnerRecipients(multiOwnerFlat);
+  assert.equal(recsA.length, 2);
+  assert.equal(recsA[0].name, 'Kiss János');
+  assert.equal(recsA[0].email, 'janos@kiss.hu');
+  assert.equal(recsA[1].name, 'Kiss Éva');
+  assert.equal(recsA[1].email, 'eva@kiss.hu');
+
+  const emailsA = resolveFlatOwnerEmails(multiOwnerFlat);
+  assert.deepEqual(emailsA, ['janos@kiss.hu', 'eva@kiss.hu']);
+
+  // Case B: 2 co-owners sharing the exact same email -> merged into single joint recipient
+  const sharedEmailFlat = {
+    flatNum: '11',
+    owners: [
+      { name: 'Nagy Béla', email: 'csalad@nagy.hu', share: '1/2' },
+      { name: 'Nagy Katalin', email: 'csalad@nagy.hu', share: '1/2' }
+    ]
+  };
+  const recsB = resolveFlatOwnerRecipients(sharedEmailFlat);
+  assert.equal(recsB.length, 1);
+  assert.equal(recsB[0].name, 'Nagy Béla és Nagy Katalin');
+  assert.equal(recsB[0].email, 'csalad@nagy.hu');
+
+  // Case C: Co-owner unsubscribed (sendEmailNotification: false)
+  const unsubscribedOwnerFlat = {
+    flatNum: '12',
+    owners: [
+      { name: 'Tóth Gábor', email: 'gabor@toth.hu', sendEmailNotification: true },
+      { name: 'Tóth Mária', email: 'maria@toth.hu', sendEmailNotification: false }
+    ]
+  };
+  const emailableRecs = resolveFlatOwnerRecipients(unsubscribedOwnerFlat, { onlyEmailable: true });
+  assert.equal(emailableRecs.length, 1);
+  assert.equal(emailableRecs[0].name, 'Tóth Gábor');
+  assert.equal(emailableRecs[0].email, 'gabor@toth.hu');
+
+  // Case D: Legacy fallback flat without flat.owners array
+  const legacyFlat = {
+    flatNum: '15',
+    ownerName: 'Szabó Lajos',
+    email: 'lajos@szabo.hu'
+  };
+  const recsD = resolveFlatOwnerRecipients(legacyFlat);
+  assert.equal(recsD.length, 1);
+  assert.equal(recsD[0].name, 'Szabó Lajos');
+  assert.equal(recsD[0].email, 'lajos@szabo.hu');
+});
+
+test('23. executeAutomatedDunningDailyCheck dispatches notices to all co-owners of delinquent flats with personalized addressing', async () => {
+  const activeRule = {
+    id: 'rule-multi-owner-test',
+    name: 'Több tulajdonos teszt',
+    enabled: true,
+    checkDayOfMonth: 24,
+    monthThreshold: 1.0,
+    minAmountHuf: 5000,
+    operator: 'OR',
+    templateSubject: 'Fizetési értesítő: {{tarsashaz_neve}}, {{lakas_szam}}.',
+    templateBody: 'Kedves {{lakas_tulajdonosa}}! Lakás: {{lakas_szam}}, tartozás: {{hatralek_osszeg}}.'
+  };
+
+  const sampleBuilding = {
+    id: 'b-multi',
+    name: 'Több Tulaj Ház',
+    officialName: 'Több Tulaj Társasház',
+    bankKK: '11700000-11111111',
+    flats: [
+      {
+        id: 'f-multi-1',
+        flatNum: '301',
+        ownerName: 'Kiss János, Kiss Éva',
+        monthlyFee: 20000,
+        balance: -40000, // 2 months debt
+        owners: [
+          { name: 'Kiss János', email: 'janos@kiss.hu', share: '1/2', sendEmailNotification: true },
+          { name: 'Kiss Éva', email: 'eva@kiss.hu', share: '1/2', sendEmailNotification: true }
+        ]
+      }
+    ]
+  };
+
+  let state = {
+    currentUser: { id: 'admin-1', email: 'admin@tarsasapp.hu', role: 'admin' },
+    buildings: [sampleBuilding],
+    emailRules: [activeRule],
+    emailOutbox: [],
+    notifications: [],
+    organizations: [{ id: 'org-1', ownerUid: 'admin-1' }],
+    repProfile: { name: 'Közös Képviselő Kft.' }
+  };
+
+  const emailActions = createEmailActions({
+    state,
+    getState: () => state,
+    persistState: (u) => { state = typeof u === 'function' ? u(state) : u; }
+  });
+
+  const res = await emailActions.executeAutomatedDunningDailyCheck({
+    testDate: new Date('2026-11-24T07:00:00Z'), // 08:00 Budapest time
+    dryRunOnly: true
+  });
+
+  assert.equal(res.ran, true);
+  // Both co-owners of flat 301 must receive their notice in outbox
+  assert.equal(state.emailOutbox.length, 2, 'Outbox must contain an entry for EACH co-owner');
+
+  const janosEntry = state.emailOutbox.find(o => o.recipientEmail === 'janos@kiss.hu');
+  const evaEntry = state.emailOutbox.find(o => o.recipientEmail === 'eva@kiss.hu');
+
+  assert.ok(janosEntry, 'Kiss János must have an outbox entry');
+  assert.equal(janosEntry.recipientName, 'Kiss János');
+  assert.ok(janosEntry.body.includes('Kedves Kiss János!'), 'Letter to János must address Kiss János individually');
+
+  assert.ok(evaEntry, 'Kiss Éva must have an outbox entry');
+  assert.equal(evaEntry.recipientName, 'Kiss Éva');
+  assert.ok(evaEntry.body.includes('Kedves Kiss Éva!'), 'Letter to Éva must address Kiss Éva individually');
+
+  // Both should have created in-app notifications
+  assert.equal(state.notifications.length, 2, 'Notifications must be created for both co-owners');
 });
 
 

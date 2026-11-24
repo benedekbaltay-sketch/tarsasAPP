@@ -728,6 +728,28 @@ A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhe
 
 ---
 
+## 29. Több Tulajdonos (Társtulajdonosok) E-mail Értesítési és Címzési Architektúrája
+
+A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyiség) több tulajdonosa vagy haszonélvezője van (`flat.owners[]`). A rendszer a korábbi egyetlen címzettes modell helyett teljes körű több-tulajdonosi kézbesítést valósít meg mind az automatikus felszólításoknál, mind a közvetlen leveleknél:
+
+1. **Összes Társtulajdonos Kézbesítése (`resolveFlatOwnerRecipients`, `resolveFlatOwnerEmails`)**:
+   - `src/utils/dunningRules.js`: A `resolveFlatOwnerRecipients(flat, options)` bejárja a `flat.owners` tömböt, és minden érvényes névvel és e-mail címmel rendelkező tulajdonost önálló címzettként ad vissza (`{ name, email, share, role, isPrimary, sendEmailNotification }`).
+   - **Értesítési preferencia tiszteletben tartása**: Amennyiben egy tulajdonosnál ki van kapcsolva az e-mail értesítés (`sendEmailNotification === false`), a rendszer nem küld számára marketing/tájékoztató e-maileket.
+   - **Közös e-mail cím intelligens összevonása**: Amennyiben két tulajdonos (pl. házastársak) ugyanazt az e-mail címet használja, a motor nem küldi el kétszer ugyanazt a levelet a postafiókba, hanem a neveket összevonva (pl. "Kiss János és Kiss Éva") egyetlen közös levélben szólítja meg őket.
+   - **Fallback**: Ha a `flat.owners` tömb üres, automatikusan a `flat.ownerName` / `flat.owner` és `flat.email` mezőkre esik vissza.
+
+2. **Automatikus Dunning & Felszólítás Motor (`executeAutomatedDunningDailyCheck`, `functions/src/dunning.js`)**:
+   - Amikor egy hátralékos lakás megfelel egy szabály feltételeinek, a rendszer mostantól **a lakás MINDEN olyan tulajdonosának elküldi a levelet**, aki rendelkezik érvényes e-mail címmel.
+   - **Személyre szabott megszólítás**: Minden tulajdonos a saját nevére szóló levelet kap (pl. `Kedves Kiss János!`), míg az `{{osszes_tulajdonos}}` tag segítségével a társtulajdonosok listája is megjeleníthető.
+   - **Napi Duplikáció-védelem javítása**: A korábbi `(sameBuilding && sameFlat)` feltétel helyett a vizsgálat szigorúan `(sameBuilding && sameFlat && sameEmail)` alapon történik. Ezáltal a lakás 1. tulajdonosa után a 2. tulajdonos kézbesítése nem akad el duplikációként, miközben senki sem kap kétszer levelet ugyanazon a napon.
+   - **Kiküldési Napló (`emailOutbox`) és Appon belüli értesítések (`notifications`)**: Minden címzett tulajdonoshoz külön naplóbejegyzés és belső értesítés jön létre a saját e-mail címével.
+
+3. **Közvetlen Levélírás & Címzettek Számítása (`CommunicationCenterModal.jsx`)**:
+   - A "+ Új levél írása" felületen a címzettek kiszámításakor (`resolvedRecipients`) a korábbi duplikáló / hiányos mechanizmus helyett a `resolveFlatOwnerRecipients` motor adja át az albetét tulajdonosait, így a közös képviselő a címzetti listában azonnal látja mindegyik tulajdonost névvel és e-maillel, és a kiküldés mindegyiküknek megérkezik.
+   - Új beszúrható dinamikus mező: `{osszesTulajdonos}` / `{{osszes_tulajdonos}}` (Összes tulajdonos neve).
+
+---
+
 ## 28. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:

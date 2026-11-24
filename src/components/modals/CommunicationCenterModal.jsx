@@ -38,7 +38,8 @@ import { EditEmailRuleModal } from './EditEmailRuleModal';
 import { 
   DEFAULT_DUNNING_RULES, 
   runDunningDryRun,
-  resolveFlatOwnerName
+  resolveFlatOwnerName,
+  resolveFlatOwnerRecipients
 } from '../../utils/dunningRules.js';
 import { formatCurrency } from '../../utils/finances.js';
 import { 
@@ -171,47 +172,30 @@ export function CommunicationCenterModal({
       }
 
       targetFlats.forEach(flat => {
-        const pEmail = (flat.email || '').trim();
-        const pName = resolveFlatOwnerName(flat, isEn);
         const debt = (Number(flat.balance) || 0) + (Number(flat.renovationBalance) || 0);
+        const ownerRecs = resolveFlatOwnerRecipients(flat, { isEn });
 
-        recList.push({
-          buildingId: b.id,
-          buildingName: b.officialName || b.name,
-          flatNum: flat.flatNum,
-          name: pName,
-          email: pEmail,
-          isOwner: true,
-          isTenant: false,
-          balance: debt,
-          balanceFormatted: formatCurrency(debt)
-        });
-
-        if (Array.isArray(flat.owners)) {
-          flat.owners.forEach(o => {
-            const oEmail = (o.email || '').trim();
-            const oName = (o.name || '').trim();
-            if (oEmail && oEmail.toLowerCase() !== pEmail.toLowerCase()) {
-              recList.push({
-                buildingId: b.id,
-                buildingName: b.officialName || b.name,
-                flatNum: flat.flatNum,
-                name: oName || pName,
-                email: oEmail,
-                isOwner: true,
-                isTenant: false,
-                balance: debt,
-                balanceFormatted: formatCurrency(debt)
-              });
-            }
+        ownerRecs.forEach(o => {
+          recList.push({
+            buildingId: b.id,
+            buildingName: b.officialName || b.name,
+            flatNum: flat.flatNum,
+            name: o.name,
+            email: o.email || '',
+            share: o.share || '',
+            isOwner: true,
+            isTenant: false,
+            sendEmailNotification: o.sendEmailNotification !== false,
+            balance: debt,
+            balanceFormatted: formatCurrency(debt)
           });
-        }
+        });
 
         if (composeIncludeTenants && Array.isArray(flat.tenants)) {
           flat.tenants.forEach(t => {
             const tEmail = (t.email || '').trim();
             const tName = (t.name || '').trim();
-            if (tEmail) {
+            if (tEmail && t.isActive !== false) {
               recList.push({
                 buildingId: b.id,
                 buildingName: b.officialName || b.name,
@@ -220,6 +204,7 @@ export function CommunicationCenterModal({
                 email: tEmail,
                 isOwner: false,
                 isTenant: true,
+                sendEmailNotification: true,
                 balance: debt,
                 balanceFormatted: formatCurrency(debt)
               });
@@ -331,27 +316,36 @@ export function CommunicationCenterModal({
       return;
     }
 
-    const outboxPayloads = matches.map(m => ({
-      ruleId: rule.id,
-      ruleName: isEn ? (rule.nameEn || rule.name) : rule.name,
-      buildingId: m.buildingId,
-      buildingName: m.buildingName,
-      flatNum: m.flatNum,
-      recipientName: m.ownerName,
-      recipientEmail: m.ownerEmail || (isEn ? "No email provided" : "Nincs e-mail"),
-      subject: m.renderedSubject,
-      body: m.renderedBody,
-      debt: m.balance,
-      arrearsMonths: m.arrearsMonths,
-      sendEmail: rule.sendEmail !== false,
-      sendInApp: rule.sendInApp !== false,
-      status: 'simulated'
-    }));
+    const outboxPayloads = [];
+    matches.forEach(m => {
+      const recs = (Array.isArray(m.ownerRecipients) && m.ownerRecipients.length > 0)
+        ? m.ownerRecipients
+        : [{ name: m.ownerName, email: m.ownerEmail }];
+
+      recs.forEach(r => {
+        outboxPayloads.push({
+          ruleId: rule.id,
+          ruleName: isEn ? (rule.nameEn || rule.name) : rule.name,
+          buildingId: m.buildingId,
+          buildingName: m.buildingName,
+          flatNum: m.flatNum,
+          recipientName: r.name || m.ownerName,
+          recipientEmail: r.email || (isEn ? "No email provided" : "Nincs e-mail"),
+          subject: m.renderedSubject,
+          body: m.renderedBody,
+          debt: m.balance,
+          arrearsMonths: m.arrearsMonths,
+          sendEmail: rule.sendEmail !== false,
+          sendInApp: rule.sendInApp !== false,
+          status: 'simulated'
+        });
+      });
+    });
 
     queueOutboxItems(outboxPayloads);
     showToast(isEn 
-      ? `Simulated & queued ${matches.length} notices in the Outbox!` 
-      : `${matches.length} db értesítő sikeresen bejegyezve a Kiküldési naplóba!`, "info");
+      ? `Simulated & queued ${outboxPayloads.length} notices in the Outbox!` 
+      : `${outboxPayloads.length} db értesítő sikeresen bejegyezve a Kiküldési naplóba!`, "info");
   };
 
   const handleInsertTag = (tag) => {
@@ -1387,6 +1381,7 @@ export function CommunicationCenterModal({
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     {[
                       { tag: '{lakasTulajdonosa}', label: isEn ? "Flat Owner" : "A lakás tulajdonosa", icon: "👤" },
+                      { tag: '{osszesTulajdonos}', label: isEn ? "All Owners" : "Összes tulajdonos", icon: "👥" },
                       { tag: '{lakasszam}', label: isEn ? "Flat #" : "Lakásszám", icon: "🚪" },
                       { tag: '{tarsashazNeve}', label: isEn ? "Building Name" : "Társasház neve", icon: "🏢" },
                       { tag: '{egyenleg}', label: isEn ? "Current Balance" : "Aktuális egyenleg", icon: "💰" },

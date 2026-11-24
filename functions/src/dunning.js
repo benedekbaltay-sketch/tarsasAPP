@@ -99,113 +99,126 @@ export const scheduledDailyDunningEmails = onSchedule(
             const bal = (Number(flat.balance) || 0) + (Number(flat.renovationBalance) || 0);
             if (bal >= 0) continue; // Zero debt
 
-            // Extract email from flat.email or flat.owners array
-            const flatEmail = (flat.email || flat.owners?.find(o => o?.email)?.email || '').trim();
+            // Resolve all owners for this flat
+            let owners = Array.isArray(flat.owners) && flat.owners.length > 0 ? flat.owners : [];
+            if (owners.length === 0) {
+              owners = [{
+                name: flat.ownerName || flat.owner || `${flat.flatNum}. lakás tulajdonosa`,
+                email: (flat.email || '').trim(),
+                sendEmailNotification: true,
+              }];
+            }
 
-            // Deduplication: if this flat or email already received a sent notice today, NEVER send again today!
-            const alreadySentToday = outbox.some(o => {
-              if (!o || o.status !== 'sent') return false;
-              const oDate = (o.sentAt || o.queuedAt || '').slice(0, 10);
-              if (oDate !== dateStr) return false;
-              const sameBuilding = String(o.buildingId || '') === String(b.id || '');
-              const sameFlat = String(o.flatNum || '') === String(flat.flatNum || '');
-              const sameEmail = Boolean(flatEmail && o.recipientEmail && o.recipientEmail.toLowerCase() === flatEmail.toLowerCase());
-              return (sameBuilding && sameFlat) || sameEmail;
-            }) || newOutboxEntries.some(o => {
-              if (o.status !== 'sent') return false;
-              const sameBuilding = String(o.buildingId || '') === String(b.id || '');
-              const sameFlat = String(o.flatNum || '') === String(flat.flatNum || '');
-              const sameEmail = Boolean(flatEmail && o.recipientEmail && o.recipientEmail.toLowerCase() === flatEmail.toLowerCase());
-              return (sameBuilding && sameFlat) || sameEmail;
-            });
+            for (const owner of owners) {
+              const flatOwner = (owner.name || flat.ownerName || flat.owner || `${flat.flatNum}. lakás tulajdonosa`).trim();
+              const flatEmail = (owner.email || (owners.length === 1 ? flat.email : '') || '').trim();
+              if (owner.sendEmailNotification === false) continue;
 
-            if (alreadySentToday) continue;
-            const flatOwner = flat.ownerName || flat.owner || flat.owners?.[0]?.name || `${flat.flatNum}. lakás tulajdonosa`;
-            const bName = b.officialName || b.name || 'Társasház';
-            const bEmail = (b.managerContact?.email || b.email || state.repProfile?.email || '').trim();
-            const debtAmount = Math.abs(bal).toLocaleString('hu-HU') + ' Ft';
+              // Deduplication: if this flat and specific email already received a sent notice today, NEVER send again today!
+              const alreadySentToday = outbox.some(o => {
+                if (!o || o.status !== 'sent') return false;
+                const oDate = (o.sentAt || o.queuedAt || '').slice(0, 10);
+                if (oDate !== dateStr) return false;
+                const sameBuilding = String(o.buildingId || '') === String(b.id || '');
+                const sameFlat = String(o.flatNum || '') === String(flat.flatNum || '');
+                const sameEmail = Boolean(flatEmail && o.recipientEmail && o.recipientEmail.toLowerCase() === flatEmail.toLowerCase());
+                return sameBuilding && sameFlat && sameEmail;
+              }) || newOutboxEntries.some(o => {
+                if (o.status !== 'sent') return false;
+                const sameBuilding = String(o.buildingId || '') === String(b.id || '');
+                const sameFlat = String(o.flatNum || '') === String(flat.flatNum || '');
+                const sameEmail = Boolean(flatEmail && o.recipientEmail && o.recipientEmail.toLowerCase() === flatEmail.toLowerCase());
+                return sameBuilding && sameFlat && sameEmail;
+              });
 
-            const subject = (rule.templateSubject || 'Egyenleg-értesítő: {{tarsashaz_neve}}, {{lakas_szam}}. lakás')
-              .replace(/\{\{\s*tarsashaz_neve\s*\}\}/gi, bName)
-              .replace(/\{\{\s*lakas_szam\s*\}\}/gi, String(flat.flatNum));
+              if (alreadySentToday) continue;
+              const bName = b.officialName || b.name || 'Társasház';
+              const bEmail = (b.managerContact?.email || b.email || state.repProfile?.email || '').trim();
+              const debtAmount = Math.abs(bal).toLocaleString('hu-HU') + ' Ft';
 
-            const body = (rule.templateBody || 'Kedves {{lakas_tulajdonosa}}!\n\nHátralék: {{hatralek_osszeg}}')
-              .replace(/\{\{\s*lakas_tulajdonosa\s*\}\}/gi, flatOwner)
-              .replace(/\{\{\s*tarsashaz_neve\s*\}\}/gi, bName)
-              .replace(/\{\{\s*lakas_szam\s*\}\}/gi, String(flat.flatNum))
-              .replace(/\{\{\s*hatralek_osszeg\s*\}\}/gi, debtAmount);
+              const subject = (rule.templateSubject || 'Egyenleg-értesítő: {{tarsashaz_neve}}, {{lakas_szam}}. lakás')
+                .replace(/\{\{\s*tarsashaz_neve\s*\}\}/gi, bName)
+                .replace(/\{\{\s*lakas_szam\s*\}\}/gi, String(flat.flatNum));
 
-            let wasSent = false;
-            if (shouldSendEmail && resendKey && flatEmail && flatEmail.includes('@')) {
-              try {
-                const mailPayload = {
-                  from: 'Közös Képviselet <kozoskepviselet@mail.hazapp.hu>',
-                  to: [flatEmail],
-                  subject,
-                  text: body,
-                };
-                if (bEmail && bEmail.includes('@')) {
-                  mailPayload.reply_to = bEmail;
+              const body = (rule.templateBody || 'Kedves {{lakas_tulajdonosa}}!\n\nHátralék: {{hatralek_osszeg}}')
+                .replace(/\{\{\s*lakas_tulajdonosa\s*\}\}|\{\{\s*tulajdonos_neve\s*\}\}/gi, flatOwner)
+                .replace(/\{\{\s*osszes_tulajdonos\s*\}\}/gi, flat.ownerName || flatOwner)
+                .replace(/\{\{\s*tarsashaz_neve\s*\}\}/gi, bName)
+                .replace(/\{\{\s*lakas_szam\s*\}\}/gi, String(flat.flatNum))
+                .replace(/\{\{\s*hatralek_osszeg\s*\}\}/gi, debtAmount);
+
+              let wasSent = false;
+              if (shouldSendEmail && resendKey && flatEmail && flatEmail.includes('@')) {
+                try {
+                  const mailPayload = {
+                    from: 'Közös Képviselet <kozoskepviselet@mail.hazapp.hu>',
+                    to: [flatEmail],
+                    subject,
+                    text: body,
+                  };
+                  if (bEmail && bEmail.includes('@')) {
+                    mailPayload.reply_to = bEmail;
+                  }
+                  const resp = await fetch('https://api.resend.com/emails', {
+                    method: 'POST',
+                    headers: {
+                      Authorization: `Bearer ${resendKey}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(mailPayload),
+                  });
+                  const resData = await resp.json().catch(() => ({}));
+                  wasSent = resp.ok && Boolean(resData?.id);
+                } catch (err) {
+                  console.warn(`[scheduledDailyDunningEmails] Failed to send email to ${flatEmail}:`, err.message);
                 }
-                const resp = await fetch('https://api.resend.com/emails', {
-                  method: 'POST',
-                  headers: {
-                    Authorization: `Bearer ${resendKey}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify(mailPayload),
-                });
-                const resData = await resp.json().catch(() => ({}));
-                wasSent = resp.ok && Boolean(resData?.id);
-              } catch (err) {
-                console.warn(`[scheduledDailyDunningEmails] Failed to send email to ${flatEmail}:`, err.message);
               }
-            }
 
-            if (wasSent) {
-              sentForRule++;
-            }
+              if (wasSent) {
+                sentForRule++;
+              }
 
-            let status = 'in-app-only';
-            if (shouldSendEmail) {
-              status = wasSent ? 'sent' : (flatEmail ? 'failed' : (shouldSendInApp ? 'in-app-only' : 'failed'));
-            }
+              let status = 'in-app-only';
+              if (shouldSendEmail) {
+                status = wasSent ? 'sent' : (flatEmail ? 'failed' : (shouldSendInApp ? 'in-app-only' : 'failed'));
+              }
 
-            newOutboxEntries.push({
-              id: `outbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              ruleId: rule.id,
-              ruleName: rule.name || 'Felszólítási szabály',
-              buildingId: b.id,
-              buildingName: bName,
-              flatNum: flat.flatNum,
-              recipientName: flatOwner,
-              recipientEmail: flatEmail || 'Nincs e-mail',
-              subject,
-              body,
-              debt: bal,
-              status,
-              sendEmail: shouldSendEmail,
-              sendInApp: shouldSendInApp,
-              autoDispatched: true,
-              queuedAt: new Date().toISOString(),
-              sentAt: wasSent ? new Date().toISOString() : undefined,
-            });
-
-            if (shouldSendInApp) {
-              newNotifications.push({
-                id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                type: 'finance',
-                severity: 'warning',
-                recipientEmail: flatEmail,
-                recipientScope: 'flat',
+              newOutboxEntries.push({
+                id: `outbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                ruleId: rule.id,
+                ruleName: rule.name || 'Felszólítási szabály',
                 buildingId: b.id,
                 buildingName: bName,
-                titleHu: subject,
-                titleEn: subject,
-                messageHu: body,
-                messageEn: body,
-                createdAt: new Date().toISOString(),
+                flatNum: flat.flatNum,
+                recipientName: flatOwner,
+                recipientEmail: flatEmail || 'Nincs e-mail',
+                subject,
+                body,
+                debt: bal,
+                status,
+                sendEmail: shouldSendEmail,
+                sendInApp: shouldSendInApp,
+                autoDispatched: true,
+                queuedAt: new Date().toISOString(),
+                sentAt: wasSent ? new Date().toISOString() : undefined,
               });
+
+              if (shouldSendInApp) {
+                newNotifications.push({
+                  id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                  type: 'finance',
+                  severity: 'warning',
+                  recipientEmail: flatEmail,
+                  recipientScope: 'flat',
+                  buildingId: b.id,
+                  buildingName: bName,
+                  titleHu: subject,
+                  titleEn: subject,
+                  messageHu: body,
+                  messageEn: body,
+                  createdAt: new Date().toISOString(),
+                });
+              }
             }
           }
         }
