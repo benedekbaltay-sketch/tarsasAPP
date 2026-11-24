@@ -28,6 +28,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
+import { getBudapestCalendarDate, getBudapestTodayYMD } from '../../utils/serverClock';
 import { NavLogoButton } from '../NavLogoButton';
 
 function formatDateYMD(d) {
@@ -400,10 +401,10 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
 
   const backdropProps = useBackdropClose(onClose);
 
-  // Active view states
+  // Active view states (anchored to authoritative Europe/Budapest server clock)
   const [viewMode, setViewMode] = useState('month'); // 'month' | 'week' | 'day'
-  const [currentDate, setCurrentDate] = useState(() => new Date());
-  const [selectedDayStr, setSelectedDayStr] = useState(() => formatDateYMD(new Date()));
+  const [currentDate, setCurrentDate] = useState(() => getBudapestCalendarDate());
+  const [selectedDayStr, setSelectedDayStr] = useState(() => getBudapestTodayYMD());
   const [filterBuildingId, setFilterBuildingId] = useState(() => {
     return (typeof initialBuildingId === 'string' && initialBuildingId.trim()) ? initialBuildingId : 'all';
   });
@@ -429,7 +430,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
   });
   const [formColor, setFormColor] = useState('blue');
   const [formCategory, setFormCategory] = useState('assembly');
-  const [formDate, setFormDate] = useState(() => formatDateYMD(new Date()));
+  const [formDate, setFormDate] = useState(() => getBudapestTodayYMD());
   const [formTime, setFormTime] = useState('18:00');
   const [formDesc, setFormDesc] = useState('');
   const [formRecurrence, setFormRecurrence] = useState('none');
@@ -562,9 +563,9 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
   };
 
   const handleToday = () => {
-    const now = new Date();
+    const now = getBudapestCalendarDate();
     setCurrentDate(now);
-    setSelectedDayStr(formatDateYMD(now));
+    setSelectedDayStr(getBudapestTodayYMD());
   };
 
   const handlePrevDay = () => {
@@ -701,7 +702,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
     setFormBuildingId(targetBId);
     setFormColor('blue');
     setFormCategory('assembly');
-    const initialDate = presetDate || selectedDayStr || formatDateYMD(new Date());
+    const initialDate = presetDate || selectedDayStr || getBudapestTodayYMD();
     setFormDate(initialDate);
     setFormTime('18:00');
     setFormDesc('');
@@ -731,7 +732,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
     setFormBuildingId(ev.buildingId || currentBuildingId || (buildings?.[0]?.id || 'all'));
     setFormColor(ev.color || (ev.category === 'assembly' ? 'emerald' : ev.category === 'maintenance' ? 'amber' : ev.category === 'financial' ? 'purple' : 'blue'));
     setFormCategory(ev.category || 'task');
-    const evDateStr = ev.date || formatDateYMD(new Date());
+    const evDateStr = ev.date || getBudapestTodayYMD();
     setFormDate(evDateStr);
     setFormTime(ev.time || '');
     setFormDesc(ev.description || '');
@@ -746,7 +747,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
       setCustomUnit(cr.unit || 'week');
       setCustomDaysOfWeek(Array.isArray(cr.daysOfWeek) && cr.daysOfWeek.length > 0 ? cr.daysOfWeek : [new Date(evDateStr).getDay()]);
       setCustomEndType(cr.endType || 'never');
-      setCustomEndDate(cr.endDate || formatDateYMD(new Date()));
+      setCustomEndDate(cr.endDate || getBudapestTodayYMD());
       setCustomEndCount(Number(cr.endCount) || 13);
     } else {
       setCustomInterval(1);
@@ -799,7 +800,7 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
   // Events on the selected day (including matching recurring events)
   const selectedDayEvents = filteredEvents.filter(ev => isEventOnDate(ev, selectedDayStr));
 
-  const todayStr = formatDateYMD(new Date());
+  const todayStr = getBudapestTodayYMD();
 
   if (!isOpen) return null;
 

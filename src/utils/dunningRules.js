@@ -5,6 +5,7 @@
  */
 
 import { formatCurrency, getCurrentFee } from './finances.js';
+import { getServerNow, getBudapestNowParts } from './serverClock.js';
 
 export const MERGE_VARIABLES = [
   { key: 'lakas_tulajdonosa', alt: 'flat_owner', labelHu: 'A lakás tulajdonosa (vagy megszólított tulajdonos)', labelEn: 'Flat Owner (or Addressed Owner)' },
@@ -942,28 +943,10 @@ export function generateSampleFlatPreview(rule, buildings = [], options = {}) {
 
 /**
  * Extracts year, month, day, hour, minute for Europe/Budapest timezone.
+ * Defaults to the Firebase-synced invisible server clock (`getServerNow()`).
  */
-export function getBudapestTimeParts(date = new Date()) {
-  const d = (date instanceof Date && !isNaN(date.getTime())) ? date : new Date();
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Budapest',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).formatToParts(d);
-
-  const getPart = (t) => parts.find(p => p.type === t)?.value || '';
-  const year = getPart('year');
-  const month = getPart('month');
-  const day = Number(getPart('day')) || 1;
-  const hour = Number(getPart('hour')) || 0;
-  const minute = Number(getPart('minute')) || 0;
-  const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
-
+export function getBudapestTimeParts(date = null) {
+  const { year, month, day, hour, minute, dateStr } = getBudapestNowParts(date);
   return { year, month, day, hour, minute, dateStr };
 }
 
@@ -986,7 +969,7 @@ export function parseDispatchTime(timeStr) {
  */
 export function shouldRuleAutoDispatchToday(rule, options = {}) {
   if (!rule || !rule.enabled) return false;
-  const now = options.currentDate ? new Date(options.currentDate) : new Date();
+  const now = options.currentDate ? new Date(options.currentDate) : getServerNow();
   const { day, hour, minute, dateStr } = getBudapestTimeParts(now);
 
   const targetDay = Number(rule.checkDayOfMonth) || 15;
@@ -1009,7 +992,7 @@ export function shouldRuleAutoDispatchToday(rule, options = {}) {
  * Evaluates active dunning rules and returns all due rules and matching delinquent flats for scheduled dispatch.
  */
 export function evaluateRulesForAutoDispatch(rules = [], buildings = [], options = {}) {
-  const now = options.currentDate ? new Date(options.currentDate) : new Date();
+  const now = options.currentDate ? new Date(options.currentDate) : getServerNow();
   const timeParts = getBudapestTimeParts(now);
   const { hour, minute, day, dateStr } = timeParts;
 

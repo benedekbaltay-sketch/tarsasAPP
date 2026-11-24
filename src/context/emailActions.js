@@ -16,6 +16,7 @@ import {
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
 import { sendResidentCustomNoticeEmail, resolveEffectiveEmailSettings } from '../services/emailService.js';
 import { getPermanentVault, savePermanentVault } from './syncEngine.js';
+import { getServerNow, getServerIsoString } from '../utils/serverClock.js';
 
 export function createEmailActions(optionsOrState, maybeSetState) {
   let state, setState, persistState, showToast, t;
@@ -63,8 +64,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       }
     }
 
-    // Calculate Budapest time to check if a schedule change falls in the past today
-    const nowForSchedule = new Date();
+    // Calculate Budapest server time to check if a schedule change falls in the past today
+    const nowForSchedule = getServerNow();
     const { day: curScheduleDay, hour: curScheduleH, minute: curScheduleM, dateStr: todayScheduleStr } = getBudapestTimeParts(nowForSchedule);
     const curScheduleMinutes = curScheduleH * 60 + curScheduleM;
     const targetScheduleDay = Number(ruleData.checkDayOfMonth || 15);
@@ -109,14 +110,14 @@ export function createEmailActions(optionsOrState, maybeSetState) {
           ...r, 
           ...ruleData, 
           lastAutoDispatchedDate: resolvedLastDispatched,
-          updatedAt: new Date().toISOString() 
+          updatedAt: getServerIsoString() 
         } : r));
       } else {
         const newRule = {
           ...ruleData,
           id: ruleData.id || `rule-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           lastAutoDispatchedDate: isTargetTimePastToday ? todayScheduleStr : null,
-          createdAt: new Date().toISOString()
+          createdAt: getServerIsoString()
         };
         updatedRules = [newRule, ...currentRules];
       }
@@ -224,7 +225,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         ...it,
         id: it.id || `outbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         status: it.status || 'simulated',
-        queuedAt: new Date().toISOString()
+        queuedAt: getServerIsoString()
       }));
       return {
         ...prev,
@@ -314,7 +315,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       };
 
       const paymentDetails = buildPaymentDetailsBlock(rFlat, rBuilding, { isEn: isEn() });
-      const now = new Date();
+      const now = getServerNow();
       const dueDate = new Date(now.getTime() + (8 * 24 * 60 * 60 * 1000));
       const dueDateFormatted = isEn()
         ? dueDate.toLocaleDateString('en-GB')
@@ -407,8 +408,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         errorMessage: emailErrorMessage,
         sendEmail,
         sendInApp: sendInAppNotification,
-        queuedAt: new Date().toISOString(),
-        sentAt: emailWasSent ? new Date().toISOString() : undefined,
+        queuedAt: getServerIsoString(),
+        sentAt: emailWasSent ? getServerIsoString() : undefined,
       });
     }));
 
@@ -497,7 +498,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         if (!targetRule) {
           return { ran: false, reason: 'rule-not-found' };
         }
-        const now = options.testDate || new Date();
+        const now = options.testDate || getServerNow();
         const { dateStr } = getBudapestTimeParts(now);
         const matches = runDunningDryRun(targetRule, curState.buildings || [], {}, {
           isEn: isEn(),
@@ -516,7 +517,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
           {
             isEn: isEn(),
             repProfile: curState.repProfile,
-            currentDate: options.testDate || new Date(),
+            currentDate: options.testDate || getServerNow(),
             history: curState.emailOutbox || []
           }
         );
@@ -681,8 +682,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
               sendEmail: shouldSendEmail,
               sendInApp: shouldSendInApp,
               autoDispatched: true,
-              queuedAt: new Date().toISOString(),
-              sentAt: wasSent ? new Date().toISOString() : undefined,
+              queuedAt: getServerIsoString(),
+              sentAt: wasSent ? getServerIsoString() : undefined,
             });
 
             // Add in-app notification only if in-app delivery is enabled
@@ -708,7 +709,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
 
         updatedRuleMarkers[rule.id] = {
           lastAutoDispatchedDate: dateStr,
-          lastAutoDispatchedAt: new Date().toISOString(),
+          lastAutoDispatchedAt: getServerIsoString(),
           lastAutoDispatchedCount: sentCountForRule
         };
       }

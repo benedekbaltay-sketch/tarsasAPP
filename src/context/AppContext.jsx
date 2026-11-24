@@ -6,6 +6,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { recalculateFlatBalances } from '../utils/finances';
 import { formatTaxNumber } from '../utils/taxNumber';
 import { playNotificationSound } from '../utils/sound';
+import { bindFirebaseServerTimeOffset } from '../utils/serverClock';
 import { RotateCcw, X } from 'lucide-react';
 
 import {
@@ -1150,6 +1151,14 @@ export function AppProvider({ children }) {
   const calendarActions = createCalendarActions({ state, persistState, showToast, t });
   const teamActions = createTeamActions({ state, persistState, showToast, t });
   const emailActions = createEmailActions({ state, setState, persistState, showToast, t });
+
+  // Invisible Server Clock Sync: subscribe to Firebase `.info/serverTimeOffset`
+  // so Europe/Budapest scheduling & calendar logic never relies on drifted client clocks.
+  useEffect(() => {
+    const { rtdb } = getFirebaseInstance();
+    if (!rtdb) return;
+    return bindFirebaseServerTimeOffset(rtdb, ref, onValue);
+  }, []);
 
   // Periodic Automated Dunning Dispatch Check (runs daily at 8:00 AM Europe/Budapest)
   const isAutoDunningInProgressRef = useRef(false);

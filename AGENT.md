@@ -778,7 +778,21 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
 
 ---
 
-## 31. Maintenance Checklist for Future Sessions
+## 31. Láthatatlan Budapesti Szerveróra (`serverClock.js`)
+
+1. **Firebase `.info/serverTimeOffset` Szinkronizáció**:
+   - A `src/utils/serverClock.js` egy teljesen láthatatlan, UI elemektől mentes központi időszolgáltatás, amely az alkalmazás indulásakor (`AppContext.jsx`) feliratkozik a Firebase Realtime Database beépített `.info/serverTimeOffset` csatornájára.
+   - Kiszámítja a Google NTP-szinkronizált szerverórája és a kliens számítógépe közötti ezredmásodperc-eltérést, így a rendszer **soha nem függ a felhasználó elállítódott gépórájától vagy idegen időzónájától**.
+   - Offline állapotban automatikusan, hiba nélkül visszaesik a helyi rendszerórára.
+
+2. **Integrációs Pontok (`Europe/Budapest`)**:
+   - **Időzített felszólítások és e-mailek (`dunningRules.js`, `emailActions.js`)**: A `getBudapestTimeParts`, `shouldRuleAutoDispatchToday`, `evaluateRulesForAutoDispatch` és a kiküldési időbélyegek (`queuedAt`, `sentAt`, `lastAutoDispatchedAt`) mind a `getServerNow()` / `getServerIsoString()` értékét használják.
+   - **Naptár (`CalendarModal.jsx`)**: A „Ma” kiemelés (`todayStr`), az alapértelmezett dátumválasztás, a „Ma” gomb (`handleToday`) és az új esemény dátuma mind a `getBudapestCalendarDate()` / `getBudapestTodayYMD()` függvényekre épül.
+   - **Tesztlefedettség**: 4 dedikált egységteszt a `tests/serverClock.test.mjs` fájlban (offset szinkron, téli/nyári CET/CEST átállás, éjfél-normalizálás, elállított kliensóra elleni védelem).
+
+---
+
+## 32. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
 1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?
