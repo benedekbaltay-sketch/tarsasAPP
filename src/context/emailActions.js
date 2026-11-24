@@ -82,7 +82,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         updatedRules = currentRules.map((r, idx) => (idx === existingIdx ? { 
           ...r, 
           ...ruleData, 
-          lastAutoDispatchedDate: scheduleChanged ? undefined : r.lastAutoDispatchedDate,
+          lastAutoDispatchedDate: scheduleChanged ? null : (r.lastAutoDispatchedDate || null),
           updatedAt: new Date().toISOString() 
         } : r));
       } else {

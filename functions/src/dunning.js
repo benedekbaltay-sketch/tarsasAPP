@@ -99,9 +99,11 @@ export const scheduledDailyDunningEmails = onSchedule(
             const bal = (Number(flat.balance) || 0) + (Number(flat.renovationBalance) || 0);
             if (bal >= 0) continue; // Zero debt
 
-            const flatEmail = (flat.email || '').trim();
-            const flatOwner = flat.ownerName || flat.owner || `${flat.flatNum}. lakás tulajdonosa`;
+            // Extract email from flat.email or flat.owners array
+            const flatEmail = (flat.email || flat.owners?.find(o => o?.email)?.email || '').trim();
+            const flatOwner = flat.ownerName || flat.owner || flat.owners?.[0]?.name || `${flat.flatNum}. lakás tulajdonosa`;
             const bName = b.officialName || b.name || 'Társasház';
+            const bEmail = (b.managerContact?.email || b.email || state.repProfile?.email || '').trim();
             const debtAmount = Math.abs(bal).toLocaleString('hu-HU') + ' Ft';
 
             const subject = (rule.templateSubject || 'Egyenleg-értesítő: {{tarsashaz_neve}}, {{lakas_szam}}. lakás')
@@ -117,18 +119,22 @@ export const scheduledDailyDunningEmails = onSchedule(
             let wasSent = false;
             if (shouldSendEmail && resendKey && flatEmail && flatEmail.includes('@')) {
               try {
+                const mailPayload = {
+                  from: 'HazApp <ertesito@mail.hazapp.hu>',
+                  to: [flatEmail],
+                  subject,
+                  text: body,
+                };
+                if (bEmail && bEmail.includes('@')) {
+                  mailPayload.reply_to = bEmail;
+                }
                 const resp = await fetch('https://api.resend.com/emails', {
                   method: 'POST',
                   headers: {
                     Authorization: `Bearer ${resendKey}`,
                     'Content-Type': 'application/json',
                   },
-                  body: JSON.stringify({
-                    from: 'HazApp <ertesito@mail.hazapp.hu>',
-                    to: [flatEmail],
-                    subject,
-                    text: body,
-                  }),
+                  body: JSON.stringify(mailPayload),
                 });
                 const resData = await resp.json().catch(() => ({}));
                 wasSent = resp.ok && Boolean(resData?.id);

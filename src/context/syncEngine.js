@@ -360,10 +360,10 @@ export function mergeStateWithCloud(local, cloud) {
   const localRules = Array.isArray(local.emailRules) ? local.emailRules : null;
 
   if (cloudRules && localRules) {
-    // Preserve local lastAutoDispatchedDate so cloud sync never rolls back dispatch state
+    // Preserve local lastAutoDispatchedDate only if both have a date and local is strictly newer
     cloudRules.forEach(cr => {
       const lr = localRules.find(r => r && r.id === cr.id);
-      if (lr && lr.lastAutoDispatchedDate && (!cr.lastAutoDispatchedDate || lr.lastAutoDispatchedDate >= cr.lastAutoDispatchedDate)) {
+      if (lr && lr.lastAutoDispatchedDate && cr.lastAutoDispatchedDate && lr.lastAutoDispatchedDate > cr.lastAutoDispatchedDate) {
         cr.lastAutoDispatchedDate = lr.lastAutoDispatchedDate;
         cr.lastAutoDispatchedAt = lr.lastAutoDispatchedAt || cr.lastAutoDispatchedAt;
         cr.lastAutoDispatchedCount = lr.lastAutoDispatchedCount !== undefined ? lr.lastAutoDispatchedCount : cr.lastAutoDispatchedCount;
