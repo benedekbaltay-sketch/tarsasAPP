@@ -2,9 +2,16 @@
  * Action creators for email communication, automated dunning rules, direct resident notices, and outbox logs.
  */
 
-import { DEFAULT_DUNNING_RULES, buildPaymentDetailsBlock, resolveFlatOwnerName } from '../utils/dunningRules.js';
+import { 
+  DEFAULT_DUNNING_RULES, 
+  buildPaymentDetailsBlock, 
+  resolveFlatOwnerName,
+  getBudapestTimeParts,
+  shouldRuleAutoDispatchToday,
+  evaluateRulesForAutoDispatch
+} from '../utils/dunningRules.js';
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
-import { sendResidentCustomNoticeEmail } from '../services/emailService.js';
+import { sendResidentCustomNoticeEmail, resolveEffectiveEmailSettings } from '../services/emailService.js';
 import { getPermanentVault, savePermanentVault } from './syncEngine.js';
 
 export function createEmailActions(optionsOrState, maybeSetState) {
@@ -16,16 +23,23 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     ({ state, setState, persistState, showToast, t } = optionsOrState || {});
   }
 
-  const isEn = () => (state?.currentLang === 'en');
+  const getState = () => {
+    if (typeof optionsOrState?.getState === 'function') return optionsOrState.getState();
+    if (optionsOrState && typeof optionsOrState === 'object' && 'state' in optionsOrState) return optionsOrState.state;
+    return state;
+  };
+
+  const isEn = () => (getState()?.currentLang === 'en');
 
   const checkManagePerm = (buildingId) => {
-    if (!state?.currentUser) return false;
+    const cur = getState();
+    if (!cur?.currentUser) return false;
     // If specific building, check permission on that building
     if (buildingId && buildingId !== 'all') {
-      return canUserManageBuilding(state.currentUser, buildingId, state.organizations, state.buildings);
+      return canUserManageBuilding(cur.currentUser, buildingId, cur.organizations, cur.buildings);
     }
     // If 'all', user must have permission on at least one or be owner/superadmin
-    return canUserManageBuilding(state.currentUser, null, state.organizations, state.buildings);
+    return canUserManageBuilding(cur.currentUser, null, cur.organizations, cur.buildings);
   };
 
   const saveEmailRule = (ruleData) => {
@@ -364,6 +378,170 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     return { success: true, count: recipients.length };
   };
 
+  const executeAutomatedDunningDailyCheck = async (options = {}) => {
+    const curState = getState();
+    if (!curState?.currentUser) return { ran: false, reason: 'no-user' };
+
+    // Permission check: only users who can manage buildings can execute dunning actions
+    if (!checkManagePerm('all')) {
+      return { ran: false, reason: 'unauthorized' };
+    }
+
+    const currentRules = Array.isArray(curState?.emailRules) && curState.emailRules.length > 0
+      ? curState.emailRules
+      : DEFAULT_DUNNING_RULES;
+
+    const evaluation = evaluateRulesForAutoDispatch(
+      currentRules,
+      curState.buildings || [],
+      {
+        isEn: isEn(),
+        repProfile: curState.repProfile,
+        currentDate: options.testDate || new Date(),
+        history: curState.emailOutbox || []
+      }
+    );
+
+    if (!evaluation.shouldRun) {
+      return { ran: false, ...evaluation };
+    }
+
+    const newOutboxEntries = [];
+    const newNotifications = [];
+    const updatedRuleMarkers = {};
+    let totalEmailsSent = 0;
+
+    const emailSettings = resolveEffectiveEmailSettings(curState.globalSettings?.emailSettings || curState.repProfile?.emailSettings);
+
+    for (const { rule, dateStr, matches } of evaluation.resultsByRule) {
+      let sentCountForRule = 0;
+
+      for (const m of matches) {
+        const hasValidEmail = Boolean(m.ownerEmail && m.ownerEmail.includes('@'));
+        let wasSent = false;
+
+        if (hasValidEmail && emailSettings.isConfigured && !options.dryRunOnly) {
+          try {
+            const bld = (curState.buildings || []).find(b => b.id === m.buildingId);
+            const sendResult = await sendResidentCustomNoticeEmail({
+              recipientEmail: m.ownerEmail,
+              recipientName: m.ownerName,
+              flatNum: m.flatNum,
+              subject: m.renderedSubject,
+              messageBody: m.renderedBody,
+              category: 'finance',
+              targetBuilding: bld,
+              repProfile: curState?.repProfile || {},
+              organizations: curState?.organizations || [],
+              senderUser: curState?.currentUser,
+              isEn: isEn(),
+              emailSettings: bld?.emailSettings || curState?.emailSettings || {},
+            });
+            wasSent = Boolean(sendResult?.success);
+          } catch (err) {
+            console.warn('[autoDunningDispatch] Failed to send email to', m.ownerEmail, err?.message);
+          }
+        }
+
+        if (wasSent) {
+          sentCountForRule++;
+          totalEmailsSent++;
+        }
+
+        // Add outbox log entry
+        newOutboxEntries.push({
+          id: `outbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          ruleId: rule.id,
+          ruleName: isEn() ? (rule.nameEn || rule.name) : rule.name,
+          buildingId: m.buildingId,
+          buildingName: m.buildingName,
+          flatNum: m.flatNum,
+          recipientName: m.ownerName,
+          recipientEmail: m.ownerEmail || (isEn() ? "No email provided" : "Nincs e-mail"),
+          subject: m.renderedSubject,
+          body: m.renderedBody,
+          debt: m.balance,
+          arrearsMonths: m.arrearsMonths,
+          status: wasSent ? 'sent' : (hasValidEmail && !emailSettings.isConfigured ? 'queued' : 'in-app-only'),
+          autoDispatched: true,
+          queuedAt: new Date().toISOString(),
+          sentAt: wasSent ? new Date().toISOString() : undefined,
+        });
+
+        // Add in-app notification
+        newNotifications.push(
+          buildNotification({
+            type: 'finance',
+            severity: 'warning',
+            recipientEmail: m.ownerEmail || '',
+            recipientScope: 'flat',
+            buildingId: m.buildingId,
+            buildingName: m.buildingName,
+            actorUser: curState.currentUser,
+            titleHu: m.renderedSubject,
+            titleEn: m.renderedSubject,
+            messageHu: m.renderedBody,
+            messageEn: m.renderedBody,
+          })
+        );
+      }
+
+      updatedRuleMarkers[rule.id] = {
+        lastAutoDispatchedDate: dateStr,
+        lastAutoDispatchedAt: new Date().toISOString(),
+        lastAutoDispatchedCount: sentCountForRule
+      };
+    }
+
+    // Persist updated rules, outbox and notifications
+    const updater = (prev) => {
+      const rules = Array.isArray(prev.emailRules) && prev.emailRules.length > 0 
+        ? prev.emailRules 
+        : JSON.parse(JSON.stringify(DEFAULT_DUNNING_RULES));
+
+      const updatedRules = rules.map(r => {
+        if (updatedRuleMarkers[r.id]) {
+          return { ...r, ...updatedRuleMarkers[r.id] };
+        }
+        return r;
+      });
+
+      const curOutbox = Array.isArray(prev.emailOutbox) ? prev.emailOutbox : [];
+      const curNotifs = Array.isArray(prev.notifications) ? prev.notifications : [];
+
+      return {
+        ...prev,
+        emailRules: updatedRules,
+        emailOutbox: [...newOutboxEntries, ...curOutbox].slice(0, 500),
+        notifications: [...newNotifications, ...curNotifs].slice(0, 300),
+        lastUpdated: Date.now(),
+        revision: (prev.revision || 0) + 1
+      };
+    };
+
+    if (typeof persistState === 'function') {
+      persistState(updater, true);
+    } else if (typeof setState === 'function') {
+      setState(updater);
+    }
+
+    if (totalEmailsSent > 0 && typeof showToast === 'function') {
+      showToast(
+        t?.comm_rule_auto_dispatched_toast
+          ? t.comm_rule_auto_dispatched_toast.replace('{count}', totalEmailsSent)
+          : (isEn() ? `Automated 8:00 AM dispatch sent ${totalEmailsSent} emails!` : `Az automatikus reggel 8:00-i kiküldés elküldött ${totalEmailsSent} db e-mailt!`),
+        'info'
+      );
+    }
+
+    return {
+      ran: true,
+      totalEmailsSent,
+      processedRulesCount: evaluation.dueRules.length,
+      outboxEntriesCount: newOutboxEntries.length
+    };
+  };
+
   return {
     saveEmailRule,
     deleteEmailRule,
@@ -371,5 +549,6 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     queueOutboxItems,
     clearOutboxItems,
     sendCustomResidentNotice,
+    executeAutomatedDunningDailyCheck,
   };
 }

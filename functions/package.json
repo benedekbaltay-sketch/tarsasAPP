@@ -8,7 +8,7 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check src/financeMath.js && node --check src/authGuard.js && node --check src/transactions.js && node --check src/assessments.js && node --check src/members.js && node --check src/loans.js && node --check src/organizations.js"
+    "lint": "node --check index.js && node --check src/financeMath.js && node --check src/authGuard.js && node --check src/transactions.js && node --check src/assessments.js && node --check src/members.js && node --check src/loans.js && node --check src/organizations.js && node --check src/dunning.js"
   },
   "dependencies": {
     "firebase-admin": "^14.5.1",

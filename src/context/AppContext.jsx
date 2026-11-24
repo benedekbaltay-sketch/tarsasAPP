@@ -1151,6 +1151,35 @@ export function AppProvider({ children }) {
   const teamActions = createTeamActions({ state, persistState, showToast, t });
   const emailActions = createEmailActions({ state, setState, persistState, showToast, t });
 
+  // Periodic Automated Dunning Dispatch Check (runs daily at 8:00 AM Europe/Budapest)
+  useEffect(() => {
+    if (!state.currentUser || !isInitialSyncDone || !state.buildings || state.buildings.length === 0) {
+      return;
+    }
+
+    const canManage = canUserManageBuilding(state.currentUser, null, state.organizations, state.buildings);
+    if (!canManage) return;
+
+    // Run short initial check 3 seconds after hydration
+    const initialTimer = setTimeout(() => {
+      emailActions.executeAutomatedDunningDailyCheck().catch((err) => {
+        console.warn('[automatedDunningDailyCheck] Initial check error:', err?.message);
+      });
+    }, 3000);
+
+    // Periodic check every 60 seconds
+    const intervalTimer = setInterval(() => {
+      emailActions.executeAutomatedDunningDailyCheck().catch((err) => {
+        console.warn('[automatedDunningDailyCheck] Interval check error:', err?.message);
+      });
+    }, 60000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(intervalTimer);
+    };
+  }, [state.currentUser?.uid, isInitialSyncDone, state.currentBuildingId]);
+
   // Helper to check if current user is admin/KK authorized (respecting org suspension & staff delegation)
   const isCurrentUserAdmin = (user = state.currentUser, users = state.users) => {
     if (!user) return false;

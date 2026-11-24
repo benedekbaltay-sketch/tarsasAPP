@@ -611,15 +611,19 @@ A rendszer jobb felső sarkában található Értesítési / E-mail felület kib
      3. **Kiküldési Napló & Várólista**: Generált és szimulált levelek listája, állapota, időbélyege és levélelőnézete.
    - Portfólió nézetből megnyitva minden kezelt házat egyben kezel, háznézetből megnyitva pedig az adott társasházra szűr, de a fejlécben található társasház-választóval bármikor váltható.
 
-2. **Képletezhető Felszólítási Szabálymotor (`src/utils/dunningRules.js`)**:
-   - **Egyenlegtípus szűrés**: Közös költség (`KK`), Felújítási alap (`FA`) vagy Összesített hátralék (`ALL`).
+2. **Képletezhető Felszólítási Szabálymotor (`src/utils/dunningRules.js`) és Automatikus Reggel 8:00-i Kiküldés**:
+   - **Egyenlegtípus szűrés**: Közös költség (`KK`), Felújítási alap (`FA`) vagy Összesített hátralék (`ALL`, `per_account`).
    - **Feltétel- és küszöbérték képletek**:
      - *Havi hátralék küszöb*: Az elmaradt havi előírások hányadosa (`debt / monthlyFee`), pl. >= 1 hó emlékeztető, >= 3 hó fizetési felszólítás, >= 6 hó jogi eljárás előtti figyelmeztetés.
      - *Minimum Ft küszöb*: Megadott forintösszeg feletti hátralékok (pl. >= 10 000 Ft).
      - *Kombinált logika*: `OR` (vagy a havi elmaradás, vagy a forintösszeg teljesül) vagy `AND` (mindkét feltételnek teljesülnie kell).
-   - **Időzítés és kiküldési védelem (Cooldown)**:
-     - Futási nap beállítása (pl. minden hónap 15-én).
-     - Ismétlési védelem (`cooldownDays`, pl. 25-30 nap), amely megakadályozza a duplikált kiküldést ugyanabban a számlázási ciklusban.
+   - **Automatikus Reggel 8:00-i Kiküldés (Europe/Budapest)**:
+     - Futási nap beállítása (`checkDayOfMonth`, pl. minden hónap 24-én). A felhasználói felületen és a motorban ez determinisztikusan a **reggel 08:00-i kiküldést** jelenti.
+     - Kettős (felhő- és kliensoldali) ütemezés:
+       - *Kliensoldali scheduler (`AppContext.jsx`, `executeAutomatedDunningDailyCheck`)*: Amikor az adminisztrátor be van jelentkezve, 60 másodperces ellenőrzési ciklussal észleli a fordulónap 08:00 óráját, lefuttatja a vizsgálatot, és automatikusan elküldi a leveleket a Resend API-n keresztül.
+       - *Szerveroldali felhő scheduler (`functions/src/dunning.js: scheduledDailyDunningEmails`)*: Minden nap 08:00-kor (Budapest időzóna szerint) a Cloud Scheduler önállóan is lefut.
+     - *Napi idempotencia védelem*: A szabály `lastAutoDispatchedDate` mezője (`YYYY-MM-DD`) és az `emailOutbox` bejegyzések garantálják, hogy ugyanazon a napon soha ne menjen ki kétszer értesítés.
+     - Ismétlési védelem (`cooldownDays`, pl. 25-30 nap) és kereszt-türelmi védelem (`crossRuleCooldown`), amely megakadályozza a duplikált kiküldést ugyanabban a számlázási ciklusban.
    - **Dinamikus sablonkezelő & Merge tagek**:
      - Változók beillesztése: `{{tulajdonos_neve}}`, `{{lakas_szam}}`, `{{hatralek_osszeg}}`, `{{hatralek_honapok}}`, `{{alapterulet}}`, `{{tarsashaz_neve}}`, `{{szamlaszam}}`, `{{kozlemeny}}`, `{{fizetesi_hatarido}}`, `{{kepviselo_neve}}`, `{{kepviselo_telefon}}`, `{{kepviselo_email}}`, `{{datum}}`.
      - Változó beillesztő chipek a szerkesztőben a könnyű kattintásos sablonépítéshez.
@@ -640,7 +644,7 @@ A rendszer jobb felső sarkában található Értesítési / E-mail felület kib
    - Szerepkör alapú hozzáférés: Lakók nem férhetnek hozzá a felszólítási motorhoz, csak adminisztrátorok és kijelölt képviselők.
 
 6. **Automatizált Egységtesztek**:
-   - `tests/dunningRules.test.mjs` (`npm run test:dunning`): 7 determinisztikus teszt fedi le a sablonbehelyettesítést, a pozitív/nulla egyenlegek kizárását, a havi arányszámítást, a kombinált logikát, a cooldown védelmet, a többházas száraz tesztet és a valósághű minta lakás előnézet-generálást (`generateSampleFlatPreview`).
+   - `tests/dunningRules.test.mjs` (`npm run test:dunning`): 20 determinisztikus teszt fedi le a sablonbehelyettesítést, a pozitív/nulla egyenlegek kizárását, a havi arányszámítást, a kombinált logikát, a cooldown védelmet, a többházas száraz tesztet, a valósághű minta lakás előnézet-generálást, a budapesti időzóna-számítást, a reggel 8:00 előtti blokkolást és az automatikus reggel 8:00-i kiküldést és idempotencia védelmet.
 
 ---
 

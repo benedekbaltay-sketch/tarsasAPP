@@ -813,3 +813,96 @@ export function generateSampleFlatPreview(rule, buildings = [], options = {}) {
     allUnits: allUnitsList
   };
 }
+
+/**
+ * Extracts year, month, day, hour, minute for Europe/Budapest timezone.
+ */
+export function getBudapestTimeParts(date = new Date()) {
+  const d = (date instanceof Date && !isNaN(date.getTime())) ? date : new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Budapest',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(d);
+
+  const getPart = (t) => parts.find(p => p.type === t)?.value || '';
+  const year = getPart('year');
+  const month = getPart('month');
+  const day = Number(getPart('day')) || 1;
+  const hour = Number(getPart('hour')) || 0;
+  const minute = Number(getPart('minute')) || 0;
+  const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
+
+  return { year, month, day, hour, minute, dateStr };
+}
+
+/**
+ * Determines whether a dunning rule should automatically dispatch today at or after 08:00 Budapest time.
+ */
+export function shouldRuleAutoDispatchToday(rule, options = {}) {
+  if (!rule || !rule.enabled) return false;
+  const now = options.currentDate ? new Date(options.currentDate) : new Date();
+  const { day, hour, dateStr } = getBudapestTimeParts(now);
+
+  // Must be 08:00 AM or later
+  if (hour < 8) return false;
+
+  const targetDay = Number(rule.checkDayOfMonth) || 15;
+  if (targetDay !== day) return false;
+
+  // Prevent multiple runs on the same calendar day
+  if (rule.lastAutoDispatchedDate === dateStr) return false;
+
+  return true;
+}
+
+/**
+ * Evaluates active dunning rules and returns all due rules and matching delinquent flats for 8:00 AM dispatch.
+ */
+export function evaluateRulesForAutoDispatch(rules = [], buildings = [], options = {}) {
+  const now = options.currentDate ? new Date(options.currentDate) : new Date();
+  const timeParts = getBudapestTimeParts(now);
+  const { hour, day, dateStr } = timeParts;
+
+  if (hour < 8) {
+    return { shouldRun: false, reason: 'before-8am', hour, day, dateStr, dueRules: [], resultsByRule: [] };
+  }
+
+  const activeRules = Array.isArray(rules) ? rules : [];
+  const dueRules = activeRules.filter(r => shouldRuleAutoDispatchToday(r, { currentDate: now }));
+
+  if (dueRules.length === 0) {
+    return { shouldRun: false, reason: 'no-due-rules', hour, day, dateStr, dueRules: [], resultsByRule: [] };
+  }
+
+  const resultsByRule = [];
+
+  for (const rule of dueRules) {
+    const matches = runDunningDryRun(rule, buildings, {}, {
+      isEn: options.isEn,
+      repProfile: options.repProfile,
+      currentDate: now,
+      history: options.history || []
+    });
+
+    resultsByRule.push({
+      rule,
+      dateStr,
+      matches
+    });
+  }
+
+  return {
+    shouldRun: true,
+    hour,
+    day,
+    dateStr,
+    dueRules,
+    resultsByRule
+  };
+}

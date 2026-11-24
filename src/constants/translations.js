@@ -964,6 +964,11 @@ export const translations = {
     comm_tag_company_name: "Cégnév / Vállalkozás",
     comm_cross_cooldown_label: "Kereszt-türelmi védelem",
     comm_per_account_badge: "Alszámlánként",
+    comm_rule_check_day_label: "Havi kiküldés napja (reggel 8:00)",
+    comm_rule_check_day_hint: "Minden hónap adott napján reggel 8:00-kor automatikusan fut és kiküldi az e-maileket.",
+    comm_rule_schedule_chip: "Minden hó {day}. – 08:00 (automatikusan)",
+    comm_rule_last_run: "Utolsó kiküldés: {date}",
+    comm_rule_auto_dispatched_toast: "Automatikus reggel 8:00-i kiküldés lefutott ({count} e-mail kiküldve).",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Csapat & Jogosultságok",
     team_modal_subtitle: "Munkatársak e-mail csatolása, társasházak kiosztása és jogosultságok kezelése.",
@@ -2111,6 +2116,11 @@ export const translations = {
     comm_tag_company_name: "Company / Business Name",
     comm_cross_cooldown_label: "Cross-Rule Cooldown",
     comm_per_account_badge: "Per-Account",
+    comm_rule_check_day_label: "Monthly Dispatch Day (8:00 AM)",
+    comm_rule_check_day_hint: "Runs automatically on this day of the month at 8:00 AM to dispatch emails.",
+    comm_rule_schedule_chip: "Every month {day}th – 08:00 AM (automatic)",
+    comm_rule_last_run: "Last dispatch: {date}",
+    comm_rule_auto_dispatched_toast: "Automatic 8:00 AM dispatch completed ({count} emails sent).",
     // Self-Service Team Delegation & Organization Permissions
     team_modal_title: "Team & Access Permissions",
     team_modal_subtitle: "Attach colleagues by email, assign condominiums, and manage security permissions.",

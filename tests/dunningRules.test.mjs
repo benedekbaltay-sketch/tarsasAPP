@@ -7,7 +7,10 @@ import {
   generateSampleFlatPreview,
   DEFAULT_DUNNING_RULES,
   MERGE_VARIABLES,
-  resolveFlatOwnerName
+  resolveFlatOwnerName,
+  getBudapestTimeParts,
+  shouldRuleAutoDispatchToday,
+  evaluateRulesForAutoDispatch
 } from '../src/utils/dunningRules.js';
 import { mergeStateWithCloud } from '../src/context/syncEngine.js';
 import { createEmailActions } from '../src/context/emailActions.js';
@@ -545,6 +548,156 @@ test('17. deleteEmailRule updates vault.deletedIds and mergeStateWithCloud preve
   assert.equal(merged.emailRules[0].id, 'rule-keep');
   assert.equal(merged.emailRules.some(r => r.id === 'rule-delete'), false, 'Deleted rule must NOT be resurrected by stale local cache');
 });
+
+test('18. getBudapestTimeParts extracts accurate Europe/Budapest hour, day, and date string', () => {
+  // Test with UTC 06:00 on November 24th -> Budapest (UTC+1 winter time) is 07:00
+  const utc7 = new Date('2026-11-24T06:30:00Z');
+  const parts7 = getBudapestTimeParts(utc7);
+  assert.equal(parts7.day, 24);
+  assert.equal(parts7.hour, 7);
+  assert.equal(parts7.dateStr, '2026-11-24');
+
+  // Test with UTC 07:00 on November 24th -> Budapest is 08:00
+  const utc8 = new Date('2026-11-24T07:00:00Z');
+  const parts8 = getBudapestTimeParts(utc8);
+  assert.equal(parts8.day, 24);
+  assert.equal(parts8.hour, 8);
+  assert.equal(parts8.dateStr, '2026-11-24');
+});
+
+test('19. shouldRuleAutoDispatchToday blocks execution before 08:00 AM, matches on 08:00+ on target day, and prevents duplicate dispatch on same day', () => {
+  const sampleRule = {
+    id: 'rule-24',
+    name: '24-i emlékeztető',
+    enabled: true,
+    checkDayOfMonth: 24,
+    lastAutoDispatchedDate: null
+  };
+
+  // 1. Before 08:00 (e.g. 07:30 Budapest time) -> must NOT run
+  const time730 = new Date('2026-11-24T06:30:00Z'); // 07:30 Budapest
+  assert.equal(shouldRuleAutoDispatchToday(sampleRule, { currentDate: time730 }), false);
+
+  // 2. Disabled rule at 08:00 -> must NOT run
+  const disabledRule = { ...sampleRule, enabled: false };
+  const time800 = new Date('2026-11-24T07:00:00Z'); // 08:00 Budapest
+  assert.equal(shouldRuleAutoDispatchToday(disabledRule, { currentDate: time800 }), false);
+
+  // 3. Different check day (e.g. rule is for 25th, but today is 24th) -> must NOT run
+  const rule25 = { ...sampleRule, checkDayOfMonth: 25 };
+  assert.equal(shouldRuleAutoDispatchToday(rule25, { currentDate: time800 }), false);
+
+  // 4. Enabled rule on 24th at 08:00 Budapest time -> MUST run!
+  assert.equal(shouldRuleAutoDispatchToday(sampleRule, { currentDate: time800 }), true);
+
+  // 5. Later in the day on the 24th (e.g. 10:15 Budapest time) if not yet run -> MUST run!
+  const time1015 = new Date('2026-11-24T09:15:00Z'); // 10:15 Budapest
+  assert.equal(shouldRuleAutoDispatchToday(sampleRule, { currentDate: time1015 }), true);
+
+  // 6. Already dispatched today -> must NOT run again (prevents duplicate dispatching)
+  const alreadyRanRule = { ...sampleRule, lastAutoDispatchedDate: '2026-11-24' };
+  assert.equal(shouldRuleAutoDispatchToday(alreadyRanRule, { currentDate: time800 }), false);
+  assert.equal(shouldRuleAutoDispatchToday(alreadyRanRule, { currentDate: time1015 }), false);
+});
+
+test('20. evaluateRulesForAutoDispatch and executeAutomatedDunningDailyCheck automatically process due rules, mark lastAutoDispatchedDate, and log to outbox', async () => {
+  const activeRule = {
+    id: 'rule-auto-24',
+    name: '1 havi tartozás 24-én',
+    enabled: true,
+    checkDayOfMonth: 24,
+    monthThreshold: 1.0,
+    minAmountHuf: 5000,
+    operator: 'OR',
+    templateSubject: 'Fizetési emlékeztető: {{tarsashaz_neve}}, {{lakas_szam}}.',
+    templateBody: 'Kedves {{lakas_tulajdonosa}}! Tartozás: {{hatralek_osszeg}}.'
+  };
+
+  const sampleBuilding = {
+    id: 'b-auto',
+    name: 'Teszt Ház',
+    officialName: 'Teszt Társasház Kft.',
+    bankKK: '11700000-11111111',
+    flats: [
+      {
+        id: 'f-1',
+        flatNum: '101',
+        ownerName: 'Nagy Anna',
+        email: 'anna@teszt.hu',
+        monthlyFee: 20000,
+        balance: -25000 // 1.25 months debt -> matches rule
+      },
+      {
+        id: 'f-2',
+        flatNum: '102',
+        ownerName: 'Kiss Béla',
+        email: 'bela@teszt.hu',
+        monthlyFee: 20000,
+        balance: 5000 // In surplus -> never dunned
+      }
+    ]
+  };
+
+  let state = {
+    currentUser: { id: 'admin-1', email: 'admin@tarsasapp.hu', role: 'admin' },
+    buildings: [sampleBuilding],
+    emailRules: [activeRule],
+    emailOutbox: [],
+    notifications: [],
+    organizations: [{ id: 'org-1', ownerUid: 'admin-1' }],
+    repProfile: { name: 'Közös Képviselő Kft.' }
+  };
+
+  const persistState = (updater) => {
+    state = typeof updater === 'function' ? updater(state) : updater;
+  };
+
+  const emailActions = createEmailActions({
+    state,
+    getState: () => state,
+    persistState
+  });
+
+  // 1. Run at 07:45 Budapest time -> should NOT run yet
+  const resBefore8 = await emailActions.executeAutomatedDunningDailyCheck({
+    testDate: new Date('2026-11-24T06:45:00Z'), // 07:45 Budapest
+    dryRunOnly: true
+  });
+  assert.equal(resBefore8.ran, false);
+  assert.equal(resBefore8.reason, 'before-8am');
+
+  // 2. Run at 08:00 Budapest time -> MUST execute and process flat 101!
+  const resAt8 = await emailActions.executeAutomatedDunningDailyCheck({
+    testDate: new Date('2026-11-24T07:00:00Z'), // 08:00 Budapest
+    dryRunOnly: true
+  });
+  assert.equal(resAt8.ran, true);
+  assert.equal(resAt8.processedRulesCount, 1);
+  assert.equal(resAt8.outboxEntriesCount, 1);
+
+  // Check state mutations
+  const updatedRule = state.emailRules.find(r => r.id === 'rule-auto-24');
+  assert.equal(updatedRule.lastAutoDispatchedDate, '2026-11-24');
+  assert.ok(updatedRule.lastAutoDispatchedAt);
+
+  // Outbox entries
+  assert.equal(state.emailOutbox.length, 1);
+  const outboxEntry = state.emailOutbox[0];
+  assert.equal(outboxEntry.flatNum, '101');
+  assert.equal(outboxEntry.recipientName, 'Nagy Anna');
+  assert.equal(outboxEntry.autoDispatched, true);
+  assert.ok(outboxEntry.subject.includes('101'));
+
+  // 3. Second run immediately after -> MUST be skipped because already dispatched today!
+  const resDuplicate = await emailActions.executeAutomatedDunningDailyCheck({
+    testDate: new Date('2026-11-24T07:05:00Z'),
+    dryRunOnly: true
+  });
+  assert.equal(resDuplicate.ran, false);
+  assert.equal(resDuplicate.reason, 'no-due-rules');
+  assert.equal(state.emailOutbox.length, 1, 'Outbox must NOT have duplicates on the same day');
+});
+
 
 
 

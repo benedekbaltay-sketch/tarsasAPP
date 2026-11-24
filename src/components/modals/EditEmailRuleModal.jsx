@@ -361,7 +361,7 @@ export function EditEmailRuleModal({
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-gray-500" />
-                      <span>{isEn ? "Monthly Check Day" : "Havi ellenőrzés napja"}</span>
+                      <span>{t.comm_rule_check_day_label || (isEn ? "Monthly Dispatch Day (8:00 AM)" : "Havi kiküldés napja (reggel 8:00)")}</span>
                     </label>
                     <input
                       type="number"
@@ -372,7 +372,7 @@ export function EditEmailRuleModal({
                       className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
                     />
                     <span className="text-[10px] text-gray-400 mt-0.5 block">
-                      {isEn ? "Day of month (e.g. 24th or 25th)" : "Minden hónap adott napján (pl. 24-én vagy 25-én)"}
+                      {t.comm_rule_check_day_hint || (isEn ? "Runs automatically on this day of the month at 8:00 AM" : "Minden hónap adott napján reggel 8:00-kor automatikusan fut")}
                     </span>
                   </div>
 
