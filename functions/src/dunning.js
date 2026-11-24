@@ -10,6 +10,14 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getDatabase } from 'firebase-admin/database';
 import { getFirestore } from 'firebase-admin/firestore';
 
+function parseDispatchTime(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return { hour: 8, minute: 0 };
+  const parts = timeStr.trim().split(':');
+  const h = Math.min(23, Math.max(0, parseInt(parts[0], 10) || 0));
+  const m = Math.min(59, Math.max(0, parseInt(parts[1], 10) || 0));
+  return { hour: h, minute: m };
+}
+
 function getBudapestParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Budapest',
@@ -26,19 +34,21 @@ function getBudapestParts(date = new Date()) {
   const month = getPart('month');
   const day = Number(getPart('day')) || 1;
   const hour = Number(getPart('hour')) || 0;
+  const minute = Number(getPart('minute')) || 0;
   const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
-  return { year, month, day, hour, dateStr };
+  return { year, month, day, hour, minute, dateStr };
 }
 
 export const scheduledDailyDunningEmails = onSchedule(
   {
-    schedule: '0 8 * * *',
+    schedule: 'every 15 minutes',
     timeZone: 'Europe/Budapest',
     region: 'europe-west1',
   },
   async () => {
     const now = new Date();
-    const { day, dateStr } = getBudapestParts(now);
+    const { day, hour, minute, dateStr } = getBudapestParts(now);
+    const currentTotalMinutes = hour * 60 + minute;
 
     const resendKey = (process.env.RESEND_API_KEY || '').trim();
 
@@ -49,9 +59,14 @@ export const scheduledDailyDunningEmails = onSchedule(
       if (!state) return;
 
       const rules = Array.isArray(state.emailRules) ? state.emailRules : [];
-      const enabledDueRules = rules.filter(
-        (r) => r && r.enabled && Number(r.checkDayOfMonth || 15) === day && r.lastAutoDispatchedDate !== dateStr
-      );
+      const enabledDueRules = rules.filter((r) => {
+        if (!r || !r.enabled) return false;
+        if (Number(r.checkDayOfMonth || 15) !== day) return false;
+        if (r.lastAutoDispatchedDate === dateStr) return false;
+        const targetTime = parseDispatchTime(r.dispatchTime);
+        const targetTotalMinutes = targetTime.hour * 60 + targetTime.minute;
+        return currentTotalMinutes >= targetTotalMinutes;
+      });
 
       if (enabledDueRules.length === 0) {
         console.log(`[scheduledDailyDunningEmails] No enabled rules due for day ${day} (date: ${dateStr}).`);

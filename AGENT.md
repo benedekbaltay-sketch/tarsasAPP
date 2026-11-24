@@ -696,7 +696,27 @@ A közös képviseleti cégadatok és a kijelölt házkezelő kollégák elérhe
 
 ---
 
-## 26. Maintenance Checklist for Future Sessions
+## 27. Automatikus Értesítési Szabályok – Pontos Időpont Beállítás (dispatchTime) és Resend Domain Integráció
+
+1. **Egyedi és Pontos Időpont Beállítás (`dispatchTime`)**:
+   - A korábbi kizárólagos reggel 8:00-i kiküldés helyett mostantól minden felszólítási szabályhoz (`emailRule`) egyedileg megadható a havi nap (`checkDayOfMonth`, 1-31) és a **pontos kiküldési időpont** (`dispatchTime`, pl. `"08:00"`, `"09:30"`, `"14:00"`) `HH:mm` formátumban.
+   - **Alapértelmezés és Visszafelé Kompatibilitás**: Ha egy meglévő szabály nem tartalmaz `dispatchTime`-ot, a rendszer automatikusan `"08:00"`-nak tekinti (`parseDispatchTime(rule.dispatchTime)`).
+   - **Kliensoldali és Szerveroldali Szinkron**:
+     - `src/utils/dunningRules.js`: `shouldRuleAutoDispatchToday` percre pontosan ellenőrzi az aktuális Europe/Budapest időt (`currentTotalMinutes >= targetTotalMinutes`).
+     - `functions/src/dunning.js`: A Cloud Functions ütemező 15 percenként fut (`schedule: 'every 15 minutes'`), így bármilyen napszakban beállított szabályok automatikusan lefutnak.
+     - `src/context/AppContext.jsx`: A kliensoldali 60 másodperces ellenőrző ciklus azonnal elindítja a kiküldést, amint a böngésző nyitva van és a megadott perc elérkezik.
+   - **Felhasználói Felület (`EditEmailRuleModal.jsx`, `CommunicationCenterModal.jsx`)**:
+     - Modern `<input type="time" ... />` időválasztó mező és 4 oszlopos reszponzív rács.
+     - A szabálykártyákon a chip mostantól a pontos időt jeleníti meg: `Minden hó {day}. – {time} (automatikusan)`.
+     - Kétnyelvű támogatás (`comm_rule_dispatch_time_label`, `comm_rule_dispatch_time_hint`) magyar és angol nyelven.
+
+2. **Resend Hitelesített Domain Integráció (`mail.hazapp.hu`)**:
+   - Feladó: `HazApp <ertesito@mail.hazapp.hu>`, DKIM/SPF/DMARC rekordokkal hitelesítve.
+   - A válaszcím (`Reply-To`) továbbra is dinamikusan a társasház képviselőjének közvetlen e-mail címe, így a lakók válaszai nem vesznek el.
+
+---
+
+## 28. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
 1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?

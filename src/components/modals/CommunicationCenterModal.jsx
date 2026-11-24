@@ -773,7 +773,7 @@ export function CommunicationCenterModal({
                                 🏢 {rule.buildingId === 'all' ? (isEn ? "All Buildings" : "Minden ház") : (bObj?.officialName || bObj?.name || 'Társasház')}
                               </span>
                               <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 text-[10px] font-bold border border-amber-200">
-                                ⏰ {t.comm_rule_schedule_chip ? t.comm_rule_schedule_chip.replace('{day}', rule.checkDayOfMonth || 15) : (isEn ? `Every month ${rule.checkDayOfMonth || 15}th – 08:00 AM` : `Minden hó ${rule.checkDayOfMonth || 15}. – 08:00`)}
+                                ⏰ {t.comm_rule_schedule_chip ? t.comm_rule_schedule_chip.replace('{day}', rule.checkDayOfMonth || 15).replace('{time}', rule.dispatchTime || '08:00') : (isEn ? `Every month ${rule.checkDayOfMonth || 15}th – ${rule.dispatchTime || '08:00'}` : `Minden hó ${rule.checkDayOfMonth || 15}. – ${rule.dispatchTime || '08:00'}`)}
                               </span>
                               {rule.lastAutoDispatchedDate && (
                                 <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[10px] font-medium border border-gray-200">

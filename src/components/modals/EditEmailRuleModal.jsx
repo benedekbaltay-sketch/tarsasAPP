@@ -42,6 +42,7 @@ export function EditEmailRuleModal({
   const [minAmountHuf, setMinAmountHuf] = useState(rule?.minAmountHuf !== undefined ? rule.minAmountHuf : 10000);
   const [operator, setOperator] = useState(rule?.operator || 'OR');
   const [checkDayOfMonth, setCheckDayOfMonth] = useState(rule?.checkDayOfMonth || 15);
+  const [dispatchTime, setDispatchTime] = useState(rule?.dispatchTime || '08:00');
   const [cooldownDays, setCooldownDays] = useState(rule?.cooldownDays !== undefined ? rule.cooldownDays : 25);
   const [crossRuleCooldown, setCrossRuleCooldown] = useState(rule?.crossRuleCooldown !== undefined ? rule.crossRuleCooldown : true);
   const [templateSubject, setTemplateSubject] = useState(rule?.templateSubject || '');
@@ -70,6 +71,7 @@ export function EditEmailRuleModal({
       minAmountHuf: Number(minAmountHuf) || 0,
       operator,
       checkDayOfMonth: Number(checkDayOfMonth) || 15,
+      dispatchTime: dispatchTime || '08:00',
       cooldownDays: Number(cooldownDays) || 25,
       crossRuleCooldown: Boolean(crossRuleCooldown),
       templateSubject,
@@ -80,7 +82,7 @@ export function EditEmailRuleModal({
       sendEmail,
       sendInApp
     };
-  }, [rule, name, buildingId, targetAccount, conditionType, monthThreshold, maxMonthThreshold, minAmountHuf, operator, checkDayOfMonth, cooldownDays, crossRuleCooldown, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, sendEmail, sendInApp, isEn]);
+  }, [rule, name, buildingId, targetAccount, conditionType, monthThreshold, maxMonthThreshold, minAmountHuf, operator, checkDayOfMonth, dispatchTime, cooldownDays, crossRuleCooldown, templateSubject, templateSubjectEn, templateBody, templateBodyEn, enabled, sendEmail, sendInApp, isEn]);
 
   // Real-time realistic sample preview for any picked or random flat
   const samplePreview = useMemo(() => {
@@ -431,11 +433,11 @@ export function EditEmailRuleModal({
 
               {/* Timing & Deduplication */}
               <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-gray-500" />
-                      <span>{t.comm_rule_check_day_label || (isEn ? "Monthly Dispatch Day (8:00 AM)" : "Havi kiküldés napja (reggel 8:00)")}</span>
+                      <span>{t.comm_rule_check_day_label || (isEn ? "Monthly Dispatch Day" : "Havi kiküldés napja")}</span>
                     </label>
                     <input
                       type="number"
@@ -446,13 +448,29 @@ export function EditEmailRuleModal({
                       className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
                     />
                     <span className="text-[10px] text-gray-400 mt-0.5 block">
-                      {t.comm_rule_check_day_hint || (isEn ? "Runs automatically on this day of the month at 8:00 AM" : "Minden hónap adott napján reggel 8:00-kor automatikusan fut")}
+                      {t.comm_rule_check_day_hint || (isEn ? "Day of the month (1-31)" : "A hónap adott napja (1-31)")}
                     </span>
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-gray-500" />
+                      <span>{t.comm_rule_dispatch_time_label || (isEn ? "Exact Dispatch Time" : "Kiküldés pontos ideje")}</span>
+                    </label>
+                    <input
+                      type="time"
+                      value={dispatchTime}
+                      onChange={(e) => setDispatchTime(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-white focus:outline-none font-bold"
+                    />
+                    <span className="text-[10px] text-gray-400 mt-0.5 block">
+                      {t.comm_rule_dispatch_time_hint || (isEn ? "Europe/Budapest timezone" : "Europe/Budapest idő szerint")}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-gray-500" />
                       <span>{isEn ? "Cooldown / Re-send Guard" : "Türelmi idő (nap)"}</span>
                     </label>
                     <input

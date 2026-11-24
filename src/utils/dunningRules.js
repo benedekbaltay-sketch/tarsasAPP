@@ -41,6 +41,7 @@ export const DEFAULT_DUNNING_RULES = [
     minAmountHuf: 5000,
     operator: 'OR', // 'OR' | 'AND'
     checkDayOfMonth: 24,
+    dispatchTime: '08:00',
     cooldownDays: 25,
     crossRuleCooldown: true, // Prevents duplicate notice if another dunning rule triggered within cooldown
     sendEmail: true,
@@ -93,6 +94,7 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
     minAmountHuf: 30000,
     operator: 'OR',
     checkDayOfMonth: 25,
+    dispatchTime: '08:00',
     cooldownDays: 25,
     crossRuleCooldown: true,
     sendEmail: true,
@@ -149,6 +151,7 @@ Email: {{kepviselo_email}} | Phone: {{kepviselo_telefon}}`
     minAmountHuf: 50000,
     operator: 'OR',
     checkDayOfMonth: 25,
+    dispatchTime: '08:00',
     cooldownDays: 30,
     crossRuleCooldown: true,
     sendEmail: true,
@@ -848,18 +851,36 @@ export function getBudapestTimeParts(date = new Date()) {
 }
 
 /**
- * Determines whether a dunning rule should automatically dispatch today at or after 08:00 Budapest time.
+ * Parses and normalizes rule dispatch time string ('HH:mm') into hour, minute and clean string.
+ * Defaults to '08:00' if omitted or invalid.
+ */
+export function parseDispatchTime(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return { hour: 8, minute: 0, timeStr: '08:00' };
+  const parts = timeStr.trim().split(':');
+  const h = Math.min(23, Math.max(0, parseInt(parts[0], 10) || 0));
+  const m = Math.min(59, Math.max(0, parseInt(parts[1], 10) || 0));
+  const formatted = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  return { hour: h, minute: m, timeStr: formatted };
+}
+
+/**
+ * Determines whether a dunning rule should automatically dispatch today at or after its scheduled time in Europe/Budapest.
+ * Defaults to 08:00 if dispatchTime is omitted.
  */
 export function shouldRuleAutoDispatchToday(rule, options = {}) {
   if (!rule || !rule.enabled) return false;
   const now = options.currentDate ? new Date(options.currentDate) : new Date();
-  const { day, hour, dateStr } = getBudapestTimeParts(now);
-
-  // Must be 08:00 AM or later
-  if (hour < 8) return false;
+  const { day, hour, minute, dateStr } = getBudapestTimeParts(now);
 
   const targetDay = Number(rule.checkDayOfMonth) || 15;
   if (targetDay !== day) return false;
+
+  const targetTime = parseDispatchTime(rule.dispatchTime);
+  const currentTotalMinutes = hour * 60 + minute;
+  const targetTotalMinutes = targetTime.hour * 60 + targetTime.minute;
+
+  // Must be at or after the scheduled time today
+  if (currentTotalMinutes < targetTotalMinutes) return false;
 
   // Prevent multiple runs on the same calendar day
   if (rule.lastAutoDispatchedDate === dateStr) return false;
@@ -868,22 +889,20 @@ export function shouldRuleAutoDispatchToday(rule, options = {}) {
 }
 
 /**
- * Evaluates active dunning rules and returns all due rules and matching delinquent flats for 8:00 AM dispatch.
+ * Evaluates active dunning rules and returns all due rules and matching delinquent flats for scheduled dispatch.
  */
 export function evaluateRulesForAutoDispatch(rules = [], buildings = [], options = {}) {
   const now = options.currentDate ? new Date(options.currentDate) : new Date();
   const timeParts = getBudapestTimeParts(now);
-  const { hour, day, dateStr } = timeParts;
-
-  if (hour < 8) {
-    return { shouldRun: false, reason: 'before-8am', hour, day, dateStr, dueRules: [], resultsByRule: [] };
-  }
+  const { hour, minute, day, dateStr } = timeParts;
 
   const activeRules = Array.isArray(rules) ? rules : [];
   const dueRules = activeRules.filter(r => shouldRuleAutoDispatchToday(r, { currentDate: now }));
 
   if (dueRules.length === 0) {
-    return { shouldRun: false, reason: 'no-due-rules', hour, day, dateStr, dueRules: [], resultsByRule: [] };
+    const isEarlyMorning = hour < 8;
+    const reason = isEarlyMorning ? 'before-8am' : 'no-due-rules';
+    return { shouldRun: false, reason, hour, minute, day, dateStr, dueRules: [], resultsByRule: [] };
   }
 
   const resultsByRule = [];
