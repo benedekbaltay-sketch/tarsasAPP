@@ -245,15 +245,15 @@ export function TeamManagementModal({ isOpen, onClose }) {
     const initialAssignments = {};
     orgBuildings.forEach((b) => {
       const existing = member.buildingAssignments?.[b.id];
+      const isManagerHere = b.contactDisplayMode === 'manager' && normalizeEmail(b.managerContact?.email) === normalizeEmail(member.email);
       if (existing) {
         initialAssignments[b.id] = {
           role: existing.role === 'viewer' ? 'viewer' : 'manager',
           canEditBankAccounts: Boolean(existing.canEditBankAccounts),
-          showManagerContact: Boolean(existing.showManagerContact),
-          showCentralContact: Boolean(existing.showCentralContact),
+          showManagerContact: existing.showManagerContact !== undefined ? Boolean(existing.showManagerContact) : isManagerHere,
+          showCentralContact: existing.showCentralContact !== undefined ? Boolean(existing.showCentralContact) : Boolean(b.showCentralContactToResidents),
         };
       } else {
-        const isManagerHere = b.contactDisplayMode === 'manager' && normalizeEmail(b.managerContact?.email) === normalizeEmail(member.email);
         initialAssignments[b.id] = {
           role: 'manager',
           canEditBankAccounts: Boolean(member.permissions?.canEditBankAccounts),
@@ -262,13 +262,21 @@ export function TeamManagementModal({ isOpen, onClose }) {
         };
       }
     });
-    const existingRoles = Object.values(member.buildingAssignments || {}).map((a) => a?.role).filter(Boolean);
-    const initialRole = existingRoles.length > 0 && existingRoles.every((r) => r === 'viewer') ? 'viewer' : 'manager';
+    const activeIdsForDefaults = member.buildingScope === 'all'
+      ? orgBuildings.map((b) => b.id)
+      : bIds;
+    const activeInitialItems = activeIdsForDefaults.map((id) => initialAssignments[id]).filter(Boolean);
+    const initialRole = activeInitialItems.length > 0 && activeInitialItems.every((a) => a.role === 'viewer') ? 'viewer' : 'manager';
+    const initialBank = activeInitialItems.length > 0
+      ? activeInitialItems.every((a) => Boolean(a.canEditBankAccounts))
+      : Boolean(member.permissions?.canEditBankAccounts);
+    const initialContact = activeInitialItems.length > 0 && activeInitialItems.every((a) => Boolean(a.showManagerContact));
+    const initialCentral = activeInitialItems.length > 0 && activeInitialItems.every((a) => Boolean(a.showCentralContact));
     setAllScopeDefaults({
       role: initialRole,
-      canEditBankAccounts: Boolean(member.permissions?.canEditBankAccounts),
-      showManagerContact: false,
-      showCentralContact: false,
+      canEditBankAccounts: initialBank,
+      showManagerContact: initialContact,
+      showCentralContact: initialCentral,
     });
     setFormBuildingAssignments(initialAssignments);
     setSelectedBuildingConfigTab('all');
@@ -322,9 +330,10 @@ export function TeamManagementModal({ isOpen, onClose }) {
       showManagerContact: false,
       showCentralContact: false,
     };
+    const targetIds = formScope === 'all' ? orgBuildings.map((b) => b.id) : formBuildingIds;
     setFormBuildingAssignments((prev) => {
       const next = { ...prev };
-      formBuildingIds.forEach((id) => {
+      targetIds.forEach((id) => {
         next[id] = { ...src };
       });
       return next;
@@ -333,37 +342,63 @@ export function TeamManagementModal({ isOpen, onClose }) {
   };
 
   const getActiveAssignment = () => {
-    if (formScope === 'all') {
+    const targetIds = formScope === 'all'
+      ? orgBuildings.map((b) => b.id)
+      : (selectedBuildingConfigTab !== 'all' ? [selectedBuildingConfigTab] : formBuildingIds);
+
+    const total = targetIds.length;
+    if (total === 0) {
       return {
+        total: 0,
         role: allScopeDefaults.role || 'manager',
+        roleMixed: false,
+        managerCount: 0,
+        viewerCount: 0,
         canEditBankAccounts: Boolean(allScopeDefaults.canEditBankAccounts || permEditBankAccounts),
+        bankMixed: false,
+        bankCount: 0,
         showManagerContact: Boolean(allScopeDefaults.showManagerContact),
+        contactMixed: false,
+        contactCount: 0,
         showCentralContact: Boolean(allScopeDefaults.showCentralContact),
+        centralMixed: false,
+        centralCount: 0,
       };
     }
-    const targetBId = selectedBuildingConfigTab !== 'all' ? selectedBuildingConfigTab : (formBuildingIds[0] || null);
-    if (!targetBId || !formBuildingAssignments[targetBId]) {
-      return {
-        role: allScopeDefaults.role || 'manager',
-        canEditBankAccounts: Boolean(allScopeDefaults.canEditBankAccounts || permEditBankAccounts),
-        showManagerContact: Boolean(allScopeDefaults.showManagerContact),
-        showCentralContact: Boolean(allScopeDefaults.showCentralContact),
-      };
-    }
-    if (selectedBuildingConfigTab !== 'all') {
-      return formBuildingAssignments[targetBId];
-    }
-    const first = formBuildingAssignments[targetBId] || {};
-    const allSameRole = formBuildingIds.every((id) => (formBuildingAssignments[id]?.role || 'manager') === (first.role || 'manager'));
-    const allSameManager = formBuildingIds.every((id) => Boolean(formBuildingAssignments[id]?.showManagerContact) === Boolean(first.showManagerContact));
-    const allSameCentral = formBuildingIds.every((id) => Boolean(formBuildingAssignments[id]?.showCentralContact) === Boolean(first.showCentralContact));
-    const allSameBank = formBuildingIds.every((id) => Boolean(formBuildingAssignments[id]?.canEditBankAccounts) === Boolean(first.canEditBankAccounts));
+
+    let managerCount = 0;
+    let viewerCount = 0;
+    let bankCount = 0;
+    let contactCount = 0;
+    let centralCount = 0;
+
+    targetIds.forEach((id) => {
+      const a = formBuildingAssignments[id] || allScopeDefaults;
+      if (a?.role === 'viewer') viewerCount++;
+      else managerCount++;
+      if (a?.canEditBankAccounts) bankCount++;
+      if (a?.showManagerContact) contactCount++;
+      if (a?.showCentralContact) centralCount++;
+    });
+
+    const roleMixed = managerCount > 0 && viewerCount > 0;
+    const role = roleMixed ? 'mixed' : (viewerCount === total ? 'viewer' : 'manager');
 
     return {
-      role: allSameRole ? (first.role || 'manager') : (allScopeDefaults.role || 'manager'),
-      showManagerContact: allSameManager ? Boolean(first.showManagerContact) : Boolean(allScopeDefaults.showManagerContact),
-      showCentralContact: allSameCentral ? Boolean(first.showCentralContact) : Boolean(allScopeDefaults.showCentralContact),
-      canEditBankAccounts: allSameBank ? Boolean(first.canEditBankAccounts) : Boolean(allScopeDefaults.canEditBankAccounts),
+      total,
+      role,
+      roleMixed,
+      managerCount,
+      viewerCount,
+      canEditBankAccounts: bankCount === total,
+      bankMixed: bankCount > 0 && bankCount < total,
+      bankCount,
+      showManagerContact: contactCount === total,
+      contactMixed: contactCount > 0 && contactCount < total,
+      contactCount,
+      showCentralContact: centralCount === total,
+      centralMixed: centralCount > 0 && centralCount < total,
+      centralCount,
     };
   };
 
@@ -1549,9 +1584,14 @@ export function TeamManagementModal({ isOpen, onClose }) {
                   {/* Tömeges beállítások kártya (Minden kijelölt házra egyszerre) */}
                   <div className="p-3.5 rounded-xl bg-white border border-blue-200 space-y-3 shadow-2xs">
                     <div className="flex items-center justify-between flex-wrap gap-2">
-                      <span className="text-[11px] font-bold text-[#1E3A8A] flex items-center gap-1">
+                      <span className="text-[11px] font-bold text-[#1E3A8A] flex items-center gap-1.5 flex-wrap">
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        {t.team_bulk_preset_title || (isEn ? 'Bulk Role Preset (All Assigned Buildings)' : 'Tömeges beállítás (Minden kiválasztott házra)')}
+                        <span>{t.team_bulk_preset_title || (isEn ? 'Bulk Role Preset (All Assigned Buildings)' : 'Tömeges beállítás (Minden kiválasztott házra)')}</span>
+                        {(currentAssignment.roleMixed || currentAssignment.bankMixed || currentAssignment.contactMixed || currentAssignment.centralMixed) && (
+                          <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                            {t.team_mixed_settings_badge || (isEn ? 'Mixed per building' : 'Vegyes beállítások')}
+                          </span>
+                        )}
                       </span>
                       <span className="text-[10px] text-gray-500 font-semibold">
                         {formScope === 'all'
@@ -1560,20 +1600,40 @@ export function TeamManagementModal({ isOpen, onClose }) {
                       </span>
                     </div>
 
+                    {currentAssignment.roleMixed && (
+                      <div className="px-3 py-2 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-950 flex items-center justify-between gap-2 flex-wrap">
+                        <span className="font-semibold">
+                          {isEn
+                            ? `Mixed roles across buildings: ${currentAssignment.managerCount} Full Manager, ${currentAssignment.viewerCount} Viewer.`
+                            : `Vegyes szerepkörök a házaknál: ${currentAssignment.managerCount} Teljes kezelő, ${currentAssignment.viewerCount} Csak megtekintő.`}
+                        </span>
+                        <span className="text-[10px] text-amber-800">
+                          {isEn ? 'Click either option below to unify all.' : 'Kattints bármelyikre az egységesítéshez.'}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <button
                         type="button"
                         onClick={() => setUnifiedAssignmentValue('role', 'manager')}
                         className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all flex items-start gap-2.5 ${
-                          currentAssignment.role !== 'viewer'
+                          currentAssignment.role === 'manager'
                             ? 'bg-blue-100/80 border-2 border-[#1E3A8A] shadow-xs'
-                            : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'
+                            : currentAssignment.roleMixed
+                              ? 'bg-blue-50/40 border-dashed border-blue-300 hover:bg-blue-50 text-gray-700'
+                              : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'
                         }`}
                       >
-                        <Shield className={`w-4 h-4 mt-0.5 flex-shrink-0 ${currentAssignment.role !== 'viewer' ? 'text-[#1E3A8A]' : 'text-gray-400'}`} />
+                        <Shield className={`w-4 h-4 mt-0.5 flex-shrink-0 ${currentAssignment.role === 'manager' ? 'text-[#1E3A8A]' : 'text-gray-400'}`} />
                         <div>
-                          <div className={`font-bold text-xs ${currentAssignment.role !== 'viewer' ? 'text-[#1E3A8A]' : 'text-gray-800'}`}>
-                            {t.team_assign_role_manager || (isEn ? 'Full Manager' : 'Teljes kezelő (szerkesztés, könyvelés)')}
+                          <div className={`font-bold text-xs flex items-center gap-1.5 flex-wrap ${currentAssignment.role === 'manager' ? 'text-[#1E3A8A]' : 'text-gray-800'}`}>
+                            <span>{t.team_assign_role_manager || (isEn ? 'Full Manager' : 'Teljes kezelő (szerkesztés, könyvelés)')}</span>
+                            {currentAssignment.roleMixed && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-blue-100 text-[#1E3A8A] font-bold">
+                                {currentAssignment.managerCount}/{currentAssignment.total}
+                              </span>
+                            )}
                           </div>
                           <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">
                             {isEn ? 'Full access: editing, accounting, resident balances and assessments.' : 'Teljes kezelő (szerkesztés, könyvelés, lakói adatok)'}
@@ -1587,13 +1647,20 @@ export function TeamManagementModal({ isOpen, onClose }) {
                         className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all flex items-start gap-2.5 ${
                           currentAssignment.role === 'viewer'
                             ? 'bg-amber-100/80 border-2 border-amber-600 shadow-xs'
-                            : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'
+                            : currentAssignment.roleMixed
+                              ? 'bg-amber-50/40 border-dashed border-amber-300 hover:bg-amber-50 text-gray-700'
+                              : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'
                         }`}
                       >
                         <Eye className={`w-4 h-4 mt-0.5 flex-shrink-0 ${currentAssignment.role === 'viewer' ? 'text-amber-600' : 'text-gray-400'}`} />
                         <div>
-                          <div className={`font-bold text-xs ${currentAssignment.role === 'viewer' ? 'text-amber-800' : 'text-gray-800'}`}>
-                            {t.team_assign_role_viewer || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő (csak olvasás)')}
+                          <div className={`font-bold text-xs flex items-center gap-1.5 flex-wrap ${currentAssignment.role === 'viewer' ? 'text-amber-800' : 'text-gray-800'}`}>
+                            <span>{t.team_assign_role_viewer || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő (csak olvasás)')}</span>
+                            {currentAssignment.roleMixed && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] bg-amber-100 text-amber-900 font-bold">
+                                {currentAssignment.viewerCount}/{currentAssignment.total}
+                              </span>
+                            )}
                           </div>
                           <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">
                             {isEn ? 'Read-only access: review balances and reports without editing rights.' : 'Csak megtekintő (olvasási jog, ellenőrzés)'}
@@ -1602,52 +1669,80 @@ export function TeamManagementModal({ isOpen, onClose }) {
                       </button>
                     </div>
 
-                    {/* Operational Options (Only when Full Manager is selected) */}
+                    {/* Operational Options (Shown when at least 1 building is Full Manager, i.e. role !== 'viewer') */}
                     {currentAssignment.role !== 'viewer' && (
                       <div className="pt-2 border-t border-gray-100">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                            currentAssignment.canEditBankAccounts ? 'bg-red-50/80 border-red-200 text-red-900 font-bold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
+                          <label className={`flex items-center justify-between gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            currentAssignment.canEditBankAccounts
+                              ? 'bg-red-50/80 border-red-200 text-red-900 font-bold'
+                              : currentAssignment.bankMixed
+                                ? 'bg-amber-50/60 border-amber-300 border-dashed text-amber-950 font-semibold'
+                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
                           }`}>
-                            <input
-                              type="checkbox"
-                              disabled={!canGrantEditBank}
-                              checked={Boolean(currentAssignment.canEditBankAccounts)}
-                              onChange={(e) => setUnifiedAssignmentValue('canEditBankAccounts', e.target.checked)}
-                              className="w-3.5 h-3.5 rounded text-red-600 focus:ring-red-500 cursor-pointer"
-                            />
-                            <Landmark className={`w-3.5 h-3.5 shrink-0 ${currentAssignment.canEditBankAccounts ? 'text-red-600' : 'text-gray-400'}`} />
-                            <span className="truncate">{t.team_bank_perm_badge || (isEn ? 'Modify IBAN (alerted)' : 'Bankszámla módosítás')}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <input
+                                type="checkbox"
+                                disabled={!canGrantEditBank}
+                                checked={Boolean(currentAssignment.canEditBankAccounts)}
+                                ref={(el) => { if (el) el.indeterminate = Boolean(currentAssignment.bankMixed); }}
+                                onChange={(e) => setUnifiedAssignmentValue('canEditBankAccounts', currentAssignment.bankMixed ? true : e.target.checked)}
+                                className="w-3.5 h-3.5 rounded text-red-600 focus:ring-red-500 cursor-pointer shrink-0"
+                              />
+                              <Landmark className={`w-3.5 h-3.5 shrink-0 ${currentAssignment.canEditBankAccounts ? 'text-red-600' : currentAssignment.bankMixed ? 'text-amber-600' : 'text-gray-400'}`} />
+                              <span className="truncate">{t.team_bank_perm_badge || (isEn ? 'Modify IBAN (alerted)' : 'Bankszámla módosítás')}</span>
+                            </div>
+                            {currentAssignment.bankMixed && (
+                              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
+                                {isEn ? `Mixed (${currentAssignment.bankCount}/${currentAssignment.total})` : `Vegyes (${currentAssignment.bankCount}/${currentAssignment.total})`}
+                              </span>
+                            )}
                           </label>
 
-                          <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                            currentAssignment.showCentralContact ? 'bg-blue-50/80 border-blue-200 text-[#1E3A8A] font-bold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
+                          <label className={`flex items-center justify-between gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            currentAssignment.showCentralContact
+                              ? 'bg-blue-50/80 border-blue-200 text-[#1E3A8A] font-bold'
+                              : currentAssignment.centralMixed
+                                ? 'bg-amber-50/60 border-amber-300 border-dashed text-amber-950 font-semibold'
+                                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
                           }`}>
-                            <input
-                              type="checkbox"
-                              checked={Boolean(currentAssignment.showCentralContact)}
-                              onChange={(e) => setUnifiedAssignmentValue('showCentralContact', e.target.checked)}
-                              className="w-3.5 h-3.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
-                            />
-                            <Building2 className={`w-3.5 h-3.5 shrink-0 ${currentAssignment.showCentralContact ? 'text-[#1E3A8A]' : 'text-gray-400'}`} />
-                            <span className="truncate">{isEn ? 'Show Central Escalation' : 'Központi cégadatok'}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(currentAssignment.showCentralContact)}
+                                ref={(el) => { if (el) el.indeterminate = Boolean(currentAssignment.centralMixed); }}
+                                onChange={(e) => setUnifiedAssignmentValue('showCentralContact', currentAssignment.centralMixed ? true : e.target.checked)}
+                                className="w-3.5 h-3.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer shrink-0"
+                              />
+                              <Building2 className={`w-3.5 h-3.5 shrink-0 ${currentAssignment.showCentralContact ? 'text-[#1E3A8A]' : currentAssignment.centralMixed ? 'text-amber-600' : 'text-gray-400'}`} />
+                              <span className="truncate">{isEn ? 'Show Central Escalation' : 'Központi cégadatok'}</span>
+                            </div>
+                            {currentAssignment.centralMixed && (
+                              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
+                                {isEn ? `Mixed (${currentAssignment.centralCount}/${currentAssignment.total})` : `Vegyes (${currentAssignment.centralCount}/${currentAssignment.total})`}
+                              </span>
+                            )}
                           </label>
                         </div>
                       </div>
                     )}
 
-                    {/* Separate Dedicated Entity: Resident Contact (Independent from Role & Co-Admin) */}
+                    {/* Separate Dedicated Entity: Resident Contact (Independent from Role & Co-Admin, supports Mixed Tri-State) */}
                     <div className={`p-3 rounded-xl border transition-colors ${
                       currentAssignment.showManagerContact
                         ? 'bg-purple-50/80 border-purple-300 shadow-2xs'
-                        : 'bg-purple-50/30 border-purple-200/70'
+                        : currentAssignment.contactMixed
+                          ? 'bg-purple-50/50 border-purple-300 border-dashed'
+                          : 'bg-purple-50/30 border-purple-200/70'
                     }`}>
                       <label className="flex items-center justify-between gap-3 cursor-pointer">
                         <div className="flex items-start gap-2.5 min-w-0">
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-2xs transition-colors ${
                             currentAssignment.showManagerContact
                               ? 'bg-purple-600 text-white'
-                              : 'bg-purple-100 text-purple-700'
+                              : currentAssignment.contactMixed
+                                ? 'bg-purple-500/80 text-white'
+                                : 'bg-purple-100 text-purple-700'
                           }`}>
                             <UserCheck className="w-4 h-4" />
                           </div>
@@ -1659,6 +1754,13 @@ export function TeamManagementModal({ isOpen, onClose }) {
                               <span className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200">
                                 {isEn ? '1 person / condo' : '1 fő / ház'}
                               </span>
+                              {currentAssignment.contactMixed && (
+                                <span className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                  {isEn
+                                    ? `Mixed (${currentAssignment.contactCount}/${currentAssignment.total} condos)`
+                                    : `Vegyes (${currentAssignment.contactCount}/${currentAssignment.total} házon bekapcsolva)`}
+                                </span>
+                              )}
                             </div>
                             <p className="text-[10px] text-purple-900/75 mt-0.5 leading-snug">
                               {isEn
@@ -1670,7 +1772,8 @@ export function TeamManagementModal({ isOpen, onClose }) {
                         <input
                           type="checkbox"
                           checked={Boolean(currentAssignment.showManagerContact)}
-                          onChange={(e) => setUnifiedAssignmentValue('showManagerContact', e.target.checked)}
+                          ref={(el) => { if (el) el.indeterminate = Boolean(currentAssignment.contactMixed); }}
+                          onChange={(e) => setUnifiedAssignmentValue('showManagerContact', currentAssignment.contactMixed ? true : e.target.checked)}
                           className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0"
                         />
                       </label>
