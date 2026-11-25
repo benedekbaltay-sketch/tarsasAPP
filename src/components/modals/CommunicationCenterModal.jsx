@@ -728,19 +728,44 @@ export function CommunicationCenterModal({
                             {message}
                           </p>
 
-                          {/* Bank account change breakdown */}
+                          {/* Structured changes breakdown (bank accounts or team permissions) */}
                           {Array.isArray(notif.changes) && notif.changes.length > 0 && (
-                            <div className="mt-2 space-y-1 bg-white/80 border border-red-200 rounded-xl p-2.5">
-                              {notif.changes.map((ch, idx) => (
-                                <div key={idx} className="text-xs font-mono text-red-950 break-all">
-                                  <span className="font-sans font-bold text-red-800">
-                                    {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
-                                  </span>{' '}
-                                  <span className="line-through text-red-500">{ch.oldAccount}</span>{' '}
-                                  →{' '}
-                                  <span className="font-bold text-red-900">{ch.newAccount}</span>
-                                </div>
-                              ))}
+                            <div className="mt-2 space-y-1.5 bg-white/80 border border-gray-200/90 rounded-xl p-2.5">
+                              {notif.changes.map((ch, idx) => {
+                                if (ch.oldAccount !== undefined) {
+                                  return (
+                                    <div key={idx} className="text-xs font-mono text-red-950 break-all">
+                                      <span className="font-sans font-bold text-red-800">
+                                        {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
+                                      </span>{' '}
+                                      <span className="line-through text-red-500">{ch.oldAccount}</span>{' '}
+                                      →{' '}
+                                      <span className="font-bold text-red-900">{ch.newAccount}</span>
+                                    </div>
+                                  );
+                                }
+                                const badgeStyle = ch.type === 'granted'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : ch.type === 'revoked'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200';
+                                const badgeText = ch.type === 'granted'
+                                  ? (t.team_change_granted || (isEn ? '+ Granted' : '+ Megadva'))
+                                  : ch.type === 'revoked'
+                                  ? (t.team_change_revoked || (isEn ? '− Revoked' : '− Visszavonva'))
+                                  : (t.team_change_modified || (isEn ? '~ Modified' : '~ Módosítva'));
+
+                                return (
+                                  <div key={idx} className="flex items-start gap-1.5 text-xs text-gray-800 leading-snug">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border shrink-0 ${badgeStyle}`}>
+                                      {badgeText}
+                                    </span>
+                                    <span className="font-medium text-gray-700">
+                                      {isEn ? (ch.labelEn || ch.labelHu) : (ch.labelHu || ch.labelEn)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
 
@@ -1652,22 +1677,49 @@ export function CommunicationCenterModal({
                 </div>
               </div>
 
-              {/* Bank change breakdown if present */}
+              {/* Structured changes breakdown (bank accounts or team permissions) */}
               {Array.isArray(viewingNotification.changes) && viewingNotification.changes.length > 0 && (
-                <div className="space-y-1.5 bg-red-50/80 border border-red-200 rounded-2xl p-4">
-                  <span className="text-xs font-bold text-red-900 block mb-1">
-                    {isEn ? "Account Details Modification:" : "Módosított bankszámla adatok:"}
+                <div className="space-y-2 bg-gray-50/90 border border-gray-200/90 rounded-2xl p-4">
+                  <span className="text-xs font-bold text-gray-900 block mb-1">
+                    {viewingNotification.type === 'team_updated'
+                      ? (isEn ? "Detailed Changes:" : "Részletes változások:")
+                      : (isEn ? "Account Details Modification:" : "Módosított bankszámla adatok:")}
                   </span>
-                  {viewingNotification.changes.map((ch, idx) => (
-                    <div key={idx} className="text-xs font-mono text-red-950 break-all">
-                      <span className="font-sans font-bold text-red-800">
-                        {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
-                      </span>{' '}
-                      <span className="line-through text-red-500">{ch.oldAccount}</span>{' '}
-                      →{' '}
-                      <span className="font-bold text-red-900">{ch.newAccount}</span>
-                    </div>
-                  ))}
+                  {viewingNotification.changes.map((ch, idx) => {
+                    if (ch.oldAccount !== undefined) {
+                      return (
+                        <div key={idx} className="text-xs font-mono text-red-950 break-all bg-white p-2 rounded-xl border border-red-200">
+                          <span className="font-sans font-bold text-red-800">
+                            {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
+                          </span>{' '}
+                          <span className="line-through text-red-500">{ch.oldAccount}</span>{' '}
+                          →{' '}
+                          <span className="font-bold text-red-900">{ch.newAccount}</span>
+                        </div>
+                      );
+                    }
+                    const badgeStyle = ch.type === 'granted'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : ch.type === 'revoked'
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200';
+                    const badgeText = ch.type === 'granted'
+                      ? (t.team_change_granted || (isEn ? '+ Granted' : '+ Megadva'))
+                      : ch.type === 'revoked'
+                      ? (t.team_change_revoked || (isEn ? '− Revoked' : '− Visszavonva'))
+                      : (t.team_change_modified || (isEn ? '~ Modified' : '~ Módosítva'));
+
+                    return (
+                      <div key={idx} className="flex items-start gap-2 p-2 rounded-xl bg-white border border-gray-200 text-xs text-gray-800">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border shrink-0 ${badgeStyle}`}>
+                          {badgeText}
+                        </span>
+                        <span className="font-medium text-gray-700 leading-snug">
+                          {isEn ? (ch.labelEn || ch.labelHu) : (ch.labelHu || ch.labelEn)}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

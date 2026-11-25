@@ -347,6 +347,10 @@ export function mergeStateWithCloud(local, cloud) {
     })
     .filter(n => {
       if (!n) return false;
+      // Do NOT deduplicate manual team permission updates or bank changes across the day
+      if (n.type === 'team_updated' || n.type === 'bank_account_changed') {
+        return true;
+      }
       // Deduplicate identical alerts for the same recipient, building, title and date
       const dayStr = (n.createdAt || '').slice(0, 10);
       const key = `${n.type || 'info'}_${n.buildingId || ''}_${n.titleHu || n.titleEn || ''}_${n.recipientEmail || ''}_${dayStr}`;

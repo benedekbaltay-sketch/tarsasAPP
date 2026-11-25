@@ -837,6 +837,7 @@ export function diffTeamMemberChanges(oldMember, newMemberData, buildings = []) 
 export function buildTeamUpdateNotification({
   actorUser,
   targetEmail,
+  targetUid = null,
   changes = [],
   diff = null,
 }) {
@@ -853,6 +854,7 @@ export function buildTeamUpdateNotification({
     type: 'team_updated',
     severity: 'info',
     recipientEmail: targetEmail,
+    recipientUid: targetUid,
     actorUser,
     titleHu: 'Házkezelési jogosultságaid módosultak',
     titleEn: 'Your Condominium Access Was Updated',
@@ -951,23 +953,24 @@ export function resolveBuildingResidentContact(building, repProfile = {}, organi
  */
 export function getNotificationsForUser(notifications = [], user) {
   if (!user || !Array.isArray(notifications)) return [];
-  const userEmail = normalizeEmail(user.email);
-  const userUid = user.uid || null;
+  const userEmail = normalizeEmail(user.email || user.username || '');
+  const userUid = user.uid || user.id || null;
   const userBuildingId = user.buildingId || null;
 
   return notifications
     .filter((n) => {
       if (!n || n.dismissed) return false;
-      if (n.recipientEmail && userEmail && normalizeEmail(n.recipientEmail) === userEmail) {
+      const rEmail = normalizeEmail(n.recipientEmail);
+      if (rEmail && userEmail && rEmail === userEmail) {
         return true;
       }
-      if (n.recipientUid && userUid && n.recipientUid === userUid) {
+      if (n.recipientUid && userUid && (String(n.recipientUid) === String(userUid) || String(n.recipientUid) === String(user.uid) || String(n.recipientUid) === String(user.id))) {
         return true;
       }
       if (n.recipientScope === 'all') {
         return true;
       }
-      if (n.recipientScope === 'building' && n.buildingId && userBuildingId && n.buildingId === userBuildingId) {
+      if (n.recipientScope === 'building' && n.buildingId && userBuildingId && String(n.buildingId) === String(userBuildingId)) {
         return true;
       }
       return false;

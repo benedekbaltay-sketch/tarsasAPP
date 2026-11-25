@@ -845,19 +845,23 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
      - **Elérhetőségi adatok**: Név és telefonszám változások.
    - Visszatérési érték: `{ hasChanges, changes: [{ type: 'granted'|'revoked'|'modified', category, labelHu, labelEn }], summaryLinesHu, summaryLinesEn }`.
 
-2. **Profilbeli Értesítés és Változáslista (`ProfileModal.jsx`, `IosSideDrawer.jsx`, `TeamManagementModal.jsx`)**:
-   - A felhasználó kérésének megfelelően a rendszer **nem küld e-mailt** a jogosultság-módosításokról, hanem közvetlenül a felhasználó profiljában (`ProfileModal.jsx`) jeleníti meg a részletes értesítést.
-   - **Kiemelt Értesítési Kártya a Profilban**:
-     - Amikor a munkatárs megnyitja a profilját (`ProfileModal.jsx`), a tartalom legtetején egy kiemelt értesítési kártya fogadja az összes konkrét változtatással.
-     - Megjeleníti a mentést végző tulajdonos nevét/e-mailjét, a módosítás pontos idejét, valamint a strukturált jelvényeket (`+ Megadva`, `− Visszavonva`, `~ Módosítva`).
-     - **„Tudomásul vettem” gomb**: Az olvasatlan értesítésnél egy kattintással tudomásul vehető (`markNotificationRead`), mely után az állapot zöld „Tudomásul véve” jelzésre vált.
-     - **Előzmények**: Több korábbi módosítás esetén az előzmények lenyithatók és visszakereshetők.
+2. **Profilbeli Értesítés, Változáslista és Azonnali Figyelmeztető Felugró Ablak (`App.jsx`, `ProfileModal.jsx`, `IosSideDrawer.jsx`, `TeamManagementModal.jsx`, `syncEngine.js`)**:
+   - A felhasználó kérésének megfelelően a rendszer **nem küld e-mailt** a jogosultság-módosításokról, hanem közvetlenül a felhasználó fiókjában és profiljában (`ProfileModal.jsx`, `App.jsx`) jeleníti meg a pontos változtatásokat.
+   - **Azonnali Kiemelt Felugró Ablak Belépéskor / Betöltéskor (`App.jsx`)**:
+     - Amikor egy munkatárs belép a fiókjába, és a tulajdonos korábban módosította a jogosultságait (olvasatlan `team_updated` értesítés van), a rendszer azonnal egy kiemelt felugró modális ablakot jelenít meg:
+       - Cím: *„Házkezelési jogosultságaid módosultak”* (`ShieldCheck` ikonnal).
+       - Módosító megnevezése: A tulajdonos neve vagy e-mail címe.
+       - Részletes változások strukturált jelvényekkel: `+ Megadva` (zöld), `− Visszavonva` (piros), `~ Módosítva` (sárga/kék).
+       - **„Tudomásul vettem” gomb**: Egyetlen kattintással olvasottnak jelöli az értesítést (`markNotificationRead`), bezárva az ablakot.
+       - **„Profil megnyitása” gomb**: Közvetlenül megnyitja a felhasználói profilt.
+   - **Kiemelt Értesítési Kártya a Profilban (`ProfileModal.jsx`)**:
+     - A profil megnyitásakor a tartalom tetején egy dedikált értesítési kártya fogadja a felhasználót az összes változtatással és tudomásulvételi gombbal, valamint lenyitható előzményekkel.
    - **Oldalsó Főmenü Indikátor (`IosSideDrawer.jsx`)**:
-     - Ha a felhasználónak olvasatlan jogosultság-módosítási értesítése van, a fiók/profil menüpont mellett egy lüktető kék „Új” jelvény hívja fel a figyelmet arra, hogy a profiljában új tájékoztatás várja.
+     - Olvasatlan jogosultság-módosítás esetén a profil menüpont mellett lüktető kék „Új” jelvény hívja fel a figyelmet.
+   - **Felhő Értesítés Deduplikáció Mentesség (`syncEngine.js`)**:
+     - A `team_updated` és `bank_account_changed` típusú értesítések kivételt képeznek a napi deduplikációs szűrő alól, így ugyanazon a napon végzett többszöri tulajdonosi mentés sem veszik el, hanem minden módosítás azonnal célba ér a munkatárs fiókjában.
    - **Opcionális Kapcsoló a Szerkesztőben (`TeamManagementModal.jsx`)**:
-     - A munkatárs szerkesztésekor a mentés gomb bal oldalán található a jelölőnégyzet:
-       - `"Értesítés megjelenítése a felhasználó profiljában a változtatásokról"` (`team_send_notification_checkbox`).
-       - Alapértelmezett értéke bepipált (`true`). Ha kikapcsolják, vagy nem történt változás, nem keletkezik profilbeli értesítés sem.
+     - A tulajdonos a munkatárs szerkesztésekor a mentés gomb mellett eldöntheti, hogy megjelenjen-e profilbeli értesítés (`team_send_notification_checkbox`). Alapértelmezett értéke bepipált (`true`).
 
 3. **Strukturált Jelvényes Megjelenítés az Értesítési Központban (`NotificationBell.jsx`)**:
    - Mind a lenyíló előnézeti menüben, mind a teljes üzenet részleteit megjelenítő felugró ablakban a jogosultságváltozások vizuálisan, színes jelvényekkel ellátva jelennek meg:

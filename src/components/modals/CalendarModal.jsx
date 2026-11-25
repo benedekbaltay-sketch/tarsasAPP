@@ -410,6 +410,24 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
     return (typeof initialBuildingId === 'string' && initialBuildingId.trim()) ? initialBuildingId : 'all';
   });
 
+  // Event modal state
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [viewingEvent, setViewingEvent] = useState(null);
+
+  // Form fields
+  const [formTitle, setFormTitle] = useState('');
+  const [formBuildingId, setFormBuildingId] = useState(() => {
+    return (typeof initialBuildingId === 'string' && initialBuildingId !== 'all') ? initialBuildingId : (currentBuildingId || (buildings?.[0]?.id || 'all'));
+  });
+  const [formColor, setFormColor] = useState('blue');
+  const [formCategory, setFormCategory] = useState('assembly');
+  const [formDate, setFormDate] = useState(() => getBudapestTodayYMD());
+  const [formTime, setFormTime] = useState('18:00');
+  const [formDesc, setFormDesc] = useState('');
+  const [formRecurrence, setFormRecurrence] = useState('none');
+  const [formRecurrenceEndDate, setFormRecurrenceEndDate] = useState('');
+
   // Reactively re-anchor calendar when Firebase `.info/serverTimeOffset` finishes syncing
   useEffect(() => {
     return subscribeServerClock(() => {
@@ -433,24 +451,6 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
       setFilterBuildingId(validId);
     }
   }, [isOpen, initialBuildingId]);
-
-  // Event modal state
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingEvent, setEditingEvent] = useState(null);
-  const [viewingEvent, setViewingEvent] = useState(null);
-
-  // Form fields
-  const [formTitle, setFormTitle] = useState('');
-  const [formBuildingId, setFormBuildingId] = useState(() => {
-    return (typeof initialBuildingId === 'string' && initialBuildingId !== 'all') ? initialBuildingId : (currentBuildingId || (buildings?.[0]?.id || 'all'));
-  });
-  const [formColor, setFormColor] = useState('blue');
-  const [formCategory, setFormCategory] = useState('assembly');
-  const [formDate, setFormDate] = useState(() => getBudapestTodayYMD());
-  const [formTime, setFormTime] = useState('18:00');
-  const [formDesc, setFormDesc] = useState('');
-  const [formRecurrence, setFormRecurrence] = useState('none');
-  const [formRecurrenceEndDate, setFormRecurrenceEndDate] = useState('');
 
   // Google Calendar style custom recurrence states
   const [isRecurDropdownOpen, setIsRecurDropdownOpen] = useState(false);

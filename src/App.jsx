@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { IosSideDrawer } from './components/IosSideDrawer';
@@ -9,7 +9,8 @@ import { SuperAdminView } from './views/SuperAdminView';
 import { PortfolioView } from './views/PortfolioView';
 import { getFirebaseInstance } from './constants/firebaseConfig';
 import { verifyPasswordResetCode } from 'firebase/auth';
-import { extractInviteContextFromUrl, normalizeEmail } from './utils/teamPermissions';
+import { extractInviteContextFromUrl, normalizeEmail, getNotificationsForUser } from './utils/teamPermissions';
+import { ShieldCheck, Check } from 'lucide-react';
 
 // Modals
 import { CalendarModal } from './components/modals/CalendarModal';
@@ -121,6 +122,7 @@ const getInitialNavState = () => {
 function MainLayout() {
   const { 
     state, 
+    t,
     isInitialSyncDone, 
     isCloudSyncing, 
     addTransaction, 
@@ -138,15 +140,24 @@ function MainLayout() {
     acceptTeamInvite,
     canUserManageBuilding,
     isUserBuildingViewer,
+    markNotificationRead,
     showToast
   } = useApp();
   const { currentUser } = state;
+  const isEn = state.currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const isAdminUser = isCurrentUserAdmin(currentUser, state.users);
   const isManagingCurrentBuilding = canUserManageBuilding(state.currentBuildingId);
   const isCurrentBuildingViewer = isUserBuildingViewer(state.currentBuildingId);
   const myFlats = getUserFlats(currentUser, state.buildings);
   const hasMultipleRoles = isAdminUser && myFlats.length > 0;
+
+  // Immediate prominent alert for current user if their permissions were updated by an owner
+  const unreadTeamNotification = useMemo(() => {
+    if (!currentUser) return null;
+    const notifs = getNotificationsForUser(state.notifications || [], currentUser);
+    return notifs.find((n) => n && n.type === 'team_updated' && !n.read) || null;
+  }, [state.notifications, currentUser]);
 
   const [initialNavState] = useState(getInitialNavState);
 
@@ -1086,6 +1097,89 @@ function MainLayout() {
         isOpen={isHelpOpen}
         onClose={() => setIsHelpOpen(false)}
       />
+
+      {/* Colleague Permission Change Alert Modal (High Priority, Instant Notification) */}
+      {unreadTeamNotification && (
+        <div className="fixed inset-0 z-70 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-lg overflow-hidden animate-scaleUp">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#1E3A8A] flex items-center justify-center text-white shadow-md shadow-blue-900/20">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 font-display">
+                    {isEn ? (unreadTeamNotification.titleEn || "Condominium Access Updated") : (unreadTeamNotification.titleHu || "Házkezelési jogosultságaid módosultak")}
+                  </h3>
+                  <span className="text-xs text-gray-500 font-medium">
+                    {unreadTeamNotification.actorName || unreadTeamNotification.actorEmail || (isEn ? "The Owner" : "A tulajdonos")}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="p-3.5 rounded-2xl bg-blue-50/60 border border-blue-100/80 text-xs text-blue-950 leading-relaxed">
+                {isEn ? (unreadTeamNotification.messageEn || unreadTeamNotification.messageHu) : (unreadTeamNotification.messageHu || unreadTeamNotification.messageEn)}
+              </div>
+
+              {Array.isArray(unreadTeamNotification.changes) && unreadTeamNotification.changes.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">
+                    {isEn ? "Detailed changes:" : "Részletes változások:"}
+                  </span>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {unreadTeamNotification.changes.map((ch, idx) => {
+                      const badgeStyle = ch.type === 'granted'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : ch.type === 'revoked'
+                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200';
+                      const badgeText = ch.type === 'granted'
+                        ? (t.team_change_granted || (isEn ? '+ Granted' : '+ Megadva'))
+                        : ch.type === 'revoked'
+                        ? (t.team_change_revoked || (isEn ? '− Revoked' : '− Visszavonva'))
+                        : (t.team_change_modified || (isEn ? '~ Modified' : '~ Módosítva'));
+
+                      return (
+                        <div key={idx} className="flex items-start gap-2.5 p-3 rounded-2xl bg-gray-50/80 border border-gray-200/80 text-xs text-gray-800">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${badgeStyle}`}>
+                            {badgeText}
+                          </span>
+                          <span className="font-medium text-slate-800 leading-relaxed">
+                            {isEn ? (ch.labelEn || ch.labelHu) : (ch.labelHu || ch.labelEn)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 px-6 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  markNotificationRead(unreadTeamNotification.id);
+                  setIsProfileOpen(true);
+                }}
+                className="px-4 py-2 text-xs font-bold text-[#1E3A8A] hover:bg-blue-50 rounded-xl transition-all cursor-pointer"
+              >
+                {isEn ? "View Profile" : "Profil megnyitása"}
+              </button>
+              <button
+                type="button"
+                onClick={() => markNotificationRead(unreadTeamNotification.id)}
+                className="px-6 py-2.5 bg-[#1E3A8A] hover:bg-blue-900 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-blue-900/20 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span>{isEn ? "Understood / Acknowledge" : "Tudomásul vettem"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
