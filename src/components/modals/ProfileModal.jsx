@@ -156,24 +156,59 @@ export function ProfileModal({
       document.body.style.overflow = 'hidden';
       document.documentElement.style.overflow = 'hidden';
 
-      // Load Personal Profile
+      // Load Personal Profile strictly scoped to the currently logged-in user (NEVER leak another user's legacy repProfile!)
       const prof = repProfile || {};
-      setRepName(prof.name || currentUser?.name || '');
-      setRepEmail(prof.email || currentUser?.email || '');
-      setRepPhone(prof.phone ? formatPhoneNumber(prof.phone) : '');
-      setRepOfficeHours(prof.officeHours || 'H-P: 08:00 - 16:00');
+      const loginEmail = (currentUser?.email || '').trim();
+      const loginEmailLower = loginEmail.toLowerCase();
+      const profEmailLower = (prof.email || '').trim().toLowerCase();
+      const org = orgCtx.org;
+      const ownMember = orgCtx.member || (org?.members || []).find(
+        (m) => m && (m.email || '').trim().toLowerCase() === loginEmailLower
+      );
+      const ownUserRecord = (state.users || []).find(
+        (u) => u && (u.email || '').trim().toLowerCase() === loginEmailLower
+      );
+      const isLegacyPrimaryOwner = !isStaff && (!org || (profEmailLower && profEmailLower === loginEmailLower));
+
+      const resolvedName =
+        ownMember?.name ||
+        (!isStaff && org?.ownerName) ||
+        currentUser?.name ||
+        (isLegacyPrimaryOwner ? prof.name : '') ||
+        '';
+      const resolvedEmail =
+        loginEmail ||
+        ownMember?.email ||
+        (isLegacyPrimaryOwner ? prof.email : '') ||
+        '';
+      const resolvedPhoneRaw =
+        ownMember?.phone ||
+        ownUserRecord?.phone ||
+        currentUser?.phone ||
+        (isLegacyPrimaryOwner ? prof.phone : '') ||
+        '';
+      const resolvedOfficeHours =
+        ownMember?.officeHours ||
+        ownUserRecord?.officeHours ||
+        (isLegacyPrimaryOwner ? prof.officeHours : '') ||
+        'H-P: 08:00 - 16:00';
+
+      setRepName(resolvedName);
+      setRepEmail(resolvedEmail);
+      setRepPhone(resolvedPhoneRaw ? formatPhoneNumber(resolvedPhoneRaw) : '');
+      setRepOfficeHours(resolvedOfficeHours);
       setIsEditingRep(false);
 
-      // Load Company Profile
-      const org = orgCtx.org;
-      setCompanyName(org?.name || prof.companyName || '');
-      setCompanyRepName(org?.centralContact?.name || prof.companyName || prof.name || '');
+      // Load Company Profile strictly scoped to this Owner's organization (no cross-company legacy leakage)
+      setCompanyName(org ? (org.name || '') : (prof.companyName || ''));
+      setCompanyRepName(org ? (org.centralContact?.name || org.ownerName || org.name || '') : (prof.companyName || prof.name || ''));
       setCompanyTaxNumber(formatTaxNumber(org ? (org.taxNumber || '') : (prof.taxNumber || '')));
-      setCompanyAddress(org?.centralContact?.address || prof.address || '');
-      setCompanyPhone(org?.centralContact?.phone ? formatPhoneNumber(org.centralContact.phone) : (prof.phone ? formatPhoneNumber(prof.phone) : ''));
-      setCompanyEmail(org?.centralContact?.email || prof.email || '');
-      setCompanyOfficeHours(org?.centralContact?.officeHours || prof.officeHours || 'H-P: 08:00 - 16:00');
-      setCompanyShowCentralContactToResidents(Boolean(org?.showCentralContactToResidents ?? prof.showCentralContactToResidents ?? false));
+      setCompanyAddress(org ? (org.centralContact?.address || '') : (prof.address || ''));
+      const compPhoneRaw = org ? (org.centralContact?.phone || '') : (prof.phone || '');
+      setCompanyPhone(compPhoneRaw ? formatPhoneNumber(compPhoneRaw) : '');
+      setCompanyEmail(org ? (org.centralContact?.email || org.ownerEmail || loginEmail) : (prof.email || loginEmail));
+      setCompanyOfficeHours(org ? (org.centralContact?.officeHours || 'H-P: 08:00 - 16:00') : (prof.officeHours || 'H-P: 08:00 - 16:00'));
+      setCompanyShowCentralContactToResidents(Boolean(org ? org.showCentralContactToResidents : (prof.showCentralContactToResidents ?? false)));
       setIsEditingCompany(false);
 
       // Load Global Settings

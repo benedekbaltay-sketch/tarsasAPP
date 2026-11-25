@@ -922,6 +922,8 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
   - A jobb felső sarokban megszüntetve a duplikált „Bezárás” szöveges gomb, csak a letisztult `X` gomb (szerkesztéskor a Mentés gombbal) maradt.
 - **Társasház beállítások (`GlobalBalancesModal.jsx`)**:
   - Visszaállítva a `resetNewAccountForm` segédfüggvény a `useEffect` elé, elhárítva a `resetNewAccountForm is not defined` hibát.
+- **Személyes Profil Adatizoláció (`ProfileModal.jsx`, `AppContext.jsx`)**:
+  - A „Fiók / Rendszerbeállítások” megnyitásakor a rendszer mostantól szigorúan a ténylegesen bejelentkezett felhasználó saját belépési e-mail címét (`currentUser.email`), saját nevét, telefonszámát és elérhetőségi idejét tölti be a globális legacy `state.repProfile` helyett, elkerülve, hogy munkatársaknál vagy új tulajdonosoknál más felhasználó e-mail címe jelenjen meg. Munkatárs profilmentése már nem írja felül a cég globális `repProfile` rekordját.
 4. **Változók inicializálási sorrendjének (TDZ) teljes körű megerősítése:**
    - Minden leíró és modális komponensben (`GlobalBalancesModal.jsx`, `EditFlatMasterModal.jsx`, `EditTransactionModal.jsx`, `NewLoanModal.jsx`, `TenantView.jsx`) a segédfüggvények deklarációi szigorúan a hívásaik és hatáskörük elé lettek rendezve, megakadályozva a futásidejű inicializálás előtti hozzáférési hibákat.
 

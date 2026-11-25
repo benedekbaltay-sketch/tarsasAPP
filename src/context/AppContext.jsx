@@ -102,19 +102,29 @@ export function AppProvider({ children }) {
 
   const updateRepProfile = (profileData) => {
     if (!isCurrentUserAdmin(state.currentUser, state.users)) return;
-    const nextRepProfile = { ...(state.repProfile || {}), ...profileData };
+    const actorCtx = resolveUserOrgContext(state.currentUser, state.organizations, state.buildings);
+    const isStaffActor = Boolean(actorCtx.isStaff);
+    const nextRepProfile = isStaffActor ? state.repProfile : { ...(state.repProfile || {}), ...profileData };
+
     if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
-      updateUserPreferences(state.currentUser.uid, { repProfile: nextRepProfile }).catch((err) => {
+      updateUserPreferences(state.currentUser.uid, { repProfile: { ...(state.repProfile || {}), ...profileData } }).catch((err) => {
         console.warn('Firestore updateRepProfile error:', err.message);
       });
     }
     persistState(s => {
       const userEmail = (s.currentUser?.email || '').toLowerCase().trim();
-      const updatedName = profileData.name ? String(profileData.name).trim() : (nextRepProfile.name || '');
+      const updatedName = profileData.name !== undefined ? String(profileData.name).trim() : (s.currentUser?.name || '');
+      const updatedPhone = profileData.phone !== undefined ? String(profileData.phone).trim() : undefined;
+      const updatedOfficeHours = profileData.officeHours !== undefined ? String(profileData.officeHours).trim() : undefined;
 
       let nextCurrentUser = s.currentUser;
-      if (nextCurrentUser && updatedName) {
-        nextCurrentUser = { ...nextCurrentUser, name: updatedName };
+      if (nextCurrentUser) {
+        nextCurrentUser = {
+          ...nextCurrentUser,
+          ...(updatedName ? { name: updatedName } : {}),
+          ...(updatedPhone !== undefined ? { phone: updatedPhone } : {}),
+          ...(updatedOfficeHours !== undefined ? { officeHours: updatedOfficeHours } : {}),
+        };
         try {
           localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(nextCurrentUser));
           sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(nextCurrentUser));
@@ -122,10 +132,15 @@ export function AppProvider({ children }) {
       }
 
       let nextUsers = s.users;
-      if (Array.isArray(s.users) && userEmail && updatedName) {
+      if (Array.isArray(s.users) && userEmail) {
         nextUsers = s.users.map(u => {
           if (u && (u.email || '').toLowerCase().trim() === userEmail) {
-            return { ...u, name: updatedName };
+            return {
+              ...u,
+              ...(updatedName ? { name: updatedName } : {}),
+              ...(updatedPhone !== undefined ? { phone: updatedPhone } : {}),
+              ...(updatedOfficeHours !== undefined ? { officeHours: updatedOfficeHours } : {}),
+            };
           }
           return u;
         });
@@ -135,31 +150,37 @@ export function AppProvider({ children }) {
       if (Array.isArray(s.organizations) && s.organizations.length > 0) {
         nextOrgs = s.organizations.map(org => {
           let updatedMembers = org.members;
-          if (Array.isArray(org.members) && userEmail && updatedName) {
+          if (Array.isArray(org.members) && userEmail) {
             updatedMembers = org.members.map(m => {
               if (m && (m.email || '').toLowerCase().trim() === userEmail) {
-                return { ...m, name: updatedName };
+                return {
+                  ...m,
+                  ...(updatedName ? { name: updatedName } : {}),
+                  ...(updatedPhone !== undefined ? { phone: updatedPhone } : {}),
+                  ...(updatedOfficeHours !== undefined ? { officeHours: updatedOfficeHours } : {}),
+                };
               }
               return m;
             });
           }
 
           const orgOwnerEmail = (org.ownerEmail || '').toLowerCase().trim();
-          if (userEmail && orgOwnerEmail === userEmail) {
+          if (!isStaffActor && userEmail && orgOwnerEmail === userEmail) {
             return {
               ...org,
+              ...(updatedName ? { ownerName: updatedName } : {}),
               members: updatedMembers,
               ...(profileData.companyName !== undefined ? { name: String(profileData.companyName).trim() } : {}),
               ...(profileData.taxNumber !== undefined ? { taxNumber: formatTaxNumber(profileData.taxNumber).trim() } : {}),
               centralContact: {
                 ...(org.centralContact || {}),
-                name: nextRepProfile.name || org.centralContact?.name || '',
-                phone: nextRepProfile.phone || org.centralContact?.phone || '',
-                email: nextRepProfile.email || org.centralContact?.email || '',
-                officeHours: nextRepProfile.officeHours || org.centralContact?.officeHours || '',
+                name: updatedName || org.centralContact?.name || '',
+                phone: updatedPhone !== undefined ? updatedPhone : (org.centralContact?.phone || ''),
+                email: profileData.email ? String(profileData.email).trim() : (org.centralContact?.email || ''),
+                officeHours: updatedOfficeHours !== undefined ? updatedOfficeHours : (org.centralContact?.officeHours || ''),
               },
-              showCentralContactToResidents: nextRepProfile.showCentralContactToResidents !== undefined
-                ? Boolean(nextRepProfile.showCentralContactToResidents)
+              showCentralContactToResidents: profileData.showCentralContactToResidents !== undefined
+                ? Boolean(profileData.showCentralContactToResidents)
                 : org.showCentralContactToResidents
             };
           }
@@ -174,7 +195,7 @@ export function AppProvider({ children }) {
         organizations: nextOrgs
       };
     }, true);
-    showToast(state.currentLang === 'en' ? "Business profile updated!" : "Vállalkozói profil sikeresen mentve!");
+    showToast(state.currentLang === 'en' ? "Profile updated!" : "Profil sikeresen mentve!");
   };
 
   const updateGlobalSettings = (settingsData) => {
