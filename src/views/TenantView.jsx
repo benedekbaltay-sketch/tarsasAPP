@@ -428,7 +428,7 @@ export function TenantView({
               {isEn ? "Condominium Overview" : "Társasházi Pénzügyek"}
             </span>
             <h4 className="text-base font-bold text-gray-900 leading-tight">
-              {t.menu_finance || (isEn ? "Building Finances & Public Debt Map" : "A ház pénzügyi helyzete & Nyilvános tartozástérkép")}
+              {t.menu_finance || (isEn ? "Finances" : "Pénzügyek")}
             </h4>
             <span className="text-xs text-gray-600 font-medium block mt-0.5">
               {isEn 

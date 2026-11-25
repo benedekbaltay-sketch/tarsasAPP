@@ -186,7 +186,7 @@ export function FinancialSituationModal({
         {financeTabs.length > 1 && (
           <div
             role="tablist"
-            aria-label={t.menu_finance || (isEn ? 'Building Finances' : 'A ház pénzügyi helyzete')}
+            aria-label={t.menu_finance || (isEn ? 'Finances' : 'Pénzügyek')}
             className="bg-white rounded-2xl border border-gray-200 p-1.5 shadow-xs flex items-center gap-1.5 overflow-x-auto"
           >
             {financeTabs.map((tab) => {
