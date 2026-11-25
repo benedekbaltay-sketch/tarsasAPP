@@ -268,7 +268,7 @@ export function ProfileModal({
 
     updateRepProfile({
       name: repName.trim(),
-      email: repEmail.trim(),
+      email: (currentUser?.email || repEmail || '').trim(),
       phone: formattedPhone,
       officeHours: repOfficeHours.trim(),
     });
@@ -819,16 +819,25 @@ export function ProfileModal({
                         </div>
 
                         <div>
-                          <label className="block font-bold text-gray-700 mb-1">
-                            {t.personal_profile_direct_email || (isEn ? "Direct Email" : "Közvetlen e-mail cím")}
+                          <label className="block font-bold text-gray-700 mb-1 flex items-center gap-1.5">
+                            <span>{t.personal_profile_direct_email || (isEn ? "Direct Email" : "Közvetlen e-mail cím")}</span>
+                            <Lock className="w-3 h-3 text-gray-400" />
                           </label>
-                          <input
-                            type="email"
-                            value={repEmail}
-                            onChange={(e) => setRepEmail(e.target.value)}
-                            placeholder="kovacs.janos@gmail.com"
-                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                          />
+                          <div className="relative">
+                            <input
+                              type="email"
+                              value={currentUser?.email || repEmail}
+                              disabled
+                              readOnly
+                              className="w-full px-3 pr-8 py-2 bg-gray-100 border border-gray-200 rounded-xl text-xs text-gray-500 cursor-not-allowed select-all"
+                            />
+                            <Lock className="w-3.5 h-3.5 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-1">
+                            {t.personal_profile_email_locked_hint || (isEn
+                              ? "Your login email address cannot be modified here."
+                              : "A bejelentkezési e-mail cím itt nem módosítható.")}
+                          </p>
                         </div>
 
                         <div>
