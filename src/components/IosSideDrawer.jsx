@@ -14,9 +14,10 @@ import {
   FileSpreadsheet,
   Calendar,
   Settings,
-  Users
+  Users,
+  Eye
 } from 'lucide-react';
-import { canUserManageTeam, resolveUserDisplayName } from '../utils/teamPermissions';
+import { canUserManageTeam, resolveUserDisplayName, isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
 
 export function IosSideDrawer({ 
   isOpen, 
@@ -30,6 +31,11 @@ export function IosSideDrawer({
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const canManageTeam = canUserManageTeam(currentUser, organizations, buildings);
   const userDisplayName = resolveUserDisplayName(currentUser, state);
+
+  const isViewer = isAdmin && currentBuilding && (
+    isUserBuildingViewer(currentUser, currentBuilding, organizations, buildings) ||
+    !canUserManageBuilding(currentUser, currentBuilding, organizations, buildings)
+  );
 
   // Determine dynamic mode: Portfolio Mode (All buildings aggregated) vs. Building-Specific Mode
   const isPortfolioMode = isAdmin && (Boolean(state.isPortfolioView) || !currentBuildingId);
@@ -93,11 +99,19 @@ export function IosSideDrawer({
                 <Building2 className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-sm font-bold text-gray-900 truncate">
-                  {isAdmin
-                    ? (isPortfolioMode ? (t.portfolio_title || "Társasházaim") : (currentBuilding?.name || (isHu ? "Társasház" : "Condominium")))
-                    : (currentBuilding ? currentBuilding.name : (t.app_title || "Társasházkezelő"))}
-                </h3>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <h3 className="text-sm font-bold text-gray-900 truncate">
+                    {isAdmin
+                      ? (isPortfolioMode ? (t.portfolio_title || "Társasházaim") : (currentBuilding?.name || (isHu ? "Társasház" : "Condominium")))
+                      : (currentBuilding ? currentBuilding.name : (t.app_title || "Társasházkezelő"))}
+                  </h3>
+                  {isViewer && !isPortfolioMode && currentBuilding && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex-shrink-0">
+                      <Eye className="w-2.5 h-2.5 text-amber-600" />
+                      <span>{isHu ? 'Csak megtekintő' : 'View only'}</span>
+                    </span>
+                  )}
+                </div>
                 <span className="text-xs text-gray-500 font-medium block truncate">
                   {currentUser ? (
                     isAdmin ? userDisplayName : 

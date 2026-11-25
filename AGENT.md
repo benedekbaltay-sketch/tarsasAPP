@@ -826,6 +826,10 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
    - Ezáltal minden olyan teljes oldalas nézetben, amely `NavLogoButton`-t használ (Naptár, Pénzügyi Helyzet, Ház Adatai & Bank, Lakások Adatai, Tranzakciók Története, stb.), automatikusan és egységesen jelenik meg a diszkrét jelzés.
    - A Kommunikációs Központban (`CommunicationCenterModal.jsx`) a jelvény megmaradt a jobb felső sarokban a műveleti gomb helyén, elkerülve a felesleges duplikációt.
 
+3. **Főoldali Fejléc és Oldalsó Főmenü Igazítás (`Header.jsx`, `IosSideDrawer.jsx`)**:
+   - A főoldali felső fejlécben (`Header.jsx`) a „Csak megtekintő” jelvény átkerült közvetlenül a ház neve (`headerTitle`) mellé az első sorba, a korábbi felhasználói név (alcím) mellőli elhelyezés helyett.
+   - Az oldalsó kinyíló főmenüben (`IosSideDrawer.jsx`) szintén közvetlenül a társasház neve mellett jelenik meg az egységesített diszkrét jelvény.
+
 ---
 
 ## 34. Maintenance Checklist for Future Sessions

@@ -132,19 +132,21 @@ export function Header({
               </svg>
             </div>
             <div className="flex flex-col min-w-0">
-              <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 leading-tight font-display truncate">
-                {headerTitle}
-              </h1>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] sm:text-xs text-gray-500 font-medium truncate max-w-[120px] xs:max-w-[170px] sm:max-w-[220px] md:max-w-none">
-                  {headerSubtitle}
-                </span>
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 leading-tight font-display truncate">
+                  {headerTitle}
+                </h1>
                 {isViewer && isInBuilding && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex-shrink-0">
                     <Eye className="w-2.5 h-2.5 text-amber-600" />
                     <span>{isHu ? 'Csak megtekintő' : 'View only'}</span>
                   </span>
                 )}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] sm:text-xs text-gray-500 font-medium truncate max-w-[120px] xs:max-w-[170px] sm:max-w-[220px] md:max-w-none">
+                  {headerSubtitle}
+                </span>
               </div>
             </div>
           </div>
