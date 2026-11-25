@@ -24,6 +24,7 @@ import { ImpersonationBanner } from '../ImpersonationBanner';
 import { MonthlyDetailModal } from './MonthlyDetailModal';
 import { BankImportModal } from './BankImportModal';
 import { LoansModal } from './LoansModal';
+import { BankAccountsSection } from '../BankAccountsSection';
 
 export function FinancialSituationModal({
   isOpen,
@@ -58,11 +59,11 @@ export function FinancialSituationModal({
       },
     ];
 
-    if (isAdmin && !isEffectiveReadOnly) {
+    if (isAdmin) {
       tabs.push({
         id: 'bank-import',
-        label: t.finance_tab_bank_import || (isEn ? 'Bank File Import' : 'Banki fájl importálás'),
-        icon: FileSpreadsheet,
+        label: t.finance_tab_bank_import || 'Bank',
+        icon: Landmark,
       });
     }
 
@@ -503,13 +504,22 @@ export function FinancialSituationModal({
           </div>
         )}
 
-        {/* TAB 2: Banki fájl importálás (Admin only, inline embedded) */}
-        {activeTab === 'bank-import' && isAdmin && !isEffectiveReadOnly && (
-          <BankImportModal
-            isOpen={true}
-            embedded={true}
-            onClose={() => setActiveTab('overview')}
-          />
+        {/* TAB 2: Bank (Accounts first, then Bank File Import below) */}
+        {activeTab === 'bank-import' && isAdmin && (
+          <div className="space-y-6 animate-fadeIn">
+            <BankAccountsSection
+              buildingId={currentBuilding?.id || currentBuildingId}
+              isReadOnly={isEffectiveReadOnly}
+            />
+
+            {!isEffectiveReadOnly && (
+              <BankImportModal
+                isOpen={true}
+                embedded={true}
+                onClose={() => setActiveTab('overview')}
+              />
+            )}
+          </div>
         )}
 
         {/* TAB 3: Hitelek (Admin & SZVB, inline embedded) */}
