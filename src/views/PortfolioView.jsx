@@ -686,8 +686,8 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
             <div className="space-y-2">
               <label className="block text-xs font-semibold text-gray-700">
                 {t.portfolio_delete_confirm_prompt || (isEn
-                  ? "To confirm deletion, type the exact name of the condominium below:"
-                  : "A véletlen törlés megelőzése érdekében kérjük, írd be pontosan a társasház nevét a megerősítéshez:")}
+                  ? "To avoid accidental deletion, please type the exact name of the condominium below to confirm:"
+                  : "A véletlen törlés elkerülése érdekében kérjük, írd be pontosan a társasház nevét a megerősítéshez:")}
               </label>
               <div className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-xs font-mono text-gray-800 select-all font-bold">
                 {buildingToDelete.name}

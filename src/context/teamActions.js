@@ -560,24 +560,46 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     }
 
     persistState((s) => {
+      // Collect buildings where this member is being set as the sole Resident Contact
+      const claimedContactBuildingIds = new Set(
+        Object.entries(cleanBuildingAssignments || {})
+          .filter(([bId, a]) => a && a.showManagerContact && (cleanScope === 'all' || cleanBuildingIds.includes(bId)))
+          .map(([bId]) => bId)
+      );
+
       const nextOrgs = (s.organizations || []).map((org) => {
         if (org.id !== actorCtx.org.id) return org;
         return {
           ...org,
-          members: (org.members || []).map((m) =>
-            m.id === memberId
-              ? {
-                  ...m,
-                  name: targetName,
-                  phone: cleanPhone,
-                  buildingScope: cleanScope,
-                  buildingIds: cleanBuildingIds,
-                  permissions: normalizedPerms,
-                  buildingAssignments: cleanBuildingAssignments,
-                  updatedAt: new Date().toISOString(),
+          members: (org.members || []).map((m) => {
+            if (m.id === memberId) {
+              return {
+                ...m,
+                name: targetName,
+                phone: cleanPhone,
+                buildingScope: cleanScope,
+                buildingIds: cleanBuildingIds,
+                permissions: normalizedPerms,
+                buildingAssignments: cleanBuildingAssignments,
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            // Enforce single Resident Contact per building: unset showManagerContact on other members for claimed buildings
+            if (claimedContactBuildingIds.size > 0 && m && m.buildingAssignments) {
+              let changedOther = false;
+              const nextOtherAssignments = { ...m.buildingAssignments };
+              claimedContactBuildingIds.forEach((bId) => {
+                if (nextOtherAssignments[bId]?.showManagerContact) {
+                  nextOtherAssignments[bId] = { ...nextOtherAssignments[bId], showManagerContact: false };
+                  changedOther = true;
                 }
-              : m
-          ),
+              });
+              if (changedOther) {
+                return { ...m, buildingAssignments: nextOtherAssignments };
+              }
+            }
+            return m;
+          }),
           updatedAt: new Date().toISOString(),
         };
       });
