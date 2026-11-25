@@ -832,7 +832,39 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
 
 ---
 
-## 34. Maintenance Checklist for Future Sessions
+## 34. Munkatárs Jogosultság Módosítások Értesítése, Részletes Változáslista és Opcionális Értesítésküldés
+
+1. **Részletes Jogosultság-különbségképzés (`diffTeamMemberChanges` - `src/utils/teamPermissions.js`)**:
+   - Amikor a tulajdonos vagy cégvezető módosítja egy munkatárs beállításait, a rendszer automatikusan és részletesen összehasonlítja a korábbi és új állapotot:
+     - **Társasházi hatókör**: Kiterjesztés minden házra vagy korlátozás kijelölt házakra.
+     - **Hozzáadott és elvett társasházak**: `+ [Ház neve]: Házkezelői hozzáférés megadva` vs `− [Ház neve]: Hozzáférés visszavonva`.
+     - **Házankénti szerepkör változás**: Szerkesztővé előléptetés vagy Megtekintővé alakítás.
+     - **Bankszámlaszám szerkesztési jog**: Házankénti engedélyezés vagy visszavonás.
+     - **Lakói kapcsolattartó láthatóság**: Közvetlen megjelenítés lakóknak bekapcsolva/kikapcsolva.
+     - **Cégszintű globális jogosultságok**: Új ház létrehozása, Csapatkezelés, Globális bankszámla szerkesztés.
+     - **Elérhetőségi adatok**: Név és telefonszám változások.
+   - Visszatérési érték: `{ hasChanges, changes: [{ type: 'granted'|'revoked'|'modified', category, labelHu, labelEn }], summaryLinesHu, summaryLinesEn }`.
+
+2. **Opcionális Értesítésküldés Jelölőnégyzet (`TeamManagementModal.jsx`)**:
+   - A munkatárs szerkesztésekor a mentés gomb bal oldalán található egy jelölőnégyzet:
+     - `"Értesítés küldése a felhasználónak a változtatásokról"` (`team_send_notification_checkbox`).
+     - Alapértelmezett értéke bepipált (`true`).
+     - Amennyiben a felhasználó kikapcsolja a jelölőnégyzetet, vagy nincs tényleges változás, a rendszer nem küld és nem rögzít értesítést.
+
+3. **Strukturált Jelvényes Megjelenítés az Értesítési Központban (`NotificationBell.jsx`)**:
+   - Mind a lenyíló előnézeti menüben, mind a teljes üzenet részleteit megjelenítő felugró ablakban a jogosultságváltozások vizuálisan, színes jelvényekkel ellátva jelennek meg:
+     - `+ Megadva` (zöld)
+     - `− Visszavonva` (piros)
+     - `~ Módosítva` (sárga/kék)
+   - A bankszámlaszám-változások áthúzott régi és félkövér új számmal, a jogosultságváltozások pedig az új struktúrával jelennek meg.
+
+4. **Kétnyelvűség és Tesztek**:
+   - Teljes szimmetrikus magyar és angol fordításkulcsok a `src/constants/translations.js` fájlban (`team_send_notification_checkbox`, `team_detailed_changes`, `team_change_granted`, `team_change_revoked`, `team_change_modified`).
+   - 16. egységteszt hozzáadva a `tests/teamPermissions.test.mjs` tesztfájlhoz.
+
+---
+
+## 35. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
 1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?

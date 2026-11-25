@@ -9,6 +9,8 @@ import {
   canActorManageTargetMember,
   findPendingInviteByToken,
   buildNotification,
+  diffTeamMemberChanges,
+  buildTeamUpdateNotification,
   getNotificationsForUser,
   buildInviteMailtoUrl,
 } from '../utils/teamPermissions';
@@ -488,7 +490,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
   };
 
   // Update an existing staff member's building scope, per-building assignments & permissions
-  const updateTeamMember = (memberId, { name, phone, buildingScope, buildingIds, permissions, buildingAssignments }) => {
+  const updateTeamMember = (memberId, { name, phone, buildingScope, buildingIds, permissions, buildingAssignments, sendNotification = true }) => {
     const actor = state.currentUser;
     const actorCtx = resolveUserOrgContext(actor, state.organizations, state.buildings);
     if (!actor || !actorCtx.org || !canUserManageTeam(actor, state.organizations, state.buildings)) {
@@ -524,16 +526,24 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     const targetEmail = normalizeEmail(target.email);
     const targetName = name !== undefined ? String(name).trim() || target.name : target.name;
 
-    const updateNotif = buildNotification({
-      type: 'team_updated',
-      severity: 'info',
-      recipientEmail: target.email,
-      actorUser: actor,
-      titleHu: 'Házkezelési jogosultságaid módosultak',
-      titleEn: 'Your Condominium Access Was Updated',
-      messageHu: `${actor.name || actor.email} frissítette a rád bízott társasházakat és jogosultságokat.`,
-      messageEn: `${actor.name || actor.email} updated your assigned buildings and permissions.`,
-    });
+    const diff = diffTeamMemberChanges(target, {
+      name: targetName,
+      phone: cleanPhone,
+      buildingScope: cleanScope,
+      buildingIds: cleanBuildingIds,
+      permissions: normalizedPerms,
+      buildingAssignments: cleanBuildingAssignments,
+    }, state.buildings || []);
+
+    let updateNotif = null;
+    if (sendNotification !== false && diff.hasChanges) {
+      updateNotif = buildTeamUpdateNotification({
+        actorUser: actor,
+        targetEmail: target.email,
+        changes: diff.changes,
+        diff,
+      });
+    }
 
     persistState((s) => {
       const nextOrgs = (s.organizations || []).map((org) => {
@@ -599,7 +609,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         ...s,
         organizations: nextOrgs,
         buildings: nextBuildings,
-        notifications: [updateNotif, ...(s.notifications || [])].slice(0, 300),
+        notifications: updateNotif ? [updateNotif, ...(s.notifications || [])].slice(0, 300) : (s.notifications || []),
       };
     }, true);
 

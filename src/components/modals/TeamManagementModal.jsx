@@ -103,6 +103,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const [permCreateBuildings, setPermCreateBuildings] = useState(false);
   const [permManageTeam, setPermManageTeam] = useState(false);
   const [permEditBankAccounts, setPermEditBankAccounts] = useState(false);
+  const [sendNotificationOnUpdate, setSendNotificationOnUpdate] = useState(true);
 
   const [copiedInviteKey, setCopiedInviteKey] = useState(null);
   const [isSubmittingInvite, setIsSubmittingInvite] = useState(false);
@@ -198,6 +199,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     setPermCreateBuildings(false);
     setPermManageTeam(false);
     setPermEditBankAccounts(false);
+    setSendNotificationOnUpdate(true);
   };
 
   const openNewInviteForm = () => {
@@ -234,6 +236,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     setPermCreateBuildings(Boolean(member.permissions?.canCreateBuildings));
     setPermManageTeam(Boolean(member.permissions?.canManageTeam));
     setPermEditBankAccounts(Boolean(member.permissions?.canEditBankAccounts));
+    setSendNotificationOnUpdate(true);
 
     const initialAssignments = {};
     orgBuildings.forEach((b) => {
@@ -445,6 +448,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
         buildingIds: formBuildingIds,
         permissions: permissionsPayload,
         buildingAssignments: assignmentsPayload,
+        sendNotification: sendNotificationOnUpdate,
       });
       if (ok) {
         resetInviteForm();
@@ -1653,22 +1657,38 @@ export function TeamManagementModal({ isOpen, onClose }) {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetInviteForm();
-                    setActiveTab('members');
-                  }}
-                  className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer"
-                >
-                  {t.cancel || (isEn ? 'Cancel' : 'Mégse')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingInvite}
-                  className="px-5 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] disabled:opacity-60 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
-                >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-gray-100">
+                {editingMemberId ? (
+                  <label className="inline-flex items-center gap-2 cursor-pointer select-none group">
+                    <input
+                      type="checkbox"
+                      checked={sendNotificationOnUpdate}
+                      onChange={(e) => setSendNotificationOnUpdate(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] border-gray-300 cursor-pointer"
+                    />
+                    <span className="text-xs font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">
+                      {t.team_send_notification_checkbox || (isEn ? 'Send notification to user about changes' : 'Értesítés küldése a felhasználónak a változtatásokról')}
+                    </span>
+                  </label>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetInviteForm();
+                      setActiveTab('members');
+                    }}
+                    className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer"
+                  >
+                    {t.cancel || (isEn ? 'Cancel' : 'Mégse')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingInvite}
+                    className="px-5 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] disabled:opacity-60 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
                   {isSubmittingInvite ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : editingMemberId ? (
@@ -1685,7 +1705,8 @@ export function TeamManagementModal({ isOpen, onClose }) {
                   </span>
                 </button>
               </div>
-            </form>
+            </div>
+          </form>
           )}
         </div>
       </div>

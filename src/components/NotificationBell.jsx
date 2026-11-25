@@ -225,19 +225,44 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                           {message}
                         </p>
 
-                        {/* Structured old -> new bank account change breakdown */}
+                        {/* Structured changes breakdown (bank account diff or team permissions diff) */}
                         {Array.isArray(notif.changes) && notif.changes.length > 0 && (
-                          <div className="mt-2 space-y-1 bg-white/70 border border-red-200/70 rounded-lg p-2">
-                            {notif.changes.map((ch, idx) => (
-                              <div key={idx} className="text-[10px] font-mono text-red-950 break-all">
-                                <span className="font-sans font-bold text-red-800">
-                                  {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
-                                </span>{' '}
-                                <span className="line-through text-red-500/90">{ch.oldAccount}</span>{' '}
-                                →{' '}
-                                <span className="font-bold text-red-900">{ch.newAccount}</span>
-                              </div>
-                            ))}
+                          <div className="mt-2 space-y-1.5 bg-white/80 border border-gray-200/90 rounded-lg p-2">
+                            {notif.changes.map((ch, idx) => {
+                              if (ch.oldAccount !== undefined) {
+                                return (
+                                  <div key={idx} className="text-[10px] font-mono text-red-950 break-all">
+                                    <span className="font-sans font-bold text-red-800">
+                                      {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
+                                    </span>{' '}
+                                    <span className="line-through text-red-500/90">{ch.oldAccount}</span>{' '}
+                                    →{' '}
+                                    <span className="font-bold text-red-900">{ch.newAccount}</span>
+                                  </div>
+                                );
+                              }
+                              const badgeStyle = ch.type === 'granted'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : ch.type === 'revoked'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200';
+                              const badgeText = ch.type === 'granted'
+                                ? (t.team_change_granted || (isEn ? '+ Granted' : '+ Megadva'))
+                                : ch.type === 'revoked'
+                                ? (t.team_change_revoked || (isEn ? '− Revoked' : '− Visszavonva'))
+                                : (t.team_change_modified || (isEn ? '~ Modified' : '~ Módosítva'));
+
+                              return (
+                                <div key={idx} className="flex items-start gap-1.5 text-[10px] text-gray-800 leading-snug">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border shrink-0 ${badgeStyle}`}>
+                                    {badgeText}
+                                  </span>
+                                  <span className="font-medium text-gray-700">
+                                    {isEn ? (ch.labelEn || ch.labelHu) : (ch.labelHu || ch.labelEn)}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
 
@@ -340,22 +365,57 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                 </div>
               </div>
 
-              {/* Bank change breakdown if present */}
+              {/* Changes breakdown if present (bank changes or team permission changes) */}
               {Array.isArray(selectedNotification.changes) && selectedNotification.changes.length > 0 && (
-                <div className="space-y-1.5 bg-red-50/80 border border-red-200 rounded-2xl p-4">
-                  <span className="text-xs font-bold text-red-900 block mb-1">
-                    {isEn ? "Account Details Modification:" : "Módosított bankszámla adatok:"}
+                <div className={`space-y-2 rounded-2xl p-4 border ${
+                  selectedNotification.changes.some((c) => c.oldAccount !== undefined)
+                    ? 'bg-red-50/80 border-red-200'
+                    : 'bg-slate-50/90 border-slate-200'
+                }`}>
+                  <span className={`text-xs font-bold block mb-1 ${
+                    selectedNotification.changes.some((c) => c.oldAccount !== undefined)
+                      ? 'text-red-900'
+                      : 'text-slate-800'
+                  }`}>
+                    {selectedNotification.changes.some((c) => c.oldAccount !== undefined)
+                      ? (isEn ? "Account Details Modification:" : "Módosított bankszámla adatok:")
+                      : (t.team_detailed_changes || (isEn ? "Detailed permission changes:" : "Részletes jogosultság változások:"))}
                   </span>
-                  {selectedNotification.changes.map((ch, idx) => (
-                    <div key={idx} className="text-xs font-mono text-red-950 break-all">
-                      <span className="font-sans font-bold text-red-800">
-                        {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
-                      </span>{' '}
-                      <span className="line-through text-red-500">{ch.oldAccount}</span>{' '}
-                      →{' '}
-                      <span className="font-bold text-red-900">{ch.newAccount}</span>
-                    </div>
-                  ))}
+                  {selectedNotification.changes.map((ch, idx) => {
+                    if (ch.oldAccount !== undefined) {
+                      return (
+                        <div key={idx} className="text-xs font-mono text-red-950 break-all">
+                          <span className="font-sans font-bold text-red-800">
+                            {isEn ? ch.accountLabelEn : ch.accountLabelHu}:
+                          </span>{' '}
+                          <span className="line-through text-red-500">{ch.oldAccount}</span>{' '}
+                          →{' '}
+                          <span className="font-bold text-red-900">{ch.newAccount}</span>
+                        </div>
+                      );
+                    }
+                    const badgeStyle = ch.type === 'granted'
+                      ? 'bg-emerald-100/90 text-emerald-800 border-emerald-300'
+                      : ch.type === 'revoked'
+                      ? 'bg-rose-100/90 text-rose-800 border-rose-300'
+                      : 'bg-amber-100/90 text-amber-800 border-amber-300';
+                    const badgeText = ch.type === 'granted'
+                      ? (t.team_change_granted || (isEn ? '+ Granted' : '+ Megadva'))
+                      : ch.type === 'revoked'
+                      ? (t.team_change_revoked || (isEn ? '− Revoked' : '− Visszavonva'))
+                      : (t.team_change_modified || (isEn ? '~ Modified' : '~ Módosítva'));
+
+                    return (
+                      <div key={idx} className="flex items-start gap-2 text-xs text-gray-800 bg-white/90 p-2.5 rounded-xl border border-gray-100 shadow-xs">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${badgeStyle}`}>
+                          {badgeText}
+                        </span>
+                        <span className="font-medium text-slate-700 leading-relaxed">
+                          {isEn ? (ch.labelEn || ch.labelHu) : (ch.labelHu || ch.labelEn)}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

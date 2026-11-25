@@ -571,6 +571,7 @@ export function buildNotification({
   titleEn = '',
   messageHu = '',
   messageEn = '',
+  changes = [],
 }) {
   return {
     id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -587,10 +588,278 @@ export function buildNotification({
     titleEn,
     messageHu,
     messageEn,
+    changes: Array.isArray(changes) ? changes : [],
     read: false,
     dismissed: false,
     createdAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Diffs an existing team member's configuration with the new update payload.
+ * Identifies every added/revoked building, role changes (manager vs viewer),
+ * bank account permissions, contact visibility, and global permissions.
+ */
+export function diffTeamMemberChanges(oldMember, newMemberData, buildings = []) {
+  if (!oldMember || !newMemberData) {
+    return { hasChanges: false, changes: [], summaryLinesHu: [], summaryLinesEn: [] };
+  }
+
+  const changes = [];
+  const bMap = new Map((buildings || []).map((b) => [String(b.id), b.name || b.id]));
+
+  // 1. Building scope change
+  const oldScope = oldMember.buildingScope === 'all' ? 'all' : 'selected';
+  const newScope = newMemberData.buildingScope === 'all' ? 'all' : 'selected';
+
+  if (oldScope !== newScope) {
+    if (newScope === 'all') {
+      changes.push({
+        type: 'granted',
+        category: 'scope',
+        labelHu: 'Társasházi hozzáférés: Kiterjesztve az összes társasházra',
+        labelEn: 'Condominium access: Expanded to all condominiums',
+      });
+    } else {
+      changes.push({
+        type: 'revoked',
+        category: 'scope',
+        labelHu: 'Társasházi hozzáférés: Minden házról korlátozva a kijelölt házakra',
+        labelEn: 'Condominium access: Restricted from all buildings to selected buildings',
+      });
+    }
+  }
+
+  // 2. Added and removed buildings
+  const oldBIds = new Set((oldMember.buildingIds || []).map(String));
+  const newBIds = new Set((newMemberData.buildingIds || []).map(String));
+
+  if (newScope === 'selected') {
+    // Check newly added
+    for (const id of newBIds) {
+      if (!oldBIds.has(id)) {
+        const name = bMap.get(id) || id;
+        changes.push({
+          type: 'granted',
+          category: 'building_access',
+          buildingId: id,
+          buildingName: name,
+          labelHu: `Új társasház hozzárendelve: ${name}`,
+          labelEn: `New condominium assigned: ${name}`,
+        });
+      }
+    }
+    // Check removed
+    for (const id of oldBIds) {
+      if (!newBIds.has(id)) {
+        const name = bMap.get(id) || id;
+        changes.push({
+          type: 'revoked',
+          category: 'building_access',
+          buildingId: id,
+          buildingName: name,
+          labelHu: `Társasházi hozzáférés visszavonva: ${name}`,
+          labelEn: `Condominium access revoked: ${name}`,
+        });
+      }
+    }
+  }
+
+  // 3. Per-building role and permission assignments
+  const oldAssignments = oldMember.buildingAssignments || {};
+  const newAssignments = newMemberData.buildingAssignments || {};
+
+  const evaluatedBuildingIds = new Set([
+    ...Object.keys(oldAssignments),
+    ...Object.keys(newAssignments),
+  ]);
+
+  for (const bId of evaluatedBuildingIds) {
+    if (newScope === 'selected' && !newBIds.has(String(bId))) continue;
+
+    const oldCfg = oldAssignments[bId] || {};
+    const newCfg = newAssignments[bId] || {};
+    const bName = bMap.get(String(bId)) || bId;
+
+    // A) Role: manager vs viewer
+    const oldRole = oldCfg.role === 'viewer' ? 'viewer' : 'manager';
+    const newRole = newCfg.role === 'viewer' ? 'viewer' : 'manager';
+
+    if (oldRole !== newRole) {
+      if (newRole === 'viewer') {
+        changes.push({
+          type: 'revoked',
+          category: 'role',
+          buildingId: bId,
+          buildingName: bName,
+          labelHu: `${bName}: Jogosultság módosítva: Szerkesztő → Csak megtekintő`,
+          labelEn: `${bName}: Access level changed: Manager → Viewer`,
+        });
+      } else {
+        changes.push({
+          type: 'granted',
+          category: 'role',
+          buildingId: bId,
+          buildingName: bName,
+          labelHu: `${bName}: Jogosultság módosítva: Csak megtekintő → Szerkesztő`,
+          labelEn: `${bName}: Access level changed: Viewer → Manager`,
+        });
+      }
+    }
+
+    // B) Bank account editing
+    const oldBank = Boolean(oldCfg.canEditBankAccounts);
+    const newBank = Boolean(newCfg.canEditBankAccounts);
+    if (!oldBank && newBank) {
+      changes.push({
+        type: 'granted',
+        category: 'bank_edit',
+        buildingId: bId,
+        buildingName: bName,
+        labelHu: `${bName}: Bankszámlaszám szerkesztési jog megadva`,
+        labelEn: `${bName}: Bank account edit permission granted`,
+      });
+    } else if (oldBank && !newBank) {
+      changes.push({
+        type: 'revoked',
+        category: 'bank_edit',
+        buildingId: bId,
+        buildingName: bName,
+        labelHu: `${bName}: Bankszámlaszám szerkesztési jog visszavonva`,
+        labelEn: `${bName}: Bank account edit permission revoked`,
+      });
+    }
+
+    // C) Contact visibility
+    const oldContact = Boolean(oldCfg.showManagerContact);
+    const newContact = Boolean(newCfg.showManagerContact);
+    if (!oldContact && newContact) {
+      changes.push({
+        type: 'modified',
+        category: 'contact_display',
+        buildingId: bId,
+        buildingName: bName,
+        labelHu: `${bName}: Személyes elérhetőség lakóknak: Bekapcsolva`,
+        labelEn: `${bName}: Personal contact for residents: Enabled`,
+      });
+    } else if (oldContact && !newContact) {
+      changes.push({
+        type: 'modified',
+        category: 'contact_display',
+        buildingId: bId,
+        buildingName: bName,
+        labelHu: `${bName}: Személyes elérhetőség lakóknak: Kikapcsolva`,
+        labelEn: `${bName}: Personal contact for residents: Disabled`,
+      });
+    }
+  }
+
+  // 4. Global staff permissions
+  const oldPerms = oldMember.permissions || {};
+  const newPerms = newMemberData.permissions || {};
+
+  const permChecks = [
+    {
+      key: 'canCreateBuildings',
+      grantedHu: 'Új társasház létrehozása: Megadva',
+      grantedEn: 'Create new condominiums: Granted',
+      revokedHu: 'Új társasház létrehozása: Visszavonva',
+      revokedEn: 'Create new condominiums: Revoked',
+    },
+    {
+      key: 'canManageTeam',
+      grantedHu: 'Csapatkezelési jogosultság: Megadva',
+      grantedEn: 'Team management: Granted',
+      revokedHu: 'Csapatkezelési jogosultság: Visszavonva',
+      revokedEn: 'Team management: Revoked',
+    },
+    {
+      key: 'canEditBankAccounts',
+      grantedHu: 'Globális bankszámlaszám szerkesztés: Megadva',
+      grantedEn: 'Global bank account editing: Granted',
+      revokedHu: 'Globális bankszámlaszám szerkesztés: Visszavonva',
+      revokedEn: 'Global bank account editing: Revoked',
+    },
+  ];
+
+  for (const pc of permChecks) {
+    const wasGranted = Boolean(oldPerms[pc.key]);
+    const isNowGranted = Boolean(newPerms[pc.key]);
+    if (!wasGranted && isNowGranted) {
+      changes.push({
+        type: 'granted',
+        category: pc.key,
+        labelHu: pc.grantedHu,
+        labelEn: pc.grantedEn,
+      });
+    } else if (wasGranted && !isNowGranted) {
+      changes.push({
+        type: 'revoked',
+        category: pc.key,
+        labelHu: pc.revokedHu,
+        labelEn: pc.revokedEn,
+      });
+    }
+  }
+
+  // 5. Contact info update
+  if (changes.length === 0) {
+    if (oldMember.name !== newMemberData.name && newMemberData.name) {
+      changes.push({
+        type: 'modified',
+        category: 'name',
+        labelHu: `Név módosítva: ${oldMember.name || '—'} → ${newMemberData.name}`,
+        labelEn: `Name modified: ${oldMember.name || '—'} → ${newMemberData.name}`,
+      });
+    }
+    if (oldMember.phone !== newMemberData.phone && newMemberData.phone !== undefined) {
+      changes.push({
+        type: 'modified',
+        category: 'phone',
+        labelHu: `Telefonszám módosítva: ${oldMember.phone || '—'} → ${newMemberData.phone || '—'}`,
+        labelEn: `Phone number modified: ${oldMember.phone || '—'} → ${newMemberData.phone || '—'}`,
+      });
+    }
+  }
+
+  return {
+    hasChanges: changes.length > 0,
+    changes,
+    summaryLinesHu: changes.map((c) => c.labelHu),
+    summaryLinesEn: changes.map((c) => c.labelEn),
+  };
+}
+
+/**
+ * Builds a detailed team update notification with a clear bullet-point message
+ * and structured changes payload.
+ */
+export function buildTeamUpdateNotification({
+  actorUser,
+  targetEmail,
+  changes = [],
+  diff = null,
+}) {
+  const summaryHu = changes.length > 0
+    ? changes.map((c) => `• ${c.labelHu}`).join('\n')
+    : 'A jogosultságaid frissültek.';
+  const summaryEn = changes.length > 0
+    ? changes.map((c) => `• ${c.labelEn}`).join('\n')
+    : 'Your permissions were updated.';
+
+  const actorName = actorUser?.name || actorUser?.email || 'A tulajdonos';
+
+  return buildNotification({
+    type: 'team_updated',
+    severity: 'info',
+    recipientEmail: targetEmail,
+    actorUser,
+    titleHu: 'Házkezelési jogosultságaid módosultak',
+    titleEn: 'Your Condominium Access Was Updated',
+    messageHu: `${actorName} módosította a házkezelési jogosultságaidat az alábbiak szerint:\n\n${summaryHu}`,
+    messageEn: `${actorName} updated your property management access permissions as follows:\n\n${summaryEn}`,
+    changes,
+  });
 }
 
 /**

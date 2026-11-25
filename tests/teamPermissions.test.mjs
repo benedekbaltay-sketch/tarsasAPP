@@ -27,6 +27,8 @@ import {
   buildInviteMailtoUrl,
   buildForgotPasswordEmailContent,
   resolveUserDisplayName,
+  diffTeamMemberChanges,
+  buildTeamUpdateNotification,
 } from '../src/utils/teamPermissions.js';
 
 const BUILDINGS = [
@@ -853,6 +855,87 @@ test('15. Viewers on building must be strictly blocked from building master & ba
   assert.equal(canUserManageBuilding(directViewerUser, 101, [org], allB), false);
   assert.equal(isUserBuildingViewer(directViewerUser, 101, [org], allB), true);
 });
+
+test('16. diffTeamMemberChanges & buildTeamUpdateNotification: granular diffing of granted and revoked permissions', () => {
+  const buildings = [
+    { id: 'b-1', name: 'Batyu u. 21.' },
+    { id: 'b-2', name: 'Kossuth L. u. 5.' },
+    { id: 'b-3', name: 'Fő tér 10.' },
+  ];
+
+  const oldMember = {
+    id: 'm-diff-1',
+    email: 'colleague@test.hu',
+    name: 'Kolléga Károly',
+    phone: '+36 30 111 2222',
+    buildingScope: 'selected',
+    buildingIds: ['b-1', 'b-2'],
+    buildingAssignments: {
+      'b-1': { role: 'viewer', canEditBankAccounts: false, showManagerContact: false },
+      'b-2': { role: 'manager', canEditBankAccounts: true, showManagerContact: false },
+    },
+    permissions: {
+      canCreateBuildings: false,
+      canManageTeam: false,
+      canEditBankAccounts: false,
+    },
+  };
+
+  const newMemberData = {
+    name: 'Kolléga Károly',
+    phone: '+36 30 111 2222',
+    buildingScope: 'selected',
+    buildingIds: ['b-1', 'b-3'], // b-2 revoked, b-3 granted
+    buildingAssignments: {
+      'b-1': { role: 'manager', canEditBankAccounts: true, showManagerContact: true }, // role upgraded, bank granted, contact enabled
+      'b-3': { role: 'viewer', canEditBankAccounts: false, showManagerContact: false },
+    },
+    permissions: {
+      canCreateBuildings: true, // granted
+      canManageTeam: false,
+      canEditBankAccounts: false,
+    },
+  };
+
+  const diff = diffTeamMemberChanges(oldMember, newMemberData, buildings);
+
+  assert.equal(diff.hasChanges, true);
+  assert.ok(diff.changes.length >= 4);
+
+  // Check specific diff entries
+  const addedB3 = diff.changes.find((c) => c.category === 'building_access' && c.type === 'granted' && c.buildingId === 'b-3');
+  assert.ok(addedB3, 'Should detect newly added building b-3');
+
+  const revokedB2 = diff.changes.find((c) => c.category === 'building_access' && c.type === 'revoked' && c.buildingId === 'b-2');
+  assert.ok(revokedB2, 'Should detect revoked building b-2');
+
+  const roleB1 = diff.changes.find((c) => c.category === 'role' && c.buildingId === 'b-1');
+  assert.ok(roleB1, 'Should detect role upgrade on b-1');
+  assert.equal(roleB1.type, 'granted');
+
+  const bankB1 = diff.changes.find((c) => c.category === 'bank_edit' && c.buildingId === 'b-1');
+  assert.ok(bankB1, 'Should detect bank edit permission granted on b-1');
+  assert.equal(bankB1.type, 'granted');
+
+  const createB = diff.changes.find((c) => c.category === 'canCreateBuildings');
+  assert.ok(createB, 'Should detect global create buildings permission granted');
+  assert.equal(createB.type, 'granted');
+
+  // Test notification builder
+  const notif = buildTeamUpdateNotification({
+    actorUser: { name: 'Főtulajdonos Péter', email: 'owner@test.hu' },
+    targetEmail: oldMember.email,
+    changes: diff.changes,
+    diff,
+  });
+
+  assert.equal(notif.type, 'team_updated');
+  assert.equal(notif.recipientEmail, 'colleague@test.hu');
+  assert.ok(notif.messageHu.includes('Főtulajdonos Péter'));
+  assert.ok(notif.messageHu.includes('Batyu u. 21.'));
+  assert.equal(notif.changes.length, diff.changes.length);
+});
+
 
 
 
