@@ -205,7 +205,7 @@ export function resolveUserOrgContext(user, organizations = [], buildings = []) 
  * when `org.includeLegacyBuildings !== false`).
  */
 export function isBuildingInOrganization(building, org) {
-  if (!building) return false;
+  if (!building || building.archived) return false;
   if (!org) return !building.organizationId;
   if (building.organizationId) {
     return building.organizationId === org.id;
@@ -214,11 +214,11 @@ export function isBuildingInOrganization(building, org) {
 }
 
 /**
- * Returns the subset of buildings the user is authorized to manage/view in Admin/Portfolio mode.
- * Non-admin roles (Residents / SZVB) receive the input list for downstream unit/flat scoping.
+ * Returns the subset of active (non-archived) buildings the user is authorized to manage/view in Admin/Portfolio mode.
+ * Non-admin roles (Residents / SZVB) receive the active list for downstream unit/flat scoping.
  */
 export function getAccessibleBuildings(user, buildings = [], organizations = []) {
-  const list = Array.isArray(buildings) ? buildings : [];
+  const list = (Array.isArray(buildings) ? buildings : []).filter((b) => b && !b.archived);
   if (!user) return [];
   if (user.role === 'superadmin') return list;
 
@@ -268,6 +268,7 @@ export function canUserCreateBuilding(user, organizations = [], buildings = []) 
  */
 export function canUserDeleteBuilding(user, building, organizations = [], buildings = []) {
   if (!user) return false;
+  if (building && building.archived) return false;
   const ctx = resolveUserOrgContext(user, organizations, buildings);
   if (ctx.isSuperAdmin) return true;
   if (!ctx.isOwner || ctx.isStaff || ctx.isSuspended) return false;

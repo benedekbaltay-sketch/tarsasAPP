@@ -899,7 +899,19 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
    - A kuka gombra kattintva egy dedikált, kiemelt biztonsági modális ablak jelenik meg.
    - Figyelmeztető piros sáv tájékoztatja a felhasználót arról, hogy a társasház törlésével minden albetét, lakásadat, könyvelés, befizetés és feltöltött dokumentum véglegesen megsemmisül.
    - **Gépelési biztonsági zár**: A végleges törlés gomb (`Végleges törlés`) mindaddig inaktív (disabled) marad, amíg a felhasználó pontosan be nem gépeli a társasház nevét az ellenőrző mezőbe (`deleteConfirmationInput.trim().toLowerCase() === buildingToDelete.name.trim().toLowerCase()`).
-   - A jóváhagyás után lefut a `deleteBuilding(buildingId)` művelet, amely biztonságosan törli az épületet a cégből és a munkatársak hatásköréből.
+   - A jóváhagyás után lefut a `deleteBuilding(buildingId)` művelet, amely **soft-delete (archiválás)** módszerrel `archived: true` státuszba helyezi az épületet (`organizationId: null`, eltávolítva a munkatársak listájából), így az minden lakással, könyveléssel és dokumentummal együtt biztonságban megmarad a Rendszergazda archívumában.
+   - **Portal renderelés (`createPortal`)**: A törlési megerősítő ablak (valamint a SuperAdmin modális ablakai) közvetlenül a `document.body`-ba renderelődnek `z-[9999]` rétegen, elkerülve a `space-y-*` margókból adódó fehér sávokat és a ragadós fejléc általi kitakarást.
+
+### 34.4. Rendszergazda (SuperAdmin) Archívum, Ház-átadás és Tulajdonos (Owner) Kezelés (`SuperAdminView.jsx`, `buildingActions.js`, `teamActions.js`)
+1. **Archivált Társasházak és Visszaállítás / Átadás (`restoreArchivedBuilding`):**
+   - A `SuperAdminView` új **„Archívum”** fülén látható az összes tulajdonos által törölt (`archived: true`) társasház a törlés időpontjával, a korábbi tulajdonossal és a megőrzött lakás/tétel statisztikával.
+   - A **„Visszaállítás / Átadás tulajdonosnak”** gombbal a SuperAdmin bármelyik rendszerbeli Tulajdonosnak (akár az eredetinek, akár egy másiknak) átadhatja a házat, amely azonnal aktívként (`archived: false`) megjelenik az új tulajdonos portfóliójában.
+   - A `getAccessibleBuildings` és `isBuildingInOrganization` (`teamPermissions.js`) minden archivált házat kizár a normál nézetekből.
+2. **Új Tulajdonosok (Ownerek) Létrehozása (`createOrganizationOwner`):**
+   - A `SuperAdminView` új **„Tulajdonosok”** fülén és a felső **„+ Új tulajdonos (Owner)”** gombbal a SuperAdmin új cég-tulajdonosokat hozhat létre.
+   - Az új tulajdonosok szigorúan izolált (`includeLegacyBuildings: false`) szervezetet kapnak, üres portfólióval indulnak, és saját maguk hozhatják létre a társasházaikat. Opcionálisan automatikus Firebase Auth fiók-létrehozás és jelszóbeállító e-mail is kiküldésre kerül.
+3. **Tulajdonosok E-mail Címének Módosítása (`updateOrganizationOwnerEmail`):**
+   - A **„Tulajdonosok”** fülön a SuperAdmin bármelyik Owner e-mail címét módosíthatja. A művelet atomian frissíti a `organizations`, `users`, `buildings` (kapcsolattartó és archív metaadatok) és `notifications` rekordokat, és igény esetén jelszóbeállító e-mailt küld az új címre.
 4. **Változók inicializálási sorrendjének (TDZ) teljes körű megerősítése:**
    - Minden leíró és modális komponensben (`GlobalBalancesModal.jsx`, `EditFlatMasterModal.jsx`, `EditTransactionModal.jsx`, `NewLoanModal.jsx`, `TenantView.jsx`) a segédfüggvények deklarációi szigorúan a hívásaik és hatáskörük elé lettek rendezve, megakadályozva a futásidejű inicializálás előtti hozzáférési hibákat.
 

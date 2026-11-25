@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { 
   Building2, 
@@ -65,6 +66,24 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
   const [buildingToDelete, setBuildingToDelete] = useState(null);
   const [deleteConfirmationInput, setDeleteConfirmationInput] = useState('');
   const [isDeletingBuilding, setIsDeletingBuilding] = useState(false);
+
+  // Close delete modal on Escape and lock body scroll while open
+  useEffect(() => {
+    if (!buildingToDelete) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !isDeletingBuilding) {
+        setBuildingToDelete(null);
+        setDeleteConfirmationInput('');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [buildingToDelete, isDeletingBuilding]);
 
   // Filtered buildings list (strictly scoped to buildings accessible by the logged-in user)
   const filteredBuildings = useMemo(() => {
@@ -607,10 +626,10 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
         </div>
       )}
 
-      {/* High-Security Condominium Deletion Modal (Owner Only with Typed Confirmation) */}
-      {buildingToDelete && (
+      {/* High-Security Condominium Deletion Modal (Rendered in document.body portal to avoid header overlap & spacing artifacts) */}
+      {buildingToDelete && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn cursor-default"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs cursor-default"
           onClick={() => {
             if (!isDeletingBuilding) {
               setBuildingToDelete(null);
@@ -619,7 +638,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
           }}
         >
           <div
-            className="bg-white rounded-2xl border border-red-200 shadow-2xl w-full max-w-md p-6 space-y-4 animate-scaleUp text-left"
+            className="bg-white rounded-2xl border border-red-200 shadow-2xl w-full max-w-md p-6 space-y-4 text-left max-h-[92vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
@@ -723,7 +742,8 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

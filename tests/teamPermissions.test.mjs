@@ -1014,3 +1014,35 @@ test('18. canUserDeleteBuilding strictly protects buildings and prevents unautho
   // Null / unauthenticated user can never delete
   assert.equal(canUserDeleteBuilding(null, targetBuilding, ORGANIZATIONS, BUILDINGS), false);
 });
+
+test('19. Archived (soft-deleted) buildings are hidden from getAccessibleBuildings & isolated new owners', () => {
+  const archivedB = { ...BUILDINGS[0], archived: true, archivedAt: '2026-11-25T12:00:00.000Z', organizationId: null };
+  const mixedBuildings = [archivedB, BUILDINGS[1], BUILDINGS[2]];
+
+  const owner = { email: 'tulaj@alfa.hu', role: 'admin' };
+  const staff = { email: 'anna@alfa.hu', role: 'admin' };
+  const superAdmin = { email: 'root@tarsasapp.hu', role: 'superadmin' };
+
+  // Archived building must NOT appear in accessible buildings for owner, staff, or active switcher
+  assert.equal(getAccessibleBuildings(owner, mixedBuildings, ORGANIZATIONS).some((b) => b.id === archivedB.id), false);
+  assert.equal(getAccessibleBuildings(staff, mixedBuildings, ORGANIZATIONS).some((b) => b.id === archivedB.id), false);
+  assert.equal(getAccessibleBuildings(superAdmin, mixedBuildings, ORGANIZATIONS).some((b) => b.id === archivedB.id), false);
+
+  // Already archived building cannot be deleted again
+  assert.equal(canUserDeleteBuilding(owner, archivedB, ORGANIZATIONS, mixedBuildings), false);
+  assert.equal(canUserDeleteBuilding(superAdmin, archivedB, ORGANIZATIONS, mixedBuildings), false);
+
+  // Newly created Owner with includeLegacyBuildings: false starts with an empty isolated portfolio
+  const newOwnerOrg = {
+    id: 'org-new-isolated',
+    name: 'Uj Kft.',
+    ownerEmail: 'uj.owner@test.hu',
+    ownerName: 'Új Tulajdonos',
+    includeLegacyBuildings: false,
+    members: [{ id: 'm-new', email: 'uj.owner@test.hu', orgRole: 'owner', active: true }],
+  };
+  const untaggedLegacyB = { id: 'b-legacy-untagged', name: 'Legacy Ház' };
+  const newOwnerUser = { email: 'uj.owner@test.hu', role: 'admin' };
+  const visibleToNewOwner = getAccessibleBuildings(newOwnerUser, [untaggedLegacyB, BUILDINGS[1]], [...ORGANIZATIONS, newOwnerOrg]);
+  assert.equal(visibleToNewOwner.length, 0);
+});

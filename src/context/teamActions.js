@@ -984,6 +984,322 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     }), true);
   };
 
+  // --- SuperAdmin Owner Management Actions (STRICTLY SUPERADMIN ONLY) ---
+
+  /**
+   * SuperAdmin ONLY: Creates a brand new Organization Owner (Közös Képviselő / Cég tulajdonos)
+   * with their own isolated organization (includeLegacyBuildings: false) so they can create
+   * and manage their own condominiums. Automatically provisions Firebase Auth & sends password-setup email.
+   */
+  const createOrganizationOwner = async ({
+    email,
+    name = '',
+    companyName = '',
+    phone = '',
+    sendInviteEmail = true,
+  } = {}) => {
+    const actor = state.currentUser;
+    if (!actor || actor.role !== 'superadmin') {
+      showToast(
+        isEn()
+          ? 'Only SuperAdmin can create new Organization Owners.'
+          : 'Új tulajdonost (Ownert) kizárólag a Rendszergazda (SuperAdmin) hozhat létre!',
+        'error'
+      );
+      return { success: false, error: 'unauthorized' };
+    }
+
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      showToast(
+        t.team_invalid_email || (isEn() ? 'Please enter a valid email address.' : 'Kérjük, adj meg egy érvényes e-mail címet!'),
+        'error'
+      );
+      return { success: false, error: 'invalid-email' };
+    }
+
+    const alreadyOwnerOrg = (state.organizations || []).find(
+      (o) => o && normalizeEmail(o.ownerEmail) === cleanEmail
+    );
+    if (alreadyOwnerOrg) {
+      showToast(
+        isEn()
+          ? 'An Organization Owner with this email address already exists.'
+          : 'Ezzel az e-mail címmel már létezik tulajdonos (Owner) a rendszerben!',
+        'error'
+      );
+      return { success: false, error: 'already-exists' };
+    }
+
+    const cleanName = String(name || '').trim() || cleanEmail.split('@')[0];
+    const cleanCompanyName = String(companyName || '').trim() || cleanName;
+    const cleanPhone = String(phone || '').trim();
+    const nowIso = new Date().toISOString();
+    const orgId = `org-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const memberId = `owner-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+
+    const newOrg = {
+      id: orgId,
+      name: cleanCompanyName,
+      ownerEmail: cleanEmail,
+      ownerName: cleanName,
+      includeLegacyBuildings: false,
+      taxNumber: '',
+      centralContact: {
+        name: cleanCompanyName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        officeHours: '',
+      },
+      showCentralContactToResidents: true,
+      members: [
+        {
+          id: memberId,
+          email: cleanEmail,
+          name: cleanName,
+          phone: cleanPhone,
+          orgRole: 'owner',
+          active: true,
+          status: 'active',
+          buildingScope: 'all',
+          buildingIds: [],
+          permissions: {
+            canCreateBuildings: true,
+            canManageTeam: true,
+            teamManageScope: 'all',
+            canEditBankAccounts: true,
+            canDeleteBuildings: true,
+          },
+          createdAt: nowIso,
+        },
+      ],
+      invites: [],
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      createdBySuperAdmin: normalizeEmail(actor.email),
+    };
+
+    const newUserRecord = {
+      id: `owner-user-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      name: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      role: 'admin',
+      flatNum: '0',
+      orgId,
+      orgRole: 'owner',
+      isAdminUser: true,
+      createdAt: nowIso,
+    };
+
+    await persistState((s) => {
+      const existingUsers = Array.isArray(s.users) ? s.users : [];
+      const hasAdminUser = existingUsers.some(
+        (u) => u && normalizeEmail(u.email) === cleanEmail && (u.role === 'admin' || u.role === 'superadmin')
+      );
+      const nextUsers = hasAdminUser
+        ? existingUsers.map((u) =>
+            u && normalizeEmail(u.email) === cleanEmail && u.role !== 'superadmin'
+              ? { ...u, name: cleanName, phone: cleanPhone || u.phone || '', orgId, orgRole: 'owner', isAdminUser: true }
+              : u
+          )
+        : [...existingUsers, newUserRecord];
+
+      return {
+        ...s,
+        organizations: [...(s.organizations || []), newOrg],
+        users: nextUsers,
+      };
+    }, true);
+
+    let emailSent = false;
+    if (sendInviteEmail) {
+      const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://tarsashaz-cfe5d.web.app';
+      const provResult = await provisionAndSendColleagueInviteEmail({
+        email: cleanEmail,
+        token: '',
+        lang: state.currentLang || 'hu',
+        origin,
+        skipFirebaseResetEmail: false,
+      });
+      emailSent = Boolean(provResult?.sent);
+    }
+
+    showToast(
+      emailSent
+        ? (isEn()
+            ? `Owner "${cleanName}" created and password setup email sent to ${cleanEmail}!`
+            : `„${cleanName}” tulajdonos létrehozva, és jelszóbeállító e-mail elküldve ide: ${cleanEmail}!`)
+        : (isEn()
+            ? `Owner "${cleanName}" (${cleanEmail}) created successfully!`
+            : `„${cleanName}” (${cleanEmail}) tulajdonos sikeresen létrehozva!`)
+    );
+
+    return { success: true, organization: newOrg, user: newUserRecord, emailSent };
+  };
+
+  /**
+   * SuperAdmin ONLY: Changes an Organization Owner's email address across organizations,
+   * users, buildings, manager contacts, archived records, and notifications.
+   * Optionally provisions Firebase Auth & sends password-setup email to the new email address.
+   */
+  const updateOrganizationOwnerEmail = async ({
+    orgId = null,
+    oldEmail,
+    newEmail,
+    provisionNewAuth = true,
+  } = {}) => {
+    const actor = state.currentUser;
+    if (!actor || actor.role !== 'superadmin') {
+      showToast(
+        isEn()
+          ? 'Only SuperAdmin can change an Owner’s email address.'
+          : 'Tulajdonos (Owner) e-mail címét kizárólag a Rendszergazda (SuperAdmin) módosíthatja!',
+        'error'
+      );
+      return { success: false, error: 'unauthorized' };
+    }
+
+    const cleanOldEmail = normalizeEmail(oldEmail);
+    const cleanNewEmail = normalizeEmail(newEmail);
+
+    if (!cleanNewEmail || !cleanNewEmail.includes('@') || !cleanNewEmail.includes('.')) {
+      showToast(
+        t.team_invalid_email || (isEn() ? 'Please enter a valid email address.' : 'Kérjük, adj meg egy érvényes e-mail címet!'),
+        'error'
+      );
+      return { success: false, error: 'invalid-email' };
+    }
+
+    if (cleanOldEmail === cleanNewEmail) {
+      showToast(
+        isEn() ? 'The new email address is the same as the current one.' : 'Az új e-mail cím megegyezik a jelenlegivel.',
+        'error'
+      );
+      return { success: false, error: 'same-email' };
+    }
+
+    const conflictOrg = (state.organizations || []).find(
+      (o) => o && o.id !== orgId && normalizeEmail(o.ownerEmail) === cleanNewEmail
+    );
+    if (conflictOrg) {
+      showToast(
+        isEn()
+          ? 'Another Organization Owner already uses this email address.'
+          : 'Ezt az e-mail címet már egy másik tulajdonos használja!',
+        'error'
+      );
+      return { success: false, error: 'email-in-use' };
+    }
+
+    const nowIso = new Date().toISOString();
+
+    await persistState((s) => {
+      const nextOrgs = (s.organizations || []).map((org) => {
+        if (!org) return org;
+        const isTargetOrg = (orgId && org.id === orgId) || (cleanOldEmail && normalizeEmail(org.ownerEmail) === cleanOldEmail);
+        if (!isTargetOrg) return org;
+
+        const nextMembers = (org.members || []).map((m) => {
+          if (!m) return m;
+          if (m.orgRole === 'owner' || (cleanOldEmail && normalizeEmail(m.email) === cleanOldEmail)) {
+            return { ...m, email: cleanNewEmail, updatedAt: nowIso };
+          }
+          return m;
+        });
+
+        const nextCentralContact = org.centralContact
+          ? {
+              ...org.centralContact,
+              email:
+                !org.centralContact.email || normalizeEmail(org.centralContact.email) === cleanOldEmail
+                  ? cleanNewEmail
+                  : org.centralContact.email,
+            }
+          : org.centralContact;
+
+        return {
+          ...org,
+          ownerEmail: cleanNewEmail,
+          centralContact: nextCentralContact,
+          members: nextMembers,
+          updatedAt: nowIso,
+        };
+      });
+
+      const nextUsers = (s.users || []).map((u) => {
+        if (!u) return u;
+        if (cleanOldEmail && normalizeEmail(u.email) === cleanOldEmail && u.role === 'admin') {
+          return { ...u, email: cleanNewEmail };
+        }
+        return u;
+      });
+
+      const nextBuildings = (s.buildings || []).map((b) => {
+        if (!b) return b;
+        let updated = b;
+        const belongsToOrg = orgId && b.organizationId === orgId;
+        if (
+          (cleanOldEmail && normalizeEmail(b.email) === cleanOldEmail) ||
+          (belongsToOrg && (!b.email || normalizeEmail(b.email) === cleanOldEmail))
+        ) {
+          updated = { ...updated, email: cleanNewEmail };
+        }
+        if (updated.managerContact && cleanOldEmail && normalizeEmail(updated.managerContact.email) === cleanOldEmail) {
+          updated = {
+            ...updated,
+            managerContact: { ...updated.managerContact, email: cleanNewEmail },
+          };
+        }
+        if (updated.archivedFromOwnerEmail && cleanOldEmail && normalizeEmail(updated.archivedFromOwnerEmail) === cleanOldEmail) {
+          updated = { ...updated, archivedFromOwnerEmail: cleanNewEmail };
+        }
+        return updated;
+      });
+
+      const nextNotifications = (s.notifications || []).map((n) => {
+        if (!n) return n;
+        if (cleanOldEmail && normalizeEmail(n.recipientEmail) === cleanOldEmail) {
+          return { ...n, recipientEmail: cleanNewEmail };
+        }
+        return n;
+      });
+
+      return {
+        ...s,
+        organizations: nextOrgs,
+        users: nextUsers,
+        buildings: nextBuildings,
+        notifications: nextNotifications,
+      };
+    }, true);
+
+    let emailSent = false;
+    if (provisionNewAuth) {
+      const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://tarsashaz-cfe5d.web.app';
+      const provResult = await provisionAndSendColleagueInviteEmail({
+        email: cleanNewEmail,
+        token: '',
+        lang: state.currentLang || 'hu',
+        origin,
+        skipFirebaseResetEmail: false,
+      });
+      emailSent = Boolean(provResult?.sent);
+    }
+
+    showToast(
+      emailSent
+        ? (isEn()
+            ? `Owner email changed to ${cleanNewEmail} and password setup link sent!`
+            : `Tulajdonos e-mail címe módosítva (${cleanNewEmail}), jelszóbeállító link elküldve!`)
+        : (isEn()
+            ? `Owner email changed to ${cleanNewEmail}!`
+            : `Tulajdonos e-mail címe sikeresen módosítva: ${cleanNewEmail}!`)
+    );
+
+    return { success: true, oldEmail: cleanOldEmail, newEmail: cleanNewEmail, emailSent };
+  };
+
   return {
     inviteOrAttachTeamMember,
     resendTeamInviteEmail,
@@ -994,6 +1310,8 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     revokeTeamInvite,
     acceptTeamInvite,
     updateOrganizationSettings,
+    createOrganizationOwner,
+    updateOrganizationOwnerEmail,
     pushNotification,
     markNotificationRead,
     markAllNotificationsRead,
