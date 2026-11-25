@@ -845,15 +845,12 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
      - **Elérhetőségi adatok**: Név és telefonszám változások.
    - Visszatérési érték: `{ hasChanges, changes: [{ type: 'granted'|'revoked'|'modified', category, labelHu, labelEn }], summaryLinesHu, summaryLinesEn }`.
 
-2. **Profilbeli Értesítés, Változáslista és Azonnali Figyelmeztető Felugró Ablak (`App.jsx`, `ProfileModal.jsx`, `IosSideDrawer.jsx`, `TeamManagementModal.jsx`, `syncEngine.js`)**:
-   - A felhasználó kérésének megfelelően a rendszer **nem küld e-mailt** a jogosultság-módosításokról, hanem közvetlenül a felhasználó fiókjában és profiljában (`ProfileModal.jsx`, `App.jsx`) jeleníti meg a pontos változtatásokat.
-   - **Azonnali Kiemelt Felugró Ablak Belépéskor / Betöltéskor (`App.jsx`)**:
-     - Amikor egy munkatárs belép a fiókjába, és a tulajdonos korábban módosította a jogosultságait (olvasatlan `team_updated` értesítés van), a rendszer azonnal egy kiemelt felugró modális ablakot jelenít meg:
-       - Cím: *„Házkezelési jogosultságaid módosultak”* (`ShieldCheck` ikonnal).
-       - Módosító megnevezése: A tulajdonos neve vagy e-mail címe.
-       - Részletes változások strukturált jelvényekkel: `+ Megadva` (zöld), `− Visszavonva` (piros), `~ Módosítva` (sárga/kék).
-       - **„Tudomásul vettem” gomb**: Egyetlen kattintással olvasottnak jelöli az értesítést (`markNotificationRead`), bezárva az ablakot.
-       - **„Profil megnyitása” gomb**: Közvetlenül megnyitja a felhasználói profilt.
+2. **Inbox és Értesítések Központbeli Megjelenítés (`NotificationBell.jsx`, `CommunicationCenterModal.jsx`, `ProfileModal.jsx`, `TeamManagementModal.jsx`, `syncEngine.js`)**:
+   - A felhasználó kérésének megfelelően a rendszer **nem jelenít meg tolakodó automatikus felugró ablakot** „Tudomásul vettem” gombbal a belépéskor, és **nem küld külső e-mailt** sem.
+   - **Értesítések és Inbox Felület (`NotificationBell.jsx`, `CommunicationCenterModal.jsx`)**:
+     - A felső fejlécben található levél/értesítés gombra kattintva a lenyíló értesítési sávban és a felnyíló üzenetablakban azonnal látható az értesítés.
+     - A Kommunikációs Központban (`CommunicationCenterModal.jsx`) az **„Értesítések & Rendszerüzenetek” (Inbox)** fülön minden jogosultság-módosítás strukturált formában, a pontos változtatásokkal listázódik.
+     - Részletes változások strukturált jelvényekkel: `+ Megadva` (zöld), `− Visszavonva` (piros), `~ Módosítva` (sárga/kék).
    - **Kiemelt Értesítési Kártya a Profilban (`ProfileModal.jsx`)**:
      - A profil megnyitásakor a tartalom tetején egy dedikált értesítési kártya fogadja a felhasználót az összes változtatással és tudomásulvételi gombbal, valamint lenyitható előzményekkel.
    - **Oldalsó Főmenü Indikátor (`IosSideDrawer.jsx`)**:
