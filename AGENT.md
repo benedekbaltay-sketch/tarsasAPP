@@ -845,16 +845,19 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
      - **Elérhetőségi adatok**: Név és telefonszám változások.
    - Visszatérési érték: `{ hasChanges, changes: [{ type: 'granted'|'revoked'|'modified', category, labelHu, labelEn }], summaryLinesHu, summaryLinesEn }`.
 
-2. **Opcionális Értesítésküldés és Valós E-mail Kiküldés (`TeamManagementModal.jsx`, `emailService.js`, `teamActions.js`)**:
-   - A munkatárs szerkesztésekor a mentés gomb bal oldalán található egy jelölőnégyzet:
-     - `"Értesítés küldése a felhasználónak a változtatásokról"` (`team_send_notification_checkbox`).
-     - Alapértelmezett értéke bepipált (`true`).
-   - **Valós Tranzakciós E-mail Értesítés (`sendColleaguePermissionUpdateEmail`, `buildPermissionUpdateEmailContent`)**:
-     - Amikor az értesítés engedélyezve van és történt változás, a rendszer nemcsak belső értesítést hoz létre, hanem valós e-mailt küld ki a munkatárs hivatalos e-mail címére a központi hitelesített domainről (`kozoskepviselet@mail.hazapp.hu`), válaszcímként (`Reply-To`) a mentést végző tulajdonos címét megadva.
-     - Az e-mail sablon modern, kártyás megjelenésű, a TarsasApp hivatalos arculatával, a változások színes jelvényeivel (`+ Megadva`, `− Visszavonva`, `~ Módosítva`) és közvetlen belépési gombbal a `hazapp.hu`-ra.
-     - A kiküldött levél rögzítésre kerül a Kommunikációs Központ kimenő naplójában (`emailOutbox`) is, így a tulajdonos is nyomon tudja követni.
-     - A mentés gomb az e-mail elküldésének idejére betöltési animációt (`Loader2`) jelenít meg, és sikeres küldés esetén toast üzenetben visszaigazolja a címzett e-mail címét.
-   - Amennyiben a felhasználó kikapcsolja a jelölőnégyzetet, vagy nincs tényleges változás, a rendszer nem küld e-mailt és nem hoz létre értesítést.
+2. **Profilbeli Értesítés és Változáslista (`ProfileModal.jsx`, `IosSideDrawer.jsx`, `TeamManagementModal.jsx`)**:
+   - A felhasználó kérésének megfelelően a rendszer **nem küld e-mailt** a jogosultság-módosításokról, hanem közvetlenül a felhasználó profiljában (`ProfileModal.jsx`) jeleníti meg a részletes értesítést.
+   - **Kiemelt Értesítési Kártya a Profilban**:
+     - Amikor a munkatárs megnyitja a profilját (`ProfileModal.jsx`), a tartalom legtetején egy kiemelt értesítési kártya fogadja az összes konkrét változtatással.
+     - Megjeleníti a mentést végző tulajdonos nevét/e-mailjét, a módosítás pontos idejét, valamint a strukturált jelvényeket (`+ Megadva`, `− Visszavonva`, `~ Módosítva`).
+     - **„Tudomásul vettem” gomb**: Az olvasatlan értesítésnél egy kattintással tudomásul vehető (`markNotificationRead`), mely után az állapot zöld „Tudomásul véve” jelzésre vált.
+     - **Előzmények**: Több korábbi módosítás esetén az előzmények lenyithatók és visszakereshetők.
+   - **Oldalsó Főmenü Indikátor (`IosSideDrawer.jsx`)**:
+     - Ha a felhasználónak olvasatlan jogosultság-módosítási értesítése van, a fiók/profil menüpont mellett egy lüktető kék „Új” jelvény hívja fel a figyelmet arra, hogy a profiljában új tájékoztatás várja.
+   - **Opcionális Kapcsoló a Szerkesztőben (`TeamManagementModal.jsx`)**:
+     - A munkatárs szerkesztésekor a mentés gomb bal oldalán található a jelölőnégyzet:
+       - `"Értesítés megjelenítése a felhasználó profiljában a változtatásokról"` (`team_send_notification_checkbox`).
+       - Alapértelmezett értéke bepipált (`true`). Ha kikapcsolják, vagy nem történt változás, nem keletkezik profilbeli értesítés sem.
 
 3. **Strukturált Jelvényes Megjelenítés az Értesítési Központban (`NotificationBell.jsx`)**:
    - Mind a lenyíló előnézeti menüben, mind a teljes üzenet részleteit megjelenítő felugró ablakban a jogosultságváltozások vizuálisan, színes jelvényekkel ellátva jelennek meg:

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   User, 
@@ -32,7 +32,7 @@ import {
   Building2,
   UserCheck
 } from 'lucide-react';
-import { resolveUserOrgContext } from '../../utils/teamPermissions';
+import { resolveUserOrgContext, getNotificationsForUser } from '../../utils/teamPermissions';
 import { formatPhoneNumber } from '../../utils/phone';
 import { formatTaxNumber } from '../../utils/taxNumber';
 import { formatAnnexItem } from '../../utils/annex';
@@ -40,6 +40,29 @@ import { ProfileSwitcherButton } from '../ProfileSwitcherButton';
 import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
 import { playNotificationSound } from '../../utils/sound';
+
+function formatNotifTime(iso, isEn) {
+  if (!iso) return '';
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return '';
+  const diffMin = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+  if (diffMin < 1) return isEn ? 'Just now' : 'Épp most';
+  if (diffMin < 60) return isEn ? `${diffMin}m ago` : `${diffMin} perce`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return isEn ? `${diffH}h ago` : `${diffH} órája`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD < 7) return isEn ? `${diffD}d ago` : `${diffD} napja`;
+  try {
+    return new Date(ts).toLocaleDateString(isEn ? 'en-GB' : 'hu-HU', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return String(iso).slice(0, 10);
+  }
+}
 
 export function ProfileModal({
   isOpen,
@@ -60,13 +83,22 @@ export function ProfileModal({
     setLanguage, 
     logout, 
     showToast, 
-    getUserFlats 
+    getUserFlats,
+    markNotificationRead,
   } = useApp();
   
   const { currentUser, flats, buildings, currentBuildingId, currentLang, repProfile, globalSettings, lastSyncTime } = state;
   const isEn = currentLang === 'en';
   const isHu = !isEn;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+
+  // Team permission update notifications for current user
+  const [showAllTeamNotifications, setShowAllTeamNotifications] = useState(false);
+  const userTeamNotifications = useMemo(() => {
+    const notifs = getNotificationsForUser(state.notifications || [], currentUser);
+    return notifs.filter((n) => n && n.type === 'team_updated');
+  }, [state.notifications, currentUser]);
+  const latestTeamNotification = userTeamNotifications[0] || null;
 
   // Navigation tab for Admin Settings view: Option A (personal, company, security, preferences)
   const [activeTab, setActiveTab] = useState('personal'); // 'personal' | 'company' | 'security' | 'preferences'
@@ -374,6 +406,154 @@ export function ProfileModal({
       {/* Main Content Area */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 md:py-8">
         <div className="max-w-4xl mx-auto space-y-6">
+
+          {/* Team Permission Changes Notification Card */}
+          {latestTeamNotification && (
+            <div className={`p-5 rounded-2xl border transition-all ${
+              !latestTeamNotification.read
+                ? 'bg-blue-50/70 border-blue-200 shadow-sm'
+                : 'bg-white border-gray-200 shadow-2xs'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-200/70">
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                    !latestTeamNotification.read ? 'bg-[#1E3A8A] text-white shadow-xs' : 'bg-gray-100 text-gray-700'
+                  }`}>
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm sm:text-base font-bold text-gray-900 font-display">
+                        {isEn ? (latestTeamNotification.titleEn || 'Condominium Access Updated') : (latestTeamNotification.titleHu || 'Házkezelési jogosultságaid módosultak')}
+                      </h3>
+                      {!latestTeamNotification.read && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1E3A8A] text-white animate-pulse">
+                          {isEn ? 'New' : 'Új'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {latestTeamNotification.actorName || latestTeamNotification.actorEmail
+                        ? (isEn
+                            ? `${latestTeamNotification.actorName || latestTeamNotification.actorEmail} updated your access permissions:`
+                            : `${latestTeamNotification.actorName || latestTeamNotification.actorEmail} módosította a jogosultságaidat:`)
+                        : (isEn ? 'Recent permission updates:' : 'Legutóbbi jogosultság változások:')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatNotifTime(latestTeamNotification.createdAt, isEn)}
+                  </span>
+                  {!latestTeamNotification.read ? (
+                    <button
+                      type="button"
+                      onClick={() => markNotificationRead(latestTeamNotification.id)}
+                      className="px-3 py-1.5 rounded-xl bg-[#1E3A8A] hover:bg-blue-900 text-white text-xs font-bold shadow-2xs cursor-pointer flex items-center gap-1 active:scale-95 transition-all"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{t.profile_permissions_acknowledge_btn || (isEn ? 'Acknowledge' : 'Tudomásul vettem')}</span>
+                    </button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      {t.profile_permissions_acknowledged_badge || (isEn ? 'Acknowledged' : 'Tudomásul véve')}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Breakdown of changes */}
+              <div className="mt-3.5 space-y-2">
+                <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                  {t.team_detailed_changes || (isEn ? 'Detailed changes:' : 'Részletes változások:')}
+                </div>
+                {Array.isArray(latestTeamNotification.changes) && latestTeamNotification.changes.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-2">
+                    {latestTeamNotification.changes.map((ch, idx) => {
+                      const badgeStyle = ch.type === 'granted'
+                        ? 'bg-emerald-100/90 text-emerald-800 border-emerald-300'
+                        : ch.type === 'revoked'
+                        ? 'bg-rose-100/90 text-rose-800 border-rose-300'
+                        : 'bg-amber-100/90 text-amber-800 border-amber-300';
+                      const badgeText = ch.type === 'granted'
+                        ? (t.team_change_granted || (isEn ? '+ Granted' : '+ Megadva'))
+                        : ch.type === 'revoked'
+                        ? (t.team_change_revoked || (isEn ? '− Revoked' : '− Visszavonva'))
+                        : (t.team_change_modified || (isEn ? '~ Modified' : '~ Módosítva'));
+
+                      return (
+                        <div
+                          key={idx}
+                          className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white border border-gray-200/80 shadow-2xs text-xs text-gray-800"
+                        >
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${badgeStyle}`}>
+                            {badgeText}
+                          </span>
+                          <span className="font-medium text-slate-800 leading-relaxed">
+                            {isEn ? (ch.labelEn || ch.labelHu) : (ch.labelHu || ch.labelEn)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-white border border-gray-200 text-xs text-gray-600">
+                    {isEn ? (latestTeamNotification.messageEn || latestTeamNotification.messageHu) : (latestTeamNotification.messageHu || latestTeamNotification.messageEn)}
+                  </div>
+                )}
+              </div>
+
+              {/* History toggle if there are more team notifications */}
+              {userTeamNotifications.length > 1 && (
+                <div className="mt-3 pt-2.5 border-t border-gray-200/60 flex items-center justify-between text-xs text-gray-500">
+                  <span>
+                    {isEn
+                      ? `${userTeamNotifications.length} permission updates recorded`
+                      : `${userTeamNotifications.length} korábbi jogosultság-módosítás rögzítve`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllTeamNotifications((prev) => !prev)}
+                    className="text-[#1E3A8A] font-bold hover:underline cursor-pointer"
+                  >
+                    {showAllTeamNotifications
+                      ? (isEn ? 'Hide past updates' : 'Előzmények elrejtése')
+                      : (isEn ? 'View past updates' : 'Korábbi változtatások megtekintése')}
+                  </button>
+                </div>
+              )}
+
+              {showAllTeamNotifications && userTeamNotifications.length > 1 && (
+                <div className="mt-3 space-y-3 pt-3 border-t border-gray-200/60">
+                  {userTeamNotifications.slice(1).map((notif) => (
+                    <div key={notif.id} className="p-3 rounded-xl bg-white/80 border border-gray-200 text-xs space-y-2">
+                      <div className="flex items-center justify-between text-[11px] text-gray-500">
+                        <span className="font-semibold text-gray-700">
+                          {isEn ? (notif.titleEn || 'Access Update') : (notif.titleHu || 'Jogosultság módosítás')}
+                        </span>
+                        <span>{formatNotifTime(notif.createdAt, isEn)}</span>
+                      </div>
+                      {Array.isArray(notif.changes) && notif.changes.length > 0 ? (
+                        <div className="space-y-1">
+                          {notif.changes.map((ch, cIdx) => (
+                            <div key={cIdx} className="flex items-center gap-2 text-[11px] text-gray-700">
+                              <span className="font-bold text-gray-500">•</span>
+                              <span>{isEn ? (ch.labelEn || ch.labelHu) : (ch.labelHu || ch.labelEn)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-600">{isEn ? notif.messageEn : notif.messageHu}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ============================================================== */}
           {/* COMMON REPRESENTATIVE & SYSTEM SETTINGS VIEW (ADMIN/SUPERADMIN) */}
