@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { 
   Landmark, 
   Menu, 
+  X,
   Plus, 
   Coins, 
   Users, 
@@ -992,6 +993,15 @@ export function LoansModal({ isOpen, onClose, onOpenDrawer, onOpenProfileSelecto
               </button>
             )}
             <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer flex-shrink-0"
+              title={isEn ? "Close" : "Bezárás"}
+              aria-label={isEn ? "Close" : "Bezárás"}
+            >
+              <X className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+            </button>
           </div>
         </div>
       </div>

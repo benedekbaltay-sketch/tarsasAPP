@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   X, 
+  Menu,
   Save, 
   Calculator, 
   Loader2, 
@@ -44,7 +45,7 @@ import {
   resolveBuildingResidentContact,
 } from '../../utils/teamPermissions';
 
-export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode = 'full', isReadOnly = false }) {
+export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId = null, mode = 'full', isReadOnly = false }) {
   const { state, t, setGlobalBalances, persistState, showToast, canUserManageBuilding } = useApp();
   const { currentLang, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
@@ -112,6 +113,16 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
   const [newBank, setNewBank] = useState('OTP');
   const [newHasMonthlyFee, setNewHasMonthlyFee] = useState(false);
   const [newInitialBalance, setNewInitialBalance] = useState('');
+
+  const resetNewAccountForm = () => {
+    setNewName('');
+    setNewShortName('');
+    setNewBeneficiary(targetBuilding?.name || '');
+    setNewAccountNum('');
+    setNewBank('OTP');
+    setNewHasMonthlyFee(false);
+    setNewInitialBalance('');
+  };
 
   // Initialize all form fields whenever modal opens or target building changes
   useEffect(() => {
@@ -423,8 +434,19 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
       {/* Sticky Header */}
       <div className="sticky top-0 z-20 w-full shadow-xs bg-white border-b border-gray-200 px-3 sm:px-4 md:px-8 py-3">
         <div className="flex items-center justify-between gap-2 sm:gap-4">
-          {/* Left: Website Logo -> Back to Home */}
+          {/* Left: Menu & Website Logo -> Back to Home */}
           <div className="flex items-center justify-start gap-2 sm:gap-2.5 flex-1 min-w-0">
+            {onOpenDrawer && (
+              <button
+                type="button"
+                onClick={onOpenDrawer}
+                className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-700 shadow-2xs transition-all cursor-pointer flex-shrink-0 hover:border-gray-300"
+                title={isEn ? "Open Menu" : "Menü megnyitása"}
+                aria-label={isEn ? "Open Menu" : "Menü megnyitása"}
+              >
+                <Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-gray-700" />
+              </button>
+            )}
             <NavLogoButton onClick={onClose} isReadOnly={isEffectiveReadOnly} />
           </div>
 

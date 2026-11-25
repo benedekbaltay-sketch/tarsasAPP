@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   X, 
+  Menu,
   Mail, 
   Bell, 
   Settings2, 
@@ -68,6 +69,7 @@ function formatTime(iso, isEn) {
 export function CommunicationCenterModal({
   isOpen,
   initialBuildingId = 'all',
+  onOpenDrawer,
   onClose
 }) {
   const { 
@@ -494,8 +496,19 @@ export function CommunicationCenterModal({
       <div className="sticky top-0 z-20 w-full shadow-xs bg-white border-b border-gray-200">
         <ImpersonationBanner onExit={onClose} />
         <div className="px-3 sm:px-6 md:px-8 py-3 flex items-center justify-between gap-3">
-          {/* Left: Logo & Title */}
-          <div className="flex items-center gap-3 min-w-0">
+          {/* Left: Menu, Logo & Title */}
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            {onOpenDrawer && (
+              <button
+                type="button"
+                onClick={onOpenDrawer}
+                className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-700 shadow-2xs transition-all cursor-pointer flex-shrink-0 hover:border-gray-300"
+                title={isEn ? "Open Menu" : "Menü megnyitása"}
+                aria-label={isEn ? "Open Menu" : "Menü megnyitása"}
+              >
+                <Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-gray-700" />
+              </button>
+            )}
             <NavLogoButton onClick={handleRequestClose} hideViewerBadge={true} />
             <div className="hidden sm:block h-6 w-px bg-gray-200" />
             <div className="flex items-center gap-2 min-w-0">

@@ -6,6 +6,7 @@ import {
   Download, 
   Search, 
   Menu, 
+  X,
   Check, 
   ArrowRight, 
   ArrowLeft,
@@ -109,8 +110,19 @@ export function AssemblyModal({
       <div className="sticky top-0 z-10 w-full shadow-xs">
         <ImpersonationBanner onExit={onClose} />
         <div className="bg-white border-b border-gray-200 px-3 sm:px-4 md:px-8 py-3 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Left: Website Logo -> Back to Home */}
-          <div className="flex items-center justify-start flex-1 min-w-0">
+          {/* Left: Menu & Website Logo -> Back to Home */}
+          <div className="flex items-center justify-start gap-2 sm:gap-2.5 flex-1 min-w-0">
+            {onOpenDrawer && (
+              <button
+                type="button"
+                onClick={onOpenDrawer}
+                className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-700 shadow-2xs transition-all cursor-pointer flex-shrink-0 hover:border-gray-300"
+                title={isEn ? "Open Menu" : "Menü megnyitása"}
+                aria-label={isEn ? "Open Menu" : "Menü megnyitása"}
+              >
+                <Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-gray-700" />
+              </button>
+            )}
             <NavLogoButton onClick={onClose} />
           </div>
 
@@ -137,15 +149,17 @@ export function AssemblyModal({
             </div>
           </div>
 
-          {/* Right side: Profile Selector & Menu button */}
+          {/* Right side: Profile Selector & Close */}
           <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 flex-1 flex-shrink-0">
             <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />
             <button
-              onClick={onOpenDrawer}
-              className="w-8 h-8 sm:w-9 sm:h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-700 shadow-xs transition-all cursor-pointer flex-shrink-0"
-              title="Menü"
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer flex-shrink-0"
+              title={isEn ? "Close" : "Bezárás"}
+              aria-label={isEn ? "Close" : "Bezárás"}
             >
-              <Menu className="w-4 h-4" />
+              <X className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
             </button>
           </div>
         </div>

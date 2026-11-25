@@ -855,6 +855,7 @@ function MainLayout() {
       <CalendarModal
         isOpen={Boolean(currentUser && isAdmin && isCalendarOpen)}
         onClose={() => setIsCalendarOpen(false)}
+        onOpenDrawer={() => setIsDrawerOpen(true)}
         initialBuildingId={calendarBuildingId}
         isReadOnly={!isManagingCurrentBuilding}
       />
@@ -961,6 +962,7 @@ function MainLayout() {
         buildingId={buildingSettingsTargetId || state.currentBuildingId}
         mode={globalBalancesMode}
         isReadOnly={!canUserManageBuilding(buildingSettingsTargetId || state.currentBuildingId)}
+        onOpenDrawer={() => setIsDrawerOpen(true)}
         onClose={() => {
           setIsGlobalBalancesOpen(false);
           setGlobalBalancesMode('full');
@@ -997,6 +999,7 @@ function MainLayout() {
       <CommunicationCenterModal
         isOpen={Boolean(isAdmin && isCommunicationCenterOpen)}
         initialBuildingId={communicationBuildingId}
+        onOpenDrawer={() => setIsDrawerOpen(true)}
         onClose={() => setIsCommunicationCenterOpen(false)}
       />
 

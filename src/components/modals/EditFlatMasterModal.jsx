@@ -848,15 +848,8 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
               </div>
             </div>
 
-            {/* Right: Actions (Save / Cancel & Close) */}
+            {/* Right: Actions (Save & X Close only — no duplicate Close button) */}
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleClose}
-                className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-xs font-semibold transition-colors cursor-pointer"
-              >
-                {isReadOnly ? (isEn ? "Close" : "Bezárás") : t.cancel}
-              </button>
               {isEditMode && (
                 <button
                   type="button"
@@ -871,7 +864,7 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
               <button 
                 type="button"
                 onClick={handleClose} 
-                className="p-1.5 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer ml-1" 
+                className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-500 hover:text-gray-900 flex items-center justify-center transition-colors shadow-2xs cursor-pointer" 
                 title={`${t.close} (ESC)`}
               >
                 <X className="w-5 h-5" />

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   X, 
+  Menu,
   Calendar as CalendarIcon, 
   List, 
   Plus, 
@@ -370,7 +371,7 @@ function getRecurrenceLabel(ev, isEn) {
   }
 }
 
-export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isReadOnly = false }) {
+export function CalendarModal({ isOpen, onClose, onOpenDrawer, initialBuildingId = null, isReadOnly = false }) {
   const { 
     state, 
     t, 
@@ -848,8 +849,19 @@ export function CalendarModal({ isOpen, onClose, initialBuildingId = null, isRea
       <div className="sticky top-0 z-20 w-full shadow-xs bg-white border-b border-gray-200 px-3 sm:px-4 md:px-6 py-2">
         <div className="flex items-center justify-between gap-3">
           
-          {/* Left: Back / NavLogoButton */}
-          <div className="flex items-center gap-2.5 min-w-0">
+          {/* Left: Menu & NavLogoButton */}
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            {onOpenDrawer && (
+              <button
+                type="button"
+                onClick={onOpenDrawer}
+                className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-700 shadow-2xs transition-all cursor-pointer flex-shrink-0 hover:border-gray-300"
+                title={isEn ? "Open Menu" : "Menü megnyitása"}
+                aria-label={isEn ? "Open Menu" : "Menü megnyitása"}
+              >
+                <Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-gray-700" />
+              </button>
+            )}
             <NavLogoButton onClick={onClose} />
           </div>
 

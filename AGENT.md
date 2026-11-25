@@ -914,6 +914,14 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
    - Az új tulajdonosok szigorúan izolált (`includeLegacyBuildings: false`) szervezetet kapnak, üres portfólióval indulnak, és saját maguk hozhatják létre a társasházaikat. Opcionálisan automatikus Firebase Auth fiók-létrehozás és jelszóbeállító e-mail is kiküldésre kerül.
 3. **Tulajdonosok E-mail Címének Módosítása (`updateOrganizationOwnerEmail`):**
    - A **„Tulajdonosok”** fülön a SuperAdmin bármelyik Owner e-mail címét módosíthatja. A művelet atomian frissíti a `organizations`, `users`, `buildings` (kapcsolattartó és archív metaadatok) és `notifications` rekordokat, és igény esetén jelszóbeállító e-mailt küld az új címre.
+
+### 34.5. Egységes Fejléc Navigáció Minden Menüpontban és `GlobalBalancesModal` Javítás
+- **Egységes bal felső `Menu` (☰) + jobb felső `X` bezárás gomb**:
+  - Az összes teljes képernyős menüpont (`FlatsDataModal`, `FinancialSituationModal`, `DocumentsModal`, `LoansModal`, `AssemblyModal`, `ProfileModal`, `GlobalBalancesModal`, `CalendarModal`, `CommunicationCenterModal`) bal felső sarkában egységesen megtalálható a 3 vízszintes vonalas menügomb (`onOpenDrawer`), a jobb felső sarkában pedig a tiszta `X` bezáró gomb (`onClose`).
+- **Lakás törzsadatok (`EditFlatMasterModal.jsx`)**:
+  - A jobb felső sarokban megszüntetve a duplikált „Bezárás” szöveges gomb, csak a letisztult `X` gomb (szerkesztéskor a Mentés gombbal) maradt.
+- **Társasház beállítások (`GlobalBalancesModal.jsx`)**:
+  - Visszaállítva a `resetNewAccountForm` segédfüggvény a `useEffect` elé, elhárítva a `resetNewAccountForm is not defined` hibát.
 4. **Változók inicializálási sorrendjének (TDZ) teljes körű megerősítése:**
    - Minden leíró és modális komponensben (`GlobalBalancesModal.jsx`, `EditFlatMasterModal.jsx`, `EditTransactionModal.jsx`, `NewLoanModal.jsx`, `TenantView.jsx`) a segédfüggvények deklarációi szigorúan a hívásaik és hatáskörük elé lettek rendezve, megakadályozva a futásidejű inicializálás előtti hozzáférési hibákat.
 
