@@ -1112,3 +1112,115 @@ test('20. diffTeamMemberChanges returns hasChanges=false on no-op saves (legacy 
   assert.ok(addViewerDiff.changes[0].labelHu.includes('Körte u. 2.'));
   assert.ok(addViewerDiff.changes[0].labelHu.includes('Csak megtekintő'));
 });
+
+test('21. Strict anti-privilege-escalation: delegator can ONLY grant permissions, scopes, buildings, and roles they hold themselves', () => {
+  const limitedDelegatorCtx = {
+    isOwner: false,
+    isSuperAdmin: false,
+    isStaff: true,
+    isSuspended: false,
+    permissions: {
+      canCreateBuildings: false,
+      canManageTeam: true,
+      teamManageScope: 'assigned',
+      canEditBankAccounts: false,
+      canDeleteBuildings: false,
+    },
+    member: {
+      email: 'delegator@alfa.hu',
+      buildingScope: 'selected',
+      buildingIds: ['b1', 'b2'],
+      buildingAssignments: {
+        b1: { role: 'manager', canEditBankAccounts: false },
+        b2: { role: 'viewer', canEditBankAccounts: false },
+      },
+    },
+  };
+  const target = { email: 'newbie@alfa.hu', orgRole: 'staff' };
+
+  // 1. Assigned-only delegator CANNOT grant Co-admin (teamManageScope: 'all')
+  assert.equal(
+    canActorManageTargetMember(
+      limitedDelegatorCtx,
+      target,
+      { canManageTeam: true, teamManageScope: 'all' },
+      'delegator@alfa.hu'
+    ).reason,
+    'privilege_escalation'
+  );
+
+  // 2. Assigned-only delegator CANNOT grant buildingScope: 'all'
+  assert.equal(
+    canActorManageTargetMember(
+      limitedDelegatorCtx,
+      target,
+      { canManageTeam: false },
+      'delegator@alfa.hu',
+      { buildingScope: 'all', buildingIds: [], buildingAssignments: {} }
+    ).reason,
+    'privilege_escalation'
+  );
+
+  // 3. Cannot assign a building they do not have ('b3')
+  assert.equal(
+    canActorManageTargetMember(
+      limitedDelegatorCtx,
+      target,
+      { canManageTeam: false },
+      'delegator@alfa.hu',
+      { buildingScope: 'selected', buildingIds: ['b1', 'b3'], buildingAssignments: {} }
+    ).reason,
+    'privilege_escalation'
+  );
+
+  // 4. Cannot grant Full Manager on 'b2' where delegator is only a Viewer
+  assert.equal(
+    canActorManageTargetMember(
+      limitedDelegatorCtx,
+      target,
+      { canManageTeam: false },
+      'delegator@alfa.hu',
+      {
+        buildingScope: 'selected',
+        buildingIds: ['b2'],
+        buildingAssignments: { b2: { role: 'manager', canEditBankAccounts: false } },
+      }
+    ).reason,
+    'privilege_escalation'
+  );
+
+  // 5. Cannot grant per-building bank account editing on 'b1' when delegator lacks it
+  assert.equal(
+    canActorManageTargetMember(
+      limitedDelegatorCtx,
+      target,
+      { canManageTeam: false },
+      'delegator@alfa.hu',
+      {
+        buildingScope: 'selected',
+        buildingIds: ['b1'],
+        buildingAssignments: { b1: { role: 'manager', canEditBankAccounts: true } },
+      }
+    ).reason,
+    'privilege_escalation'
+  );
+
+  // 6. Valid delegation within own permissions (manager on b1, viewer on b2, assigned-only team manage) IS allowed
+  assert.equal(
+    canActorManageTargetMember(
+      limitedDelegatorCtx,
+      target,
+      { canManageTeam: true, teamManageScope: 'assigned', canCreateBuildings: false, canEditBankAccounts: false },
+      'delegator@alfa.hu',
+      {
+        buildingScope: 'selected',
+        buildingIds: ['b1', 'b2'],
+        buildingAssignments: {
+          b1: { role: 'manager', canEditBankAccounts: false },
+          b2: { role: 'viewer', canEditBankAccounts: false },
+        },
+      }
+    ).allowed,
+    true
+  );
+});

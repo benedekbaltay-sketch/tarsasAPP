@@ -422,13 +422,21 @@ export function TeamManagementModal({ isOpen, onClose }) {
         : (formBuildingIds.length > 0 ? formBuildingIds : orgBuildings.map((b) => b.id));
 
       targetIds.forEach((bId) => {
+        // Strict anti-privilege-escalation: never grant a right on a building the actor does not hold themselves
+        let effectiveVal = value;
+        if (key === 'role' && value === 'manager' && !canActorManageOnBuilding(bId)) {
+          effectiveVal = 'viewer';
+        }
+        if (key === 'canEditBankAccounts' && value === true && !canActorEditBankOnBuilding(bId)) {
+          effectiveVal = false;
+        }
         next[bId] = {
-          role: allScopeDefaults.role || 'manager',
+          role: canActorManageOnBuilding(bId) ? (allScopeDefaults.role || 'manager') : 'viewer',
           canEditBankAccounts: false,
           showManagerContact: false,
           showCentralContact: false,
           ...(next[bId] || {}),
-          [key]: value,
+          [key]: effectiveVal,
         };
       });
       return next;
@@ -569,6 +577,33 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const canGrantCreate = orgCtx.isOwner || orgCtx.isSuperAdmin || orgCtx.permissions.canCreateBuildings;
   const canGrantManageTeam = orgCtx.isOwner || orgCtx.isSuperAdmin || orgCtx.permissions.canManageTeam;
   const canGrantEditBank = orgCtx.isOwner || orgCtx.isSuperAdmin || orgCtx.permissions.canEditBankAccounts;
+  const canGrantCoAdminScope = orgCtx.isOwner || orgCtx.isSuperAdmin || (orgCtx.permissions.canManageTeam && orgCtx.permissions.teamManageScope !== 'assigned');
+  const canGrantAllBuildingsScope = orgCtx.isOwner || orgCtx.isSuperAdmin || (orgCtx.member?.buildingScope === 'all' && orgCtx.permissions.teamManageScope !== 'assigned');
+
+  const canActorManageOnBuilding = (bId) => {
+    if (orgCtx.isOwner || orgCtx.isSuperAdmin) return true;
+    const a = orgCtx.member?.buildingAssignments?.[bId];
+    if (a && a.role) return a.role !== 'viewer';
+    return orgCtx.member?.role !== 'viewer' && orgCtx.member?.defaultRole !== 'viewer';
+  };
+
+  const canActorEditBankOnBuilding = (bId) => {
+    if (orgCtx.isOwner || orgCtx.isSuperAdmin) return true;
+    const a = orgCtx.member?.buildingAssignments?.[bId];
+    if (a && a.canEditBankAccounts !== undefined) return Boolean(a.canEditBankAccounts);
+    return Boolean(orgCtx.permissions.canEditBankAccounts);
+  };
+
+  const activeTargetBuildingIdsForGrant = formScope === 'all' ? orgBuildings.map((b) => b.id) : formBuildingIds;
+  const canGrantManagerOnAnyTarget =
+    orgCtx.isOwner ||
+    orgCtx.isSuperAdmin ||
+    activeTargetBuildingIdsForGrant.length === 0 ||
+    activeTargetBuildingIdsForGrant.some((id) => canActorManageOnBuilding(id));
+  const canGrantBankOnAnyTarget =
+    orgCtx.isOwner ||
+    orgCtx.isSuperAdmin ||
+    (canGrantEditBank && (activeTargetBuildingIdsForGrant.length === 0 || activeTargetBuildingIdsForGrant.some((id) => canActorEditBankOnBuilding(id))));
 
   /**
    * Auto-grants full co-admin operational permissions across all buildings
@@ -1288,10 +1323,16 @@ export function TeamManagementModal({ isOpen, onClose }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setFormScope('all')}
-                      className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
-                        formScope === 'all' ? 'bg-[#1E3A8A] text-white' : 'text-gray-600 hover:text-gray-900'
+                      disabled={!canGrantAllBuildingsScope}
+                      onClick={() => canGrantAllBuildingsScope && setFormScope('all')}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${
+                        !canGrantAllBuildingsScope
+                          ? 'opacity-40 cursor-not-allowed text-gray-400'
+                          : formScope === 'all'
+                            ? 'bg-[#1E3A8A] text-white cursor-pointer'
+                            : 'text-gray-600 hover:text-gray-900 cursor-pointer'
                       }`}
+                      title={!canGrantAllBuildingsScope ? (isEn ? 'You can only assign condominiums you have access to' : 'Csak a saját magad által kezelt társasházakat oszthatod ki') : undefined}
                     >
                       {t.team_scope_all || (isEn ? 'All Company Buildings' : 'Minden céges ház')}
                     </button>
@@ -1476,15 +1517,20 @@ export function TeamManagementModal({ isOpen, onClose }) {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <button
                               type="button"
+                              disabled={!canGrantCoAdminScope}
                               onClick={() => {
+                                if (!canGrantCoAdminScope) return;
                                 setPermTeamManageScope('all');
                                 applyCoAdminFullPermissions();
                               }}
-                              className={`p-2 rounded-lg border text-left cursor-pointer transition-all flex items-start gap-2 ${
-                                permTeamManageScope === 'all'
-                                  ? 'bg-blue-50 border-[#1E3A8A] text-blue-950 shadow-2xs font-bold'
-                                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                              className={`p-2 rounded-lg border text-left transition-all flex items-start gap-2 ${
+                                !canGrantCoAdminScope
+                                  ? 'opacity-45 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400'
+                                  : permTeamManageScope === 'all'
+                                    ? 'bg-blue-50 border-[#1E3A8A] text-blue-950 shadow-2xs font-bold cursor-pointer'
+                                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 cursor-pointer'
                               }`}
+                              title={!canGrantCoAdminScope ? (isEn ? 'You cannot grant full company-wide delegation without holding it yourself' : 'Csak akkor adhatsz teljes céges hatáskört, ha te magad is rendelkezel vele') : undefined}
                             >
                               <Crown className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${permTeamManageScope === 'all' ? 'text-[#1E3A8A]' : 'text-gray-400'}`} />
                               <div className="min-w-0">
@@ -1617,14 +1663,18 @@ export function TeamManagementModal({ isOpen, onClose }) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <button
                         type="button"
-                        onClick={() => setUnifiedAssignmentValue('role', 'manager')}
-                        className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all flex items-start gap-2.5 ${
-                          currentAssignment.role === 'manager'
-                            ? 'bg-blue-100/80 border-2 border-[#1E3A8A] shadow-xs'
-                            : currentAssignment.roleMixed
-                              ? 'bg-blue-50/40 border-dashed border-blue-300 hover:bg-blue-50 text-gray-700'
-                              : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'
+                        disabled={!canGrantManagerOnAnyTarget}
+                        onClick={() => canGrantManagerOnAnyTarget && setUnifiedAssignmentValue('role', 'manager')}
+                        className={`p-2.5 rounded-xl border text-left transition-all flex items-start gap-2.5 ${
+                          !canGrantManagerOnAnyTarget
+                            ? 'opacity-45 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400'
+                            : currentAssignment.role === 'manager'
+                              ? 'bg-blue-100/80 border-2 border-[#1E3A8A] shadow-xs cursor-pointer'
+                              : currentAssignment.roleMixed
+                                ? 'bg-blue-50/40 border-dashed border-blue-300 hover:bg-blue-50 text-gray-700 cursor-pointer'
+                                : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600 cursor-pointer'
                         }`}
+                        title={!canGrantManagerOnAnyTarget ? (isEn ? 'You cannot grant Full Manager on buildings where you only have Viewer access' : 'Nem adhatsz Teljes kezelő jogot olyan házra, ahol te magad csak megtekintő vagy') : undefined}
                       >
                         <Shield className={`w-4 h-4 mt-0.5 flex-shrink-0 ${currentAssignment.role === 'manager' ? 'text-[#1E3A8A]' : 'text-gray-400'}`} />
                         <div>
@@ -1859,20 +1909,24 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => updateBuildingAssignment(b.id, 'role', 'manager')}
-                                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
-                                          !isViewer
-                                            ? 'bg-[#1E3A8A] text-white font-black shadow-2xs'
-                                            : 'text-gray-500 hover:text-gray-800'
+                                        disabled={!canActorManageOnBuilding(b.id)}
+                                        onClick={() => canActorManageOnBuilding(b.id) && updateBuildingAssignment(b.id, 'role', 'manager')}
+                                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors ${
+                                          !canActorManageOnBuilding(b.id)
+                                            ? 'opacity-40 cursor-not-allowed text-gray-400'
+                                            : !isViewer
+                                              ? 'bg-[#1E3A8A] text-white font-black shadow-2xs cursor-pointer'
+                                              : 'text-gray-500 hover:text-gray-800 cursor-pointer'
                                         }`}
+                                        title={!canActorManageOnBuilding(b.id) ? (isEn ? 'You only have Viewer access on this building' : 'Ezen a házon te csak megtekintő vagy, nem adhatsz teljes kezelői jogot') : undefined}
                                       >
                                         <Shield className="w-3 h-3" />
                                         <span>{t.team_assign_role_manager || (isEn ? 'Full Manager' : 'Teljes kezelő')}</span>
                                       </button>
                                     </div>
 
-                                    {/* Bank accounts toggle (Only when Full Manager) */}
-                                    {!isViewer && canGrantEditBank && (
+                                    {/* Bank accounts toggle (Only when Full Manager AND actor has bank edit right on this building) */}
+                                    {!isViewer && canActorEditBankOnBuilding(b.id) && (
                                       <button
                                         type="button"
                                         onClick={() => updateBuildingAssignment(b.id, 'canEditBankAccounts', !canBank)}

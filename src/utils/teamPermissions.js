@@ -392,7 +392,13 @@ export function isUserBuildingViewer(user, building, organizations = [], buildin
  *  - Granting permissions they themselves do not possess
  *  - Modifying their own permission flags
  */
-export function canActorManageTargetMember(actorCtx, targetMember, requestedPermissions = null, actorEmail = '') {
+export function canActorManageTargetMember(
+  actorCtx,
+  targetMember,
+  requestedPermissions = null,
+  actorEmail = '',
+  requestedScopePayload = null
+) {
   if (!actorCtx || actorCtx.isSuspended) {
     return { allowed: false, reason: 'unauthorized' };
   }
@@ -422,6 +428,65 @@ export function canActorManageTargetMember(actorCtx, targetMember, requestedPerm
       }
       if (requestedPermissions.canManageTeam && !actorCtx.permissions.canManageTeam) {
         return { allowed: false, reason: 'privilege_escalation' };
+      }
+      // Assigned-only delegator can NEVER grant Co-admin ('all') delegation scope
+      if (
+        requestedPermissions.canManageTeam &&
+        requestedPermissions.teamManageScope !== 'assigned' &&
+        actorCtx.permissions.teamManageScope === 'assigned'
+      ) {
+        return { allowed: false, reason: 'privilege_escalation' };
+      }
+    }
+
+    // Strict per-building & scope anti-privilege-escalation checks
+    if (requestedScopePayload) {
+      const actorHasAllScope =
+        actorCtx.member?.buildingScope === 'all' &&
+        actorCtx.permissions?.teamManageScope !== 'assigned';
+      const actorAllowedBIds = new Set((actorCtx.member?.buildingIds || []).map(String));
+
+      const reqScope = requestedScopePayload.buildingScope === 'all' ? 'all' : 'selected';
+      const reqBuildingIds = Array.isArray(requestedScopePayload.buildingIds)
+        ? requestedScopePayload.buildingIds.map(String)
+        : [];
+      const reqAssignments = requestedScopePayload.buildingAssignments || {};
+
+      if (reqScope === 'all' && !actorHasAllScope) {
+        return { allowed: false, reason: 'privilege_escalation' };
+      }
+
+      if (reqScope === 'selected' && !actorHasAllScope) {
+        for (const bId of reqBuildingIds) {
+          if (!actorAllowedBIds.has(bId)) {
+            return { allowed: false, reason: 'privilege_escalation' };
+          }
+        }
+      }
+
+      const evaluatedIds = reqScope === 'all' ? Object.keys(reqAssignments) : reqBuildingIds;
+      for (const bId of evaluatedIds) {
+        const reqAssign = reqAssignments[bId];
+        if (!reqAssign) continue;
+
+        const actorAssign = actorCtx.member?.buildingAssignments?.[bId] || {};
+        const actorIsViewerHere =
+          actorAssign.role === 'viewer' ||
+          (!actorAssign.role && (actorCtx.member?.role === 'viewer' || actorCtx.member?.defaultRole === 'viewer'));
+        const actorCanBankHere = Boolean(
+          actorAssign.canEditBankAccounts !== undefined
+            ? actorAssign.canEditBankAccounts
+            : actorCtx.permissions?.canEditBankAccounts
+        );
+
+        // A viewer on building B cannot grant Full Manager on building B
+        if (reqAssign.role !== 'viewer' && actorIsViewerHere) {
+          return { allowed: false, reason: 'privilege_escalation' };
+        }
+        // Cannot grant bank account editing on building B without holding it on B
+        if (reqAssign.canEditBankAccounts && !actorCanBankHere) {
+          return { allowed: false, reason: 'privilege_escalation' };
+        }
       }
     }
   }

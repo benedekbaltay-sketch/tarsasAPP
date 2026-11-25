@@ -123,7 +123,19 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       (m) => m && normalizeEmail(m.email) === cleanEmail
     );
 
-    const guard = canActorManageTargetMember(actorCtx, existingMember || { email: cleanEmail, orgRole: 'staff' }, normalizedPerms, actor.email);
+    const cleanScopeForGuard = buildingScope === 'all' ? 'all' : 'selected';
+    const cleanBIdsForGuard = cleanScopeForGuard === 'all' ? [] : Array.from(new Set((Array.isArray(buildingIds) ? buildingIds : []).filter(Boolean)));
+    const guard = canActorManageTargetMember(
+      actorCtx,
+      existingMember || { email: cleanEmail, orgRole: 'staff' },
+      normalizedPerms,
+      actor.email,
+      {
+        buildingScope: cleanScopeForGuard,
+        buildingIds: cleanBIdsForGuard,
+        buildingAssignments: buildingAssignments && typeof buildingAssignments === 'object' ? buildingAssignments : {},
+      }
+    );
     if (!guard.allowed) {
       const msg =
         guard.reason === 'privilege_escalation'
@@ -504,7 +516,22 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     if (!target) return false;
 
     const normalizedPerms = permissions !== undefined ? normalizeStaffPermissions(permissions) : target.permissions;
-    const guard = canActorManageTargetMember(actorCtx, target, normalizedPerms, actor.email);
+    const nextScopeForGuard = buildingScope === undefined ? target.buildingScope : (buildingScope === 'all' ? 'all' : 'selected');
+    const nextBIdsForGuard = nextScopeForGuard === 'all'
+      ? []
+      : (buildingIds === undefined ? (target.buildingIds || []) : Array.from(new Set(buildingIds.filter(Boolean))));
+    const nextAssignForGuard = buildingAssignments === undefined ? (target.buildingAssignments || {}) : buildingAssignments;
+    const guard = canActorManageTargetMember(
+      actorCtx,
+      target,
+      normalizedPerms,
+      actor.email,
+      {
+        buildingScope: nextScopeForGuard,
+        buildingIds: nextBIdsForGuard,
+        buildingAssignments: nextAssignForGuard,
+      }
+    );
     if (!guard.allowed) {
       showToast(
         guard.reason === 'privilege_escalation'
