@@ -79,12 +79,14 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
 
   const prevOpenKeyRef = useRef('');
 
+  const handleCloseRef = useRef(null);
+
   // Global ESC key listener to close modal
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
-        handleClose();
+        if (handleCloseRef.current) handleCloseRef.current();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -244,6 +246,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
     resetForm();
     onClose();
   };
+  handleCloseRef.current = handleClose;
 
   const handleCancelEdit = () => {
     if (currentItem) {

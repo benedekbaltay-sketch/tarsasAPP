@@ -49,6 +49,28 @@ export function NewLoanModal({ isOpen, onClose, initialData = null }) {
     }
   }, [startDate, termMonths]);
 
+  // Helper to initialize participants from current building flats
+  const initDefaultParticipants = (projectCost) => {
+    const cost = Number(projectCost) || 0;
+    const totalArea = flats.reduce((sum, f) => sum + (Number(f.area) || 1), 0) || 1;
+
+    const list = (flats || []).map(f => {
+      const flatArea = Number(f.area) || 1;
+      const share = flatArea / totalArea;
+      const initialShareCost = Math.round(cost * share);
+
+      return {
+        apartmentId: String(f.flatNum),
+        ownerName: f.ownerName || (f.owners?.[0]?.name) || (isEn ? "Owner" : "Tulajdonos"),
+        paymentMethod: 'financed', // default all financed
+        lumpSumAmountPaid: initialShareCost,
+        monthlyContribution: 0,
+        area: flatArea
+      };
+    });
+    setParticipants(list);
+  };
+
   // Initialize form
   useEffect(() => {
     if (!isOpen) {
@@ -93,27 +115,7 @@ export function NewLoanModal({ isOpen, onClose, initialData = null }) {
     setErrors({});
   }, [isOpen, initialData, isEdit]);
 
-  // Helper to initialize participants from current building flats
-  const initDefaultParticipants = (projectCost) => {
-    const cost = Number(projectCost) || 0;
-    const totalArea = flats.reduce((sum, f) => sum + (Number(f.area) || 1), 0) || 1;
 
-    const list = (flats || []).map(f => {
-      const flatArea = Number(f.area) || 1;
-      const share = flatArea / totalArea;
-      const initialShareCost = Math.round(cost * share);
-
-      return {
-        apartmentId: String(f.flatNum),
-        ownerName: f.ownerName || (f.owners?.[0]?.name) || (isEn ? "Owner" : "Tulajdonos"),
-        paymentMethod: 'financed', // default all financed
-        lumpSumAmountPaid: initialShareCost,
-        monthlyContribution: 0,
-        area: flatArea
-      };
-    });
-    setParticipants(list);
-  };
 
   // Recalculate monthly contribution allocations whenever participants or installment or allocationType changes
   const computedParticipants = useMemo(() => {

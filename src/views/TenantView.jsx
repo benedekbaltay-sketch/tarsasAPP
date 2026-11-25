@@ -90,6 +90,14 @@ export function TenantView({
   const repOfficeHours = resolvedContact.officeHours || "";
   const isPersonalManagerContact = Boolean(resolvedContact.isPersonalManager);
 
+  const copyToClipboard = (text, key) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key);
+      showToast(isEn ? "Copied to clipboard!" : "Másolva a vágólapra!");
+      setTimeout(() => setCopiedKey(null), 2000);
+    });
+  };
+
   const copyBankPackage = (accountKey, debtAmount, defaultAmount, iban, ben, comment) => {
     const text = formatBankTransferPackage({
       beneficiaryName: ben,
@@ -99,14 +107,6 @@ export function TenantView({
       isEn
     });
     copyToClipboard(text, `pkg-${accountKey}`);
-  };
-
-  const copyToClipboard = (text, key) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedKey(key);
-      showToast(isEn ? "Copied to clipboard!" : "Másolva a vágólapra!");
-      setTimeout(() => setCopiedKey(null), 2000);
-    });
   };
 
   const allTimeline = getCombinedFlatLedgerTimeline(flat.flatNum, state);

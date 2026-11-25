@@ -168,16 +168,6 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
     }
   }, [isOpen, targetBuildingId]);
 
-  const resetNewAccountForm = () => {
-    setNewName('');
-    setNewShortName('');
-    setNewBeneficiary(targetBuilding?.name || '');
-    setNewAccountNum('');
-    setNewBank('OTP');
-    setNewHasMonthlyFee(false);
-    setNewInitialBalance('');
-  };
-
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   const orgCtx = resolveUserOrgContext(state.currentUser, state.organizations, buildings);
   const canEditBankAcc = canUserEditBankAccountNumbers(state.currentUser, targetBuilding, state.organizations, buildings);

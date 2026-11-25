@@ -308,6 +308,11 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
     setActiveTab('basic');
   }, [isOpen, flatNum, buildingId, flat]);
 
+  const handleClose = () => {
+    resetDraftFields();
+    onClose();
+  };
+
   // Global ESC Key Listener
   useEffect(() => {
     if (!isOpen) return;
@@ -322,11 +327,6 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
-
-  const handleClose = () => {
-    resetDraftFields();
-    onClose();
-  };
 
   const backdropProps = useBackdropClose(handleClose);
 

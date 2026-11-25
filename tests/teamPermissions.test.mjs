@@ -997,3 +997,20 @@ test('17. normalizeStaffPermissions & diffTeamMemberChanges support teamManageSc
 
 
 
+
+test('18. canUserDeleteBuilding strictly protects buildings and prevents unauthorized deletion', () => {
+  const owner = { email: 'tulaj@alfa.hu', role: 'admin' };
+  const staff = { email: 'anna@alfa.hu', role: 'admin' };
+  const viewer = { email: 'viewer@alfa.hu', role: 'admin' };
+  const targetBuilding = BUILDINGS[0];
+
+  // Owner can delete building belonging to their org
+  assert.equal(canUserDeleteBuilding(owner, targetBuilding, ORGANIZATIONS, BUILDINGS), true);
+
+  // Staff and viewers can NEVER delete buildings
+  assert.equal(canUserDeleteBuilding(staff, targetBuilding, ORGANIZATIONS, BUILDINGS), false);
+  assert.equal(canUserDeleteBuilding(viewer, targetBuilding, ORGANIZATIONS, BUILDINGS), false);
+
+  // Null / unauthenticated user can never delete
+  assert.equal(canUserDeleteBuilding(null, targetBuilding, ORGANIZATIONS, BUILDINGS), false);
+});

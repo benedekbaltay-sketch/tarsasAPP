@@ -18,7 +18,10 @@ import {
   Settings,
   LayoutGrid,
   List,
-  Eye
+  Eye,
+  Trash2,
+  X,
+  Loader2
 } from 'lucide-react';
 import { formatCurrency, getBuildingReserve, getBuildingRenovationFund } from '../utils/finances';
 import { formatTaxNumber } from '../utils/taxNumber';
@@ -29,10 +32,11 @@ import {
   canUserManageBuilding,
   isUserBuildingViewer,
   resolveUserOrgContext,
+  canUserDeleteBuilding,
 } from '../utils/teamPermissions';
 
 export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalendar, onOpenBuildingSettings, onOpenTeamManagement }) {
-  const { state, t } = useApp();
+  const { state, t, deleteBuilding } = useApp();
   const { buildings, currentLang, currentUser, organizations } = state;
   const isEn = currentLang === 'en';
   const isHu = !isEn;
@@ -58,6 +62,9 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
   const [viewMode, setViewMode] = useState('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBuildingId, setSelectedBuildingId] = useState(null);
+  const [buildingToDelete, setBuildingToDelete] = useState(null);
+  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState('');
+  const [isDeletingBuilding, setIsDeletingBuilding] = useState(false);
 
   // Filtered buildings list (strictly scoped to buildings accessible by the logged-in user)
   const filteredBuildings = useMemo(() => {
@@ -390,7 +397,21 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
 
                       {/* 5. Actions */}
                       <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {canUserDeleteBuilding(currentUser, b, organizations, buildings) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setBuildingToDelete(b);
+                                setDeleteConfirmationInput('');
+                              }}
+                              className="p-1.5 rounded-lg border border-transparent hover:border-red-200 text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              title={t.portfolio_delete_building_btn || (isEn ? "Delete condominium (Owner only)" : "Társasház végleges törlése (Csak tulajdonos)")}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => onSelectBuilding(b.id)}
@@ -548,14 +569,14 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                 </div>
 
                 {/* Card Actions */}
-                <div className="mt-6 pt-4 border-t border-gray-100 flex items-center">
+                <div className="mt-6 pt-4 border-t border-gray-100 flex items-center gap-2">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelectBuilding(b.id);
                     }}
-                    className="w-full py-2.5 px-3 rounded-xl border border-gray-200 bg-white hover:bg-blue-50/70 hover:border-blue-300 text-[#1E3A8A] font-bold text-xs shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                    className="flex-1 py-2.5 px-3 rounded-xl border border-gray-200 bg-white hover:bg-blue-50/70 hover:border-blue-300 text-[#1E3A8A] font-bold text-xs shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
                   >
                     <span>
                       {(!canUserManageBuilding(currentUser, b, organizations, buildings) || isUserBuildingViewer(currentUser, b, organizations, buildings))
@@ -564,11 +585,144 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                     </span>
                     <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </button>
+                  {canUserDeleteBuilding(currentUser, b, organizations, buildings) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setBuildingToDelete(b);
+                        setDeleteConfirmationInput('');
+                      }}
+                      className="p-2.5 rounded-xl border border-gray-200 hover:border-red-300 bg-white hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
+                      title={t.portfolio_delete_building_btn || (isEn ? "Delete condominium (Owner only)" : "Társasház végleges törlése (Csak tulajdonos)")}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
 
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* High-Security Condominium Deletion Modal (Owner Only with Typed Confirmation) */}
+      {buildingToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn cursor-default"
+          onClick={() => {
+            if (!isDeletingBuilding) {
+              setBuildingToDelete(null);
+              setDeleteConfirmationInput('');
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl border border-red-200 shadow-2xl w-full max-w-md p-6 space-y-4 animate-scaleUp text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0 shadow-xs">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 font-display">
+                    {t.portfolio_delete_modal_title || (isEn ? "Delete Condominium Permanently" : "Társasház végleges törlése")}
+                  </h3>
+                  <span className="text-[11px] font-semibold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200">
+                    {t.portfolio_delete_owner_only_badge || (isEn ? "Strictly Owner Only" : "Kizárólag tulajdonosnak")}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isDeletingBuilding}
+                onClick={() => {
+                  setBuildingToDelete(null);
+                  setDeleteConfirmationInput('');
+                }}
+                className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-500 hover:text-gray-800 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-red-50/80 border border-red-200/90 text-xs text-red-950 space-y-2 leading-relaxed">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <p className="font-medium">
+                  {t.portfolio_delete_modal_warning || (isEn
+                    ? "Warning! This action is permanent and cannot be undone. All flats, accounting records, owner registry, payments, and uploaded documents associated with this condominium will be permanently deleted."
+                    : "Figyelem! Ez a művelet végleges és nem visszavonható. A társasház összes albetétje, lakásadata, könyvelése, befizetése és feltöltött dokumentuma véglegesen törlődik.")}
+                </p>
+              </div>
+              <div className="pt-2 border-t border-red-200/60 font-bold text-gray-900 flex items-center gap-1.5">
+                <Building2 className="w-4 h-4 text-gray-700" />
+                <span className="text-sm">{buildingToDelete.name}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-gray-700">
+                {t.portfolio_delete_confirm_prompt || (isEn
+                  ? "To confirm deletion, type the exact name of the condominium below:"
+                  : "A véletlen törlés megelőzése érdekében kérjük, írd be pontosan a társasház nevét a megerősítéshez:")}
+              </label>
+              <div className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-xs font-mono text-gray-800 select-all font-bold">
+                {buildingToDelete.name}
+              </div>
+              <input
+                type="text"
+                autoFocus
+                disabled={isDeletingBuilding}
+                value={deleteConfirmationInput}
+                onChange={(e) => setDeleteConfirmationInput(e.target.value)}
+                placeholder={t.portfolio_delete_placeholder || (isEn ? "Type condominium name..." : "Írd be a ház nevét...")}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
+              />
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingBuilding}
+                onClick={() => {
+                  setBuildingToDelete(null);
+                  setDeleteConfirmationInput('');
+                }}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                {t.cancel || (isEn ? "Cancel" : "Mégse")}
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingBuilding || deleteConfirmationInput.trim().toLowerCase() !== (buildingToDelete.name || '').trim().toLowerCase()}
+                onClick={async () => {
+                  if (deleteConfirmationInput.trim().toLowerCase() !== (buildingToDelete.name || '').trim().toLowerCase()) return;
+                  setIsDeletingBuilding(true);
+                  try {
+                    const ok = await deleteBuilding(buildingToDelete.id);
+                    if (ok) {
+                      setBuildingToDelete(null);
+                      setDeleteConfirmationInput('');
+                    }
+                  } finally {
+                    setIsDeletingBuilding(false);
+                  }
+                }}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {isDeletingBuilding ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                <span>{t.portfolio_delete_confirm_btn || (isEn ? "Delete Permanently" : "Végleges törlés")}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

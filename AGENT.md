@@ -888,6 +888,23 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
 
 ---
 
+
+### 34.3. Társasház Végleges Törlése a Portfólió Nézetben és Véletlen Törlés Elleni Védelem (`PortfolioView.jsx`, `buildingActions.js`, `teamPermissions.js`)
+1. **Kuka gomb a Portfólió felületen (`PortfolioView.jsx`):**
+   - Mind a táblázatos kompakt nézetben (`viewMode === 'list'`), mind a kártyás csempe nézetben (`viewMode === 'grid'`) minden társasház sorában és kártyáján megjelent a piros kuka gomb (`Trash2` ikon).
+2. **Szigorú Tulajdonosi Jogosultság-ellenőrzés (`canUserDeleteBuilding`):**
+   - A törlés gomb és művelet kizárólag a szervezet Tulajdonosa (`isOwner`) és a Rendszeradminisztrátor (`isSuperAdmin`) számára látható és végrehajtható.
+   - Munkatársak, kezelők és megtekintők (`isStaff`, `isViewer`) semmilyen körülmények között nem láthatják a gombot, és nem kezdeményezhetik a törlést.
+3. **Véletlen törlés elleni kétlépcsős védelem (Megnevezés begépelése):**
+   - A kuka gombra kattintva egy dedikált, kiemelt biztonsági modális ablak jelenik meg.
+   - Figyelmeztető piros sáv tájékoztatja a felhasználót arról, hogy a társasház törlésével minden albetét, lakásadat, könyvelés, befizetés és feltöltött dokumentum véglegesen megsemmisül.
+   - **Gépelési biztonsági zár**: A végleges törlés gomb (`Végleges törlés`) mindaddig inaktív (disabled) marad, amíg a felhasználó pontosan be nem gépeli a társasház nevét az ellenőrző mezőbe (`deleteConfirmationInput.trim().toLowerCase() === buildingToDelete.name.trim().toLowerCase()`).
+   - A jóváhagyás után lefut a `deleteBuilding(buildingId)` művelet, amely biztonságosan törli az épületet a cégből és a munkatársak hatásköréből.
+4. **Változók inicializálási sorrendjének (TDZ) teljes körű megerősítése:**
+   - Minden leíró és modális komponensben (`GlobalBalancesModal.jsx`, `EditFlatMasterModal.jsx`, `EditTransactionModal.jsx`, `NewLoanModal.jsx`, `TenantView.jsx`) a segédfüggvények deklarációi szigorúan a hívásaik és hatáskörük elé lettek rendezve, megakadályozva a futásidejű inicializálás előtti hozzáférési hibákat.
+
+---
+
 ## 35. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
