@@ -6,6 +6,7 @@ import { formatTaxNumber } from '../../utils/taxNumber';
 
 export function AddBuildingModal({ isOpen, onClose }) {
   const { state, t, addBuilding } = useApp();
+  const isEn = state.currentLang === 'en';
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
 
   const [name, setName] = useState('');

@@ -102,7 +102,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const [buildingSearch, setBuildingSearch] = useState('');
   const [permCreateBuildings, setPermCreateBuildings] = useState(false);
   const [permManageTeam, setPermManageTeam] = useState(false);
-  const [permTeamManageScope, setPermTeamManageScope] = useState('all'); // 'all' | 'assigned'
+  const [permTeamManageScope, setPermTeamManageScope] = useState('assigned'); // 'all' | 'assigned'
   const [permEditBankAccounts, setPermEditBankAccounts] = useState(false);
   const [sendNotificationOnUpdate, setSendNotificationOnUpdate] = useState(true);
 
@@ -199,7 +199,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     setBuildingSearch('');
     setPermCreateBuildings(false);
     setPermManageTeam(false);
-    setPermTeamManageScope('all');
+    setPermTeamManageScope('assigned');
     setPermEditBankAccounts(false);
     setSendNotificationOnUpdate(true);
   };
@@ -237,7 +237,11 @@ export function TeamManagementModal({ isOpen, onClose }) {
     setBuildingSearch('');
     setPermCreateBuildings(Boolean(member.permissions?.canCreateBuildings));
     setPermManageTeam(Boolean(member.permissions?.canManageTeam));
-    setPermTeamManageScope(member.permissions?.teamManageScope === 'assigned' ? 'assigned' : 'all');
+    setPermTeamManageScope(
+      member.permissions?.canManageTeam
+        ? (member.permissions?.teamManageScope === 'assigned' ? 'assigned' : 'all')
+        : 'assigned'
+    );
     setPermEditBankAccounts(Boolean(member.permissions?.canEditBankAccounts));
     setSendNotificationOnUpdate(true);
     setShowAllScopeBuildingOverrides(false);
@@ -1443,12 +1447,9 @@ export function TeamManagementModal({ isOpen, onClose }) {
                           onChange={(e) => {
                             const checked = e.target.checked;
                             setPermManageTeam(checked);
-                            if (checked) {
-                              const nextScope = permTeamManageScope || 'all';
-                              setPermTeamManageScope(nextScope);
-                              if (nextScope === 'all') {
-                                applyCoAdminFullPermissions();
-                              }
+                            if (checked && !permTeamManageScope) {
+                              // Default safely to 'assigned' so checking Team Management does NOT silently grant Create Buildings / All Buildings!
+                              setPermTeamManageScope('assigned');
                             }
                           }}
                           className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"

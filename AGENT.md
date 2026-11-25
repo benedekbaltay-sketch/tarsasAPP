@@ -923,6 +923,9 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
   - A jobb felső sarokban megszüntetve a duplikált „Bezárás” szöveges gomb, csak a letisztult `X` gomb (szerkesztéskor a Mentés gombbal) maradt.
 - **Társasház beállítások (`GlobalBalancesModal.jsx`)**:
   - Visszaállítva a `resetNewAccountForm` segédfüggvény a `useEffect` elé, elhárítva a `resetNewAccountForm is not defined` hibát.
+- **Társasház létrehozás (`AddBuildingModal.jsx`) és Csapatkezelés alapértelmezés (`TeamManagementModal.jsx`)**:
+  - Hozzáadva a hiányzó `isEn` deklaráció az `AddBuildingModal.jsx`-ben (`isEn is not defined` hiba javítva).
+  - A „Munkatársak meghívása és házak kiosztása (Csapatkezelés)” bepipálásakor az alapértelmezett hatáskör biztonságosan **`Csak a kijelölt házakra`** (`assigned`) lett, így nem kapcsolja be automatikusan az „Új társasház létrehozása” jogot; a teljes társadminisztrátori jogcsomag (`applyCoAdminFullPermissions`) kizárólag a **„Minden házra kioszthat jogokat (Társadminisztrátor)”** gomb explicit megnyomásakor aktiválódik.
 - **Személyes Profil Adatizoláció (`ProfileModal.jsx`, `AppContext.jsx`)**:
   - A „Fiók / Rendszerbeállítások” megnyitásakor a rendszer mostantól szigorúan a ténylegesen bejelentkezett felhasználó saját belépési e-mail címét (`currentUser.email`), saját nevét, telefonszámát és elérhetőségi idejét tölti be a globális legacy `state.repProfile` helyett, elkerülve, hogy munkatársaknál vagy új tulajdonosoknál más felhasználó e-mail címe jelenjen meg. A személyes profil szerkesztésekor a bejelentkezési e-mail mező zárolt (`disabled`/`readOnly`), nem módosítható. Munkatárs profilmentése már nem írja felül a cég globális `repProfile` rekordját.
 4. **Változók inicializálási sorrendjének (TDZ) teljes körű megerősítése:**
