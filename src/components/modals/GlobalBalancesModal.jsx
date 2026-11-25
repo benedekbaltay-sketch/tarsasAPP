@@ -23,7 +23,8 @@ import {
   Phone,
   Mail,
   Clock,
-  Eye
+  Eye,
+  ChevronDown
 } from 'lucide-react';
 import { 
   getBuildingReserve, 
@@ -106,6 +107,10 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
 
   // New custom account inline form state
   const [isAddingNew, setIsAddingNew] = useState(false);
+  const [expandedAccountIds, setExpandedAccountIds] = useState({});
+  const toggleAccountExpanded = (accKey) => {
+    setExpandedAccountIds((prev) => ({ ...prev, [accKey]: !prev[accKey] }));
+  };
   const [newName, setNewName] = useState('');
   const [newShortName, setNewShortName] = useState('');
   const [newBeneficiary, setNewBeneficiary] = useState('');
@@ -175,6 +180,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
       setIsSaving(false);
       setSaveError(null);
       setIsAddingNew(false);
+      setExpandedAccountIds({});
       resetNewAccountForm();
     }
   }, [isOpen, targetBuildingId]);
@@ -182,6 +188,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   const orgCtx = resolveUserOrgContext(state.currentUser, state.organizations, buildings);
   const canEditBankAcc = canUserEditBankAccountNumbers(state.currentUser, targetBuilding, state.organizations, buildings);
+  const isBankLocked = !canEditBankAcc || isEffectiveReadOnly;
   const companyPreviewContact = resolveBuildingResidentContact(
     targetBuilding ? { ...targetBuilding, contactDisplayMode: 'company' } : null,
     state.repProfile,
@@ -257,6 +264,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
 
     setCustomAccounts(prev => [...prev, newAcc]);
     setCustomBalances(prev => ({ ...prev, [newId]: cleanBal.toString() }));
+    setExpandedAccountIds(prev => ({ ...prev, [newId]: true }));
     setIsAddingNew(false);
     resetNewAccountForm();
   };
@@ -300,45 +308,40 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
 
     try {
       const prevCustomById = new Map((targetBuilding?.customBankAccounts || []).map(a => [a.id, a]));
-      const baseCustomList = canEditBankAcc
-        ? customAccounts
-        : (targetBuilding?.customBankAccounts || []).map(orig => {
-            const edited = customAccounts.find(c => c.id === orig.id);
+      // When !canEditBankAcc, strictly preserve ALL existing bank account fields untouched
+      const updatedCustomAccounts = canEditBankAcc
+        ? customAccounts.map(acc => {
+            const numVal = parseCleanNumber(customBalances[acc.id]);
+            const txTotals = getCustomAccountTxTotals(acc);
+            const newInit = Math.round(numVal - txTotals.payments + txTotals.expenses);
             return {
-              ...orig,
-              bank: edited?.bank !== undefined ? edited.bank : orig.bank,
-              // Strictly preserve locked account number when !canEditBankAcc
-              account: orig.account || '',
+              ...acc,
+              name: String(acc.name || '').trim() || acc.name,
+              bank: String(acc.bank || '').trim() || 'OTP',
+              account: String(acc.account || '').trim(),
+              initialReserve: newInit,
             };
-          });
+          })
+        : (targetBuilding?.customBankAccounts || []).map(orig => ({ ...orig }));
 
-      const parsedCustomBalances = {};
-      const updatedCustomAccounts = baseCustomList.map(acc => {
-        const numVal = parseCleanNumber(customBalances[acc.id]);
-        parsedCustomBalances[acc.id] = numVal;
-        const txTotals = getCustomAccountTxTotals(acc);
-        const newInit = Math.round(numVal - txTotals.payments + txTotals.expenses);
-        const origAcc = prevCustomById.get(acc.id);
-        return {
-          ...acc,
-          account: canEditBankAcc ? String(acc.account || '').trim() : String(origAcc?.account || acc.account || '').trim(),
-          initialReserve: newInit
-        };
-      });
+      const nextBankKK = canEditBankAcc
+        ? {
+            name: bankKKName.trim() || targetBuilding?.name || '',
+            account: bankKKAccount.trim(),
+            bank: bankKKBank.trim() || 'OTP',
+          }
+        : { ...(targetBuilding?.bankKK || {}) };
 
-      const nextBankKK = {
-        name: bankKKName.trim() || targetBuilding?.name || '',
-        account: canEditBankAcc ? bankKKAccount.trim() : String(targetBuilding?.bankKK?.account || '').trim(),
-        bank: bankKKBank.trim() || 'OTP'
-      };
-      const nextBankFA = {
-        name: bankFAName.trim() || targetBuilding?.name || '',
-        account: canEditBankAcc ? bankFAAccount.trim() : String(targetBuilding?.bankFA?.account || '').trim(),
-        bank: bankFABank.trim() || 'OTP'
-      };
+      const nextBankFA = canEditBankAcc
+        ? {
+            name: bankFAName.trim() || targetBuilding?.name || '',
+            account: bankFAAccount.trim(),
+            bank: bankFABank.trim() || 'OTP',
+          }
+        : { ...(targetBuilding?.bankFA || {}) };
 
       // Detect any bank account number changes and emit pale-red critical alert to Owner if edited by staff!
-      const bankAccountChanges = targetBuilding
+      const bankAccountChanges = canEditBankAcc && targetBuilding
         ? detectBankAccountChanges(targetBuilding, nextBankKK, nextBankFA, updatedCustomAccounts)
         : [];
 
@@ -366,13 +369,15 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
       await persistState(s => {
         const updatedBuildings = (s.buildings || []).map(b => {
           if (b.id === targetBuildingId) {
-            const bankUpdates = {
-              bankKK: nextBankKK,
-              bankFA: nextBankFA,
-              buildingInitialReserveCommon: calculatedInitKK,
-              buildingInitialReserveRenovation: calculatedInitFA,
-              customBankAccounts: updatedCustomAccounts,
-            };
+            const bankUpdates = canEditBankAcc
+              ? {
+                  bankKK: nextBankKK,
+                  bankFA: nextBankFA,
+                  buildingInitialReserveCommon: calculatedInitKK,
+                  buildingInitialReserveRenovation: calculatedInitFA,
+                  customBankAccounts: updatedCustomAccounts,
+                }
+              : {};
 
             if (isAccountsOnly) {
               return {
@@ -702,310 +707,397 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                   </div>
                 )}
 
-                {/* Section B: Base Accounts (KK & FA) */}
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-gray-100">
-                    <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#1E3A8A]">
-                      <Landmark className="w-4 h-4" />
-                      <span>{isEn ? "Primary Condominium Bank Accounts" : "Alapértelmezett társasházi bankszámlák"}</span>
-                    </h4>
-                    {!canEditBankAcc ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold">
-                        <Lock className="w-3 h-3" />
-                        <span>{t.team_bank_locked_badge || (isEn ? "Account numbers locked by Owner" : "Bankszámlaszám tulajdonos által zárolva")}</span>
-                      </span>
-                    ) : orgCtx.isStaff ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[10px] font-bold">
-                        <AlertTriangle className="w-3 h-3" />
-                        <span>{t.team_bank_alert_badge || (isEn ? "Owner is notified of account number changes" : "Számlaszám-módosításról a tulajdonos értesítést kap")}</span>
-                      </span>
-                    ) : null}
-                  </div>
-
-                  {/* 1. KK Account */}
-                  <div className="p-3.5 bg-blue-50/40 rounded-xl border border-blue-200/60 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[#1E3A8A] text-xs">
-                        {t.account_common || "Közös Költség (KK) Főszámla"}
-                      </span>
-                      <span className="px-2 py-0.5 rounded bg-blue-100 text-[#1E3A8A] font-bold text-[10px]">
-                        {bankKKBank || 'OTP'}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[11px] font-semibold text-gray-600 mb-0.5">
-                          {isEn ? "Account Name" : "Számla elnevezése"}
-                        </label>
-                        <input
-                          type="text"
-                          value={bankKKName}
-                          disabled={isEffectiveReadOnly}
-                          onChange={(e) => setBankKKName(e.target.value)}
-                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
-                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-gray-600 mb-0.5">
-                          {t.bank_provider_label || (isEn ? "Account-Holding Bank" : "Számlavezető bank")}
-                        </label>
-                        <input
-                          type="text"
-                          value={bankKKBank}
-                          disabled={isEffectiveReadOnly}
-                          onChange={(e) => setBankKKBank(e.target.value)}
-                          placeholder="OTP Bank"
-                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
-                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
-                          <span>{isEn ? "Bank Account Number" : "Bankszámlaszám"}</span>
-                          {(!canEditBankAcc || isEffectiveReadOnly) && <Lock className="w-3 h-3 text-amber-600" />}
-                        </label>
-                        <input
-                          type="text"
-                          value={bankKKAccount}
-                          disabled={!canEditBankAcc || isEffectiveReadOnly}
-                          onChange={(e) => setBankKKAccount(e.target.value)}
-                          placeholder="11700000 00000000"
-                          title={isEffectiveReadOnly ? (t.view_only || (isEn ? "Read-Only" : "Csak megtekintés")) : (!canEditBankAcc ? (t.team_bank_account_locked_error || (isEn ? "Locked by Owner" : "Tulajdonos által zárolva")) : undefined)}
-                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
-                            canEditBankAcc && !isEffectiveReadOnly ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-gray-600 mb-0.5">
-                          {t.current_bank_balance || "Jelenlegi banki egyenleg"} (Ft)
-                        </label>
-                        <input
-                          type="text"
-                          value={commonBalance}
-                          disabled={isEffectiveReadOnly}
-                          onChange={(e) => setCommonBalance(e.target.value)}
-                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-[#1E3A8A] ${
-                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="text-[10px] text-gray-500 bg-white/70 p-2 rounded-lg flex items-center justify-between border border-blue-100">
-                      <span>{t.calculated_initial_reserve || "Kiszámított induló tartalék"}: <b>{formatCurrency(calculatedInitKK)}</b></span>
-                      <span className="text-gray-400">({formatCurrency(cleanCommon)} - {formatCurrency(totalPaymentsKK)} + {formatCurrency(totalExpensesKK)})</span>
-                    </div>
-                  </div>
-
-                  {/* 2. FA Account */}
-                  <div className="p-3.5 bg-emerald-50/40 rounded-xl border border-emerald-200/60 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-emerald-800 text-xs">
-                        {t.account_renovation || "Felújítási Alap (FA) Számla"}
-                      </span>
-                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                        {bankFABank || 'OTP'}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[11px] font-semibold text-gray-600 mb-0.5">
-                          {isEn ? "Account Name" : "Számla elnevezése"}
-                        </label>
-                        <input
-                          type="text"
-                          value={bankFAName}
-                          disabled={isEffectiveReadOnly}
-                          onChange={(e) => setBankFAName(e.target.value)}
-                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-600 ${
-                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-gray-600 mb-0.5">
-                          {t.bank_provider_label || (isEn ? "Account-Holding Bank" : "Számlavezető bank")}
-                        </label>
-                        <input
-                          type="text"
-                          value={bankFABank}
-                          disabled={isEffectiveReadOnly}
-                          onChange={(e) => setBankFABank(e.target.value)}
-                          placeholder="OTP Bank"
-                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-600 ${
-                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
-                          <span>{isEn ? "Bank Account Number" : "Bankszámlaszám"}</span>
-                          {(!canEditBankAcc || isEffectiveReadOnly) && <Lock className="w-3 h-3 text-amber-600" />}
-                        </label>
-                        <input
-                          type="text"
-                          value={bankFAAccount}
-                          disabled={!canEditBankAcc || isEffectiveReadOnly}
-                          onChange={(e) => setBankFAAccount(e.target.value)}
-                          placeholder="11700000 00000000"
-                          title={isEffectiveReadOnly ? (t.view_only || (isEn ? "Read-Only" : "Csak megtekintés")) : (!canEditBankAcc ? (t.team_bank_account_locked_error || (isEn ? "Locked by Owner" : "Tulajdonos által zárolva")) : undefined)}
-                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-emerald-600 ${
-                            canEditBankAcc && !isEffectiveReadOnly ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
-                          }`}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-gray-600 mb-0.5">
-                          {t.current_bank_balance || "Jelenlegi banki egyenleg"} (Ft)
-                        </label>
-                        <input
-                          type="text"
-                          value={renovationBalance}
-                          disabled={isEffectiveReadOnly}
-                          onChange={(e) => setRenovationBalance(e.target.value)}
-                          className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-emerald-600 ${
-                            isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="text-[10px] text-gray-500 bg-white/70 p-2 rounded-lg flex items-center justify-between border border-emerald-100">
-                      <span>{t.calculated_initial_reserve || "Kiszámított induló tartalék"}: <b>{formatCurrency(calculatedInitFA)}</b></span>
-                      <span className="text-gray-400">({formatCurrency(cleanRenovation)} - {formatCurrency(totalPaymentsFA)} + {formatCurrency(totalExpensesFA)})</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section C: Custom Bank Accounts */}
-                <div className="space-y-3 pt-2 border-t border-gray-100">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#1E3A8A]">
-                        <span>{t.custom_bank_accounts_title || "Egyedi banki alszámlák & alapok"}</span>
+                {/* Unified Section: Számlák (All Condominium Bank Accounts with Expandable Details) */}
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-gray-100">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-bold text-[#1E3A8A] text-xs uppercase tracking-wider flex items-center gap-1.5">
+                        <Landmark className="w-4 h-4" />
+                        <span>{isEn ? "Accounts" : "Számlák"}</span>
                       </h4>
-                      <p className="text-[11px] text-gray-500">
-                        {t.custom_bank_accounts_desc || "Külön célalapok (pl. liftfelújítás, megtakarítás) kezelése."}
-                      </p>
+                      <span className="px-2 py-0.5 rounded-full bg-blue-50 text-[#1E3A8A] border border-blue-100 text-[10px] font-bold">
+                        {2 + customAccounts.length}
+                      </span>
                     </div>
 
-                    {!isAddingNew && canEditBankAcc && !isEffectiveReadOnly && (
-                      <button
-                        type="button"
-                        onClick={() => setIsAddingNew(true)}
-                        className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{t.add_custom_account || "Új alszámla"}</span>
-                      </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {isBankLocked ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold">
+                          <Lock className="w-3 h-3" />
+                          <span>{isEn ? "Bank accounts locked by Owner" : "Bankszámlák módosítása zárolva"}</span>
+                        </span>
+                      ) : orgCtx.isStaff ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-[10px] font-bold">
+                          <AlertTriangle className="w-3 h-3" />
+                          <span>{t.team_bank_alert_badge || (isEn ? "Owner is notified of account number changes" : "Számlaszám-módosításról a tulajdonos értesítést kap")}</span>
+                        </span>
+                      ) : null}
+
+                      {!isAddingNew && !isBankLocked && (
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingNew(true)}
+                          className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>{isEn ? "New Account" : "Új számla"}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 1. KK Account (Collapsible) */}
+                  <div className="rounded-xl border border-blue-200/70 bg-blue-50/30 overflow-hidden transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleAccountExpanded('kk')}
+                      className="w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left hover:bg-blue-50/70 transition-colors cursor-pointer"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-[#1E3A8A] text-xs">
+                            {t.account_common || "Közös Költség (KK) Főszámla"}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-blue-100 text-[#1E3A8A] font-bold text-[10px]">
+                            {bankKKBank || 'OTP'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-gray-500 font-mono truncate mt-0.5">
+                          {bankKKAccount || (isEn ? "No account number set" : "Nincs számlaszám megadva")}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <span className="text-xs font-bold text-gray-900">
+                          {formatCurrency(cleanCommon)}
+                        </span>
+                        <ChevronDown className={`w-4 h-4 text-[#1E3A8A] transition-transform duration-200 ${expandedAccountIds['kk'] ? 'rotate-180' : ''}`} />
+                      </div>
+                    </button>
+
+                    {expandedAccountIds['kk'] && (
+                      <div className="px-3.5 pb-3.5 pt-2.5 border-t border-blue-100 space-y-3 bg-white/60 animate-fadeIn">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                              <span>{isEn ? "Account Name" : "Számla elnevezése"}</span>
+                              {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                            </label>
+                            <input
+                              type="text"
+                              value={bankKKName}
+                              disabled={isBankLocked}
+                              onChange={(e) => setBankKKName(e.target.value)}
+                              className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                                isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                              <span>{t.bank_provider_label || (isEn ? "Account-Holding Bank" : "Számlavezető bank")}</span>
+                              {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                            </label>
+                            <input
+                              type="text"
+                              value={bankKKBank}
+                              disabled={isBankLocked}
+                              onChange={(e) => setBankKKBank(e.target.value)}
+                              placeholder="OTP Bank"
+                              className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                                isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                              <span>{isEn ? "Bank Account Number" : "Bankszámlaszám"}</span>
+                              {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                            </label>
+                            <input
+                              type="text"
+                              value={bankKKAccount}
+                              disabled={isBankLocked}
+                              onChange={(e) => setBankKKAccount(e.target.value)}
+                              placeholder="11700000 00000000"
+                              className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
+                                isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                              <span>{t.current_bank_balance || "Jelenlegi banki egyenleg"} (Ft)</span>
+                              {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                            </label>
+                            <input
+                              type="text"
+                              value={commonBalance}
+                              disabled={isBankLocked}
+                              onChange={(e) => setCommonBalance(e.target.value)}
+                              className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-[#1E3A8A] ${
+                                isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="text-[10px] text-gray-500 bg-white p-2 rounded-lg flex items-center justify-between flex-wrap gap-1 border border-blue-100">
+                          <span>{t.calculated_initial_reserve || "Kiszámított induló tartalék"}: <b>{formatCurrency(calculatedInitKK)}</b></span>
+                          <span className="text-gray-400">({formatCurrency(cleanCommon)} - {formatCurrency(totalPaymentsKK)} + {formatCurrency(totalExpensesKK)})</span>
+                        </div>
+                      </div>
                     )}
                   </div>
 
+                  {/* 2. FA Account (Collapsible) */}
+                  <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/30 overflow-hidden transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleAccountExpanded('fa')}
+                      className="w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left hover:bg-emerald-50/70 transition-colors cursor-pointer"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-emerald-800 text-xs">
+                            {t.account_renovation || "Felújítási Alap (FA) Számla"}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                            {bankFABank || 'OTP'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-gray-500 font-mono truncate mt-0.5">
+                          {bankFAAccount || (isEn ? "No account number set" : "Nincs számlaszám megadva")}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <span className="text-xs font-bold text-gray-900">
+                          {formatCurrency(cleanRenovation)}
+                        </span>
+                        <ChevronDown className={`w-4 h-4 text-emerald-700 transition-transform duration-200 ${expandedAccountIds['fa'] ? 'rotate-180' : ''}`} />
+                      </div>
+                    </button>
+
+                    {expandedAccountIds['fa'] && (
+                      <div className="px-3.5 pb-3.5 pt-2.5 border-t border-emerald-100 space-y-3 bg-white/60 animate-fadeIn">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                              <span>{isEn ? "Account Name" : "Számla elnevezése"}</span>
+                              {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                            </label>
+                            <input
+                              type="text"
+                              value={bankFAName}
+                              disabled={isBankLocked}
+                              onChange={(e) => setBankFAName(e.target.value)}
+                              className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-600 ${
+                                isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                              <span>{t.bank_provider_label || (isEn ? "Account-Holding Bank" : "Számlavezető bank")}</span>
+                              {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                            </label>
+                            <input
+                              type="text"
+                              value={bankFABank}
+                              disabled={isBankLocked}
+                              onChange={(e) => setBankFABank(e.target.value)}
+                              placeholder="OTP Bank"
+                              className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-emerald-600 ${
+                                isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                              <span>{isEn ? "Bank Account Number" : "Bankszámlaszám"}</span>
+                              {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                            </label>
+                            <input
+                              type="text"
+                              value={bankFAAccount}
+                              disabled={isBankLocked}
+                              onChange={(e) => setBankFAAccount(e.target.value)}
+                              placeholder="11700000 00000000"
+                              className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-emerald-600 ${
+                                isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <label className="flex items-center gap-1 text-[11px] font-semibold text-gray-600 mb-0.5">
+                              <span>{t.current_bank_balance || "Jelenlegi banki egyenleg"} (Ft)</span>
+                              {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                            </label>
+                            <input
+                              type="text"
+                              value={renovationBalance}
+                              disabled={isBankLocked}
+                              onChange={(e) => setRenovationBalance(e.target.value)}
+                              className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-emerald-600 ${
+                                isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="text-[10px] text-gray-500 bg-white p-2 rounded-lg flex items-center justify-between flex-wrap gap-1 border border-emerald-100">
+                          <span>{t.calculated_initial_reserve || "Kiszámított induló tartalék"}: <b>{formatCurrency(calculatedInitFA)}</b></span>
+                          <span className="text-gray-400">({formatCurrency(cleanRenovation)} - {formatCurrency(totalPaymentsFA)} + {formatCurrency(totalExpensesFA)})</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Additional Accounts (Collapsible, same unified design) */}
                   {customAccounts.map(acc => {
                     const cleanVal = parseCleanNumber(customBalances[acc.id]);
                     const txTotals = getCustomAccountTxTotals(acc);
                     const calcInit = Math.round(cleanVal - txTotals.payments + txTotals.expenses);
+                    const isExpanded = Boolean(expandedAccountIds[acc.id]);
 
                     return (
-                      <div key={acc.id} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-gray-900 text-xs">{acc.name}</span>
-                            <span className="px-1.5 py-0.2 rounded bg-gray-200 text-gray-700 font-bold text-[10px]">
-                              {acc.bank}
+                      <div key={acc.id} className="rounded-xl border border-gray-200 bg-gray-50/70 overflow-hidden transition-colors">
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleAccountExpanded(acc.id)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleAccountExpanded(acc.id); } }}
+                          className="w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left hover:bg-gray-100/70 transition-colors cursor-pointer"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-gray-900 text-xs">{acc.name}</span>
+                              {acc.bank && (
+                                <span className="px-2 py-0.5 rounded bg-gray-200/90 text-gray-700 font-bold text-[10px]">
+                                  {acc.bank}
+                                </span>
+                              )}
+                              {acc.hasMonthlyFee && (
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-bold text-[10px]">
+                                  {isEn ? "Monthly fee enabled" : "Havi előírással"}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-gray-500 font-mono truncate mt-0.5">
+                              {acc.account || (isEn ? "No account number set" : "Nincs számlaszám megadva")}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs font-bold text-gray-900">
+                              {formatCurrency(cleanVal)}
                             </span>
-                            {acc.hasMonthlyFee && (
-                              <span className="px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-700 font-bold text-[10px]">
-                                {isEn ? "Monthly fee enabled" : "Havi előírással"}
-                              </span>
+                            {!isBankLocked && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteCustomAccount(acc.id); }}
+                                className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                title={t.delete || (isEn ? "Delete" : "Törlés")}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             )}
-                          </div>
-                          {canEditBankAcc && !isEffectiveReadOnly && (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCustomAccount(acc.id)}
-                              className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                              title="Törlés"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                          <div>
-                            <label className="text-[10px] text-gray-500 block font-bold mb-0.5">
-                              {t.bank_provider_label || (isEn ? "Account-Holding Bank" : "Számlavezető bank")}
-                            </label>
-                            <input
-                              type="text"
-                              value={acc.bank || ''}
-                              disabled={isEffectiveReadOnly}
-                              onChange={(e) =>
-                                setCustomAccounts(prev =>
-                                  prev.map(item => (item.id === acc.id ? { ...item, bank: e.target.value } : item))
-                                )
-                              }
-                              className={`w-full px-2.5 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
-                                isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-800'
-                              }`}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-gray-500 flex items-center gap-1 font-bold mb-0.5">
-                              <span>{isEn ? "Account Number" : "Számlaszám"}</span>
-                              {(!canEditBankAcc || isEffectiveReadOnly) && <Lock className="w-2.5 h-2.5 text-amber-600" />}
-                            </label>
-                            <input
-                              type="text"
-                              value={acc.account || ''}
-                              disabled={!canEditBankAcc || isEffectiveReadOnly}
-                              onChange={(e) =>
-                                setCustomAccounts(prev =>
-                                  prev.map(item => (item.id === acc.id ? { ...item, account: e.target.value } : item))
-                                )
-                              }
-                              placeholder="11700000 00000000"
-                              className={`w-full px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
-                                canEditBankAcc && !isEffectiveReadOnly ? 'bg-white text-gray-800' : 'bg-gray-100 text-gray-500 cursor-not-allowed'
-                              }`}
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-gray-500 block font-bold mb-0.5">
-                              {t.current_bank_balance || "Jelenlegi banki egyenleg"} (Ft)
-                            </label>
-                            <input
-                              type="text"
-                              value={customBalances[acc.id] !== undefined ? customBalances[acc.id] : ''}
-                              disabled={isEffectiveReadOnly}
-                              onChange={(e) => setCustomBalances(prev => ({ ...prev, [acc.id]: e.target.value }))}
-                              className={`w-full px-2.5 py-1 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-[#1E3A8A] ${
-                                isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
-                              }`}
-                            />
+                            <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                           </div>
                         </div>
 
-                        <div className="text-[10px] text-gray-500 bg-white/80 p-2 rounded-lg flex items-center justify-between border border-gray-100">
-                          <span>{t.calculated_initial_reserve || "Kiszámított induló tartalék"}: <b>{formatCurrency(calcInit)}</b></span>
-                          <span className="text-gray-400">({formatCurrency(cleanVal)} - {formatCurrency(txTotals.payments)} + {formatCurrency(txTotals.expenses)})</span>
-                        </div>
+                        {isExpanded && (
+                          <div className="px-3.5 pb-3.5 pt-2.5 border-t border-gray-200/80 space-y-3 bg-white/80 animate-fadeIn">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                              <div>
+                                <label className="text-[11px] text-gray-600 flex items-center gap-1 font-semibold mb-0.5">
+                                  <span>{isEn ? "Account Name" : "Számla elnevezése"}</span>
+                                  {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={acc.name || ''}
+                                  disabled={isBankLocked}
+                                  onChange={(e) =>
+                                    setCustomAccounts(prev =>
+                                      prev.map(item => (item.id === acc.id ? { ...item, name: e.target.value } : item))
+                                    )
+                                  }
+                                  className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                                    isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                                  }`}
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[11px] text-gray-600 flex items-center gap-1 font-semibold mb-0.5">
+                                  <span>{t.bank_provider_label || (isEn ? "Account-Holding Bank" : "Számlavezető bank")}</span>
+                                  {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={acc.bank || ''}
+                                  disabled={isBankLocked}
+                                  onChange={(e) =>
+                                    setCustomAccounts(prev =>
+                                      prev.map(item => (item.id === acc.id ? { ...item, bank: e.target.value } : item))
+                                    )
+                                  }
+                                  className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                                    isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                                  }`}
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[11px] text-gray-600 flex items-center gap-1 font-semibold mb-0.5">
+                                  <span>{isEn ? "Bank Account Number" : "Bankszámlaszám"}</span>
+                                  {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={acc.account || ''}
+                                  disabled={isBankLocked}
+                                  onChange={(e) =>
+                                    setCustomAccounts(prev =>
+                                      prev.map(item => (item.id === acc.id ? { ...item, account: e.target.value } : item))
+                                    )
+                                  }
+                                  placeholder="11700000 00000000"
+                                  className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
+                                    isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                                  }`}
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[11px] text-gray-600 flex items-center gap-1 font-semibold mb-0.5">
+                                  <span>{t.current_bank_balance || "Jelenlegi banki egyenleg"} (Ft)</span>
+                                  {isBankLocked && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={customBalances[acc.id] !== undefined ? customBalances[acc.id] : ''}
+                                  disabled={isBankLocked}
+                                  onChange={(e) => setCustomBalances(prev => ({ ...prev, [acc.id]: e.target.value }))}
+                                  className={`w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-bold focus:outline-none focus:border-[#1E3A8A] ${
+                                    isBankLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white text-gray-900'
+                                  }`}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="text-[10px] text-gray-500 bg-white p-2 rounded-lg flex items-center justify-between flex-wrap gap-1 border border-gray-100">
+                              <span>{t.calculated_initial_reserve || "Kiszámított induló tartalék"}: <b>{formatCurrency(calcInit)}</b></span>
+                              <span className="text-gray-400">({formatCurrency(cleanVal)} - {formatCurrency(txTotals.payments)} + {formatCurrency(txTotals.expenses)})</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
 
-                  {/* Add New Custom Account Form */}
-                  {isAddingNew && (
+                  {/* Add New Account Inline Form */}
+                  {isAddingNew && !isBankLocked && (
                     <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-200 space-y-3">
                       <h5 className="font-bold text-[#1E3A8A] text-xs">
-                        {t.add_new_account_title || "Új egyedi bankszámla felvétele"}
+                        {isEn ? "Add New Bank Account" : "Új számla felvétele"}
                       </h5>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1080,14 +1172,14 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                         <button
                           type="button"
                           onClick={() => setIsAddingNew(false)}
-                          className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold text-gray-600 hover:bg-white"
+                          className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold text-gray-600 hover:bg-white cursor-pointer"
                         >
                           {t.cancel || "Mégse"}
                         </button>
                         <button
                           type="button"
                           onClick={handleAddNewAccount}
-                          className="px-3.5 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                          className="px-3.5 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                         >
                           <Check className="w-3.5 h-3.5" />
                           <span>{isEn ? "Add Account" : "Számla hozzáadása"}</span>
