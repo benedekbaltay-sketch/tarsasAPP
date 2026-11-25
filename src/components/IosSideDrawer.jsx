@@ -32,14 +32,14 @@ export function IosSideDrawer({
   const canManageTeam = canUserManageTeam(currentUser, organizations, buildings);
   const userDisplayName = resolveUserDisplayName(currentUser, state);
 
+  // Determine dynamic mode: Portfolio Mode (All buildings aggregated) vs. Building-Specific Mode
+  const isPortfolioMode = isAdmin && (Boolean(state.isPortfolioView) || !currentBuildingId);
+  const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || (isPortfolioMode ? null : (buildings && buildings[0]));
+
   const isViewer = isAdmin && currentBuilding && (
     isUserBuildingViewer(currentUser, currentBuilding, organizations, buildings) ||
     !canUserManageBuilding(currentUser, currentBuilding, organizations, buildings)
   );
-
-  // Determine dynamic mode: Portfolio Mode (All buildings aggregated) vs. Building-Specific Mode
-  const isPortfolioMode = isAdmin && (Boolean(state.isPortfolioView) || !currentBuildingId);
-  const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || (isPortfolioMode ? null : (buildings && buildings[0]));
 
   const myFlats = getUserFlats ? getUserFlats(currentUser, buildings) : [];
   const profileLabel = isAdmin 
