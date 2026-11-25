@@ -1205,23 +1205,7 @@ test('21. Strict anti-privilege-escalation: delegator can ONLY grant permissions
     'privilege_escalation'
   );
 
-  // 6. Cannot grant showCentralContact on 'b1' when delegator does not hold it on 'b1'
-  assert.equal(
-    canActorManageTargetMember(
-      limitedDelegatorCtx,
-      target,
-      { canManageTeam: false },
-      'delegator@alfa.hu',
-      {
-        buildingScope: 'selected',
-        buildingIds: ['b1'],
-        buildingAssignments: { b1: { role: 'manager', canEditBankAccounts: false, showCentralContact: true } },
-      }
-    ).reason,
-    'privilege_escalation'
-  );
-
-  // 7. Viewer on 'b2' CANNOT assign Resident Contact (showManagerContact) on 'b2'
+  // 6. Viewer on 'b2' CANNOT assign Resident Contact or Central Contact visibility on 'b2'
   assert.equal(
     canActorManageTargetMember(
       limitedDelegatorCtx,
@@ -1231,7 +1215,7 @@ test('21. Strict anti-privilege-escalation: delegator can ONLY grant permissions
       {
         buildingScope: 'selected',
         buildingIds: ['b2'],
-        buildingAssignments: { b2: { role: 'viewer', showManagerContact: true } },
+        buildingAssignments: { b2: { role: 'viewer', showManagerContact: true, showCentralContact: true } },
       }
     ).reason,
     'privilege_escalation'

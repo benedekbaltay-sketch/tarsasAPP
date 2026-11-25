@@ -508,14 +508,6 @@ export function canActorManageTargetMember(
               ? actorAssign.canEditBankAccounts
               : actorCtx.permissions?.canEditBankAccounts
           );
-        const actorCanCentralHere =
-          !actorIsViewerHere &&
-          Boolean(
-            actorAssign.showCentralContact !== undefined
-              ? actorAssign.showCentralContact
-              : actorHasAllScope
-          );
-
         // A viewer on building B cannot grant Full Manager on building B
         if (reqAssign.role !== 'viewer' && actorIsViewerHere) {
           return { allowed: false, reason: 'privilege_escalation' };
@@ -524,12 +516,8 @@ export function canActorManageTargetMember(
         if (reqAssign.canEditBankAccounts && !actorCanBankHere) {
           return { allowed: false, reason: 'privilege_escalation' };
         }
-        // Cannot grant central company info display on building B without holding it on B
-        if (reqAssign.showCentralContact && !actorCanCentralHere) {
-          return { allowed: false, reason: 'privilege_escalation' };
-        }
-        // A viewer on building B cannot assign Resident Contact on building B
-        if (reqAssign.showManagerContact && actorIsViewerHere) {
+        // A viewer on building B cannot change resident contact or central contact visibility on building B
+        if ((reqAssign.showManagerContact || reqAssign.showCentralContact) && actorIsViewerHere) {
           return { allowed: false, reason: 'privilege_escalation' };
         }
       }

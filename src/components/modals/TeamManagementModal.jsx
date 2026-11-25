@@ -200,13 +200,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     return Boolean(orgCtx.permissions.canEditBankAccounts);
   };
 
-  const canActorGrantCentralOnBuilding = (bId) => {
-    if (orgCtx.isOwner || orgCtx.isSuperAdmin) return true;
-    if (!canActorManageOnBuilding(bId)) return false;
-    const a = orgCtx.member?.buildingAssignments?.[bId];
-    if (a && a.showCentralContact !== undefined) return Boolean(a.showCentralContact);
-    return Boolean(canGrantAllBuildingsScope);
-  };
+  const canActorGrantCentralOnBuilding = (bId) => canActorManageOnBuilding(bId);
 
   const resetInviteForm = () => {
     setEditingMemberId(null);
@@ -502,6 +496,9 @@ export function TeamManagementModal({ isOpen, onClose }) {
       orgBuildings.forEach((b) => {
         const item = formBuildingAssignments[b.id] || {};
         const effRole = item.role === 'viewer' ? 'viewer' : (canActorManageOnBuilding(b.id) ? 'manager' : 'viewer');
+        const effContact = item.showManagerContact !== undefined
+          ? Boolean(item.showManagerContact)
+          : Boolean(allScopeDefaults.showManagerContact);
         assignmentsPayload[b.id] = {
           role: effRole,
           canEditBankAccounts: effRole !== 'viewer'
@@ -509,10 +506,8 @@ export function TeamManagementModal({ isOpen, onClose }) {
                 ? Boolean(item.canEditBankAccounts)
                 : Boolean(allScopeDefaults.canEditBankAccounts || permEditBankAccounts))
             : false,
-          showManagerContact: item.showManagerContact !== undefined
-            ? Boolean(item.showManagerContact)
-            : Boolean(allScopeDefaults.showManagerContact),
-          showCentralContact: effRole !== 'viewer'
+          showManagerContact: effContact,
+          showCentralContact: effContact
             ? (item.showCentralContact !== undefined
                 ? Boolean(item.showCentralContact)
                 : Boolean(allScopeDefaults.showCentralContact))
@@ -523,11 +518,12 @@ export function TeamManagementModal({ isOpen, onClose }) {
       formBuildingIds.forEach((bId) => {
         const item = formBuildingAssignments[bId] || {};
         const effRole = item.role === 'viewer' ? 'viewer' : (canActorManageOnBuilding(bId) ? 'manager' : 'viewer');
+        const effContact = Boolean(item.showManagerContact);
         assignmentsPayload[bId] = {
           role: effRole,
           canEditBankAccounts: effRole !== 'viewer' ? Boolean(item.canEditBankAccounts) : false,
-          showManagerContact: Boolean(item.showManagerContact),
-          showCentralContact: effRole !== 'viewer' ? Boolean(item.showCentralContact) : false,
+          showManagerContact: effContact,
+          showCentralContact: effContact ? Boolean(item.showCentralContact) : false,
         };
       });
     }
@@ -660,13 +656,11 @@ export function TeamManagementModal({ isOpen, onClose }) {
     if (canGrantAllBuildingsScope) setFormScope('all');
     if (canGrantCreate) setPermCreateBuildings(true);
     const anyBankAllowed = orgBuildings.some((b) => canActorEditBankOnBuilding(b.id));
-    const anyCentralAllowed = orgBuildings.some((b) => canActorGrantCentralOnBuilding(b.id));
     if (anyBankAllowed) setPermEditBankAccounts(true);
     setAllScopeDefaults((prev) => ({
       ...prev,
       role: orgBuildings.some((b) => canActorManageOnBuilding(b.id)) ? 'manager' : 'viewer',
       canEditBankAccounts: anyBankAllowed,
-      showCentralContact: anyCentralAllowed,
     }));
     setFormBuildingAssignments((prev) => {
       const next = { ...prev };
@@ -677,8 +671,8 @@ export function TeamManagementModal({ isOpen, onClose }) {
           ...existing,
           role: canManageB ? 'manager' : 'viewer',
           canEditBankAccounts: canActorEditBankOnBuilding(b.id),
-          showCentralContact: canActorGrantCentralOnBuilding(b.id),
           showManagerContact: Boolean(existing.showManagerContact),
+          showCentralContact: Boolean(existing.showCentralContact),
         };
       });
       return next;
@@ -1143,24 +1137,13 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                                       {isEn ? 'Bank IBAN: Locked' : 'Bankszámla: Zárolt'}
                                                     </span>
                                                   )}
-
-                                                  {hasCentralOnThis ? (
-                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-[#1E3A8A] border border-blue-200 font-bold">
-                                                      <Building2 className="w-2.5 h-2.5" />
-                                                      {isEn ? 'Central info: On' : 'Központi cégadatok: Be'}
-                                                    </span>
-                                                  ) : (
-                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-50 text-gray-400 border border-gray-200 font-medium">
-                                                      {isEn ? 'Central info: Off' : 'Központi cégadatok: Ki'}
-                                                    </span>
-                                                  )}
                                                 </>
                                               )}
                                             </div>
 
                                             {/* Dedicated Special Entity Strip: Resident Contact (only when active) */}
                                             {isContactOnThis && (
-                                              <div className="pt-1.5 mt-1 border-t border-dashed border-purple-200 flex items-center gap-2">
+                                              <div className="pt-1.5 mt-1 border-t border-dashed border-purple-200 flex flex-wrap items-center gap-1.5">
                                                 <span
                                                   className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-purple-600 text-white text-[10px] font-bold shadow-2xs"
                                                   title={isEn ? 'Sole active resident contact for this condominium' : 'Ő a kijelölt egyedüli lakói kapcsolattartó ennél a háznál'}
@@ -1168,9 +1151,12 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                                   <UserCheck className="w-3 h-3" />
                                                   {t.team_contact_perm_badge || (isEn ? 'Resident Contact' : 'Lakói kapcsolattartó')}
                                                 </span>
-                                                <span className="text-[10px] text-purple-800/80 truncate">
-                                                  {isEn ? 'Visible to residents (1 person / condo)' : 'Ő jelenik meg a lakóknak (1 fő / ház)'}
-                                                </span>
+                                                {Boolean(bAssignment.showCentralContact) && (
+                                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-[#1E3A8A] border border-blue-200 text-[10px] font-bold">
+                                                    <Building2 className="w-2.5 h-2.5" />
+                                                    {isEn ? '+ Central company info shown' : '+ Központi cégadatok is látszanak'}
+                                                  </span>
+                                                )}
                                               </div>
                                             )}
                                           </div>
@@ -1805,69 +1791,36 @@ export function TeamManagementModal({ isOpen, onClose }) {
                     {/* Operational Options (Shown when at least 1 building is Full Manager, i.e. role !== 'viewer') */}
                     {currentAssignment.role !== 'viewer' && (
                       <div className="pt-2 border-t border-gray-100">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <label
-                            className={`flex items-center justify-between gap-2 p-2 rounded-lg border text-xs transition-colors ${
-                              !canGrantBankOnAnyTarget
-                                ? 'opacity-45 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400 font-medium'
-                                : currentAssignment.canEditBankAccounts
-                                  ? 'bg-red-50/80 border-red-200 text-red-900 font-bold cursor-pointer'
-                                  : currentAssignment.bankMixed
-                                    ? 'bg-amber-50/60 border-amber-300 border-dashed text-amber-950 font-semibold cursor-pointer'
-                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium cursor-pointer'
-                            }`}
-                            title={!canGrantBankOnAnyTarget ? (isEn ? 'You do not have bank account editing permission on the selected buildings' : 'Nincs bankszámla-módosítási jogosultságod a kiválasztott házakon') : undefined}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <input
-                                type="checkbox"
-                                disabled={!canGrantBankOnAnyTarget}
-                                checked={Boolean(currentAssignment.canEditBankAccounts)}
-                                ref={(el) => { if (el) el.indeterminate = Boolean(currentAssignment.bankMixed); }}
-                                onChange={(e) => canGrantBankOnAnyTarget && setUnifiedAssignmentValue('canEditBankAccounts', currentAssignment.bankMixed ? true : e.target.checked)}
-                                className="w-3.5 h-3.5 rounded text-red-600 focus:ring-red-500 cursor-pointer shrink-0 disabled:cursor-not-allowed"
-                              />
-                              <Landmark className={`w-3.5 h-3.5 shrink-0 ${currentAssignment.canEditBankAccounts ? 'text-red-600' : currentAssignment.bankMixed ? 'text-amber-600' : 'text-gray-400'}`} />
-                              <span className="truncate">{t.team_bank_perm_badge || (isEn ? 'Modify IBAN (alerted)' : 'Bankszámla módosítás')}</span>
-                            </div>
-                            {currentAssignment.bankMixed && (
-                              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
-                                {isEn ? `Mixed (${currentAssignment.bankCount}/${currentAssignment.total})` : `Vegyes (${currentAssignment.bankCount}/${currentAssignment.total})`}
-                              </span>
-                            )}
-                          </label>
-
-                          <label
-                            className={`flex items-center justify-between gap-2 p-2 rounded-lg border text-xs transition-colors ${
-                              !canGrantCentralOnAnyTarget
-                                ? 'opacity-45 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400 font-medium'
-                                : currentAssignment.showCentralContact
-                                  ? 'bg-blue-50/80 border-blue-200 text-[#1E3A8A] font-bold cursor-pointer'
-                                  : currentAssignment.centralMixed
-                                    ? 'bg-amber-50/60 border-amber-300 border-dashed text-amber-950 font-semibold cursor-pointer'
-                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium cursor-pointer'
-                            }`}
-                            title={!canGrantCentralOnAnyTarget ? (isEn ? 'You cannot grant Central Company Info permission without holding it yourself' : 'Csak akkor adhatsz Központi cégadatok jogot, ha te magad is rendelkezel vele') : undefined}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <input
-                                type="checkbox"
-                                disabled={!canGrantCentralOnAnyTarget}
-                                checked={Boolean(currentAssignment.showCentralContact)}
-                                ref={(el) => { if (el) el.indeterminate = Boolean(currentAssignment.centralMixed); }}
-                                onChange={(e) => canGrantCentralOnAnyTarget && setUnifiedAssignmentValue('showCentralContact', currentAssignment.centralMixed ? true : e.target.checked)}
-                                className="w-3.5 h-3.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer shrink-0 disabled:cursor-not-allowed"
-                              />
-                              <Building2 className={`w-3.5 h-3.5 shrink-0 ${currentAssignment.showCentralContact ? 'text-[#1E3A8A]' : currentAssignment.centralMixed ? 'text-amber-600' : 'text-gray-400'}`} />
-                              <span className="truncate">{isEn ? 'Show Central Escalation' : 'Központi cégadatok'}</span>
-                            </div>
-                            {currentAssignment.centralMixed && (
-                              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
-                                {isEn ? `Mixed (${currentAssignment.centralCount}/${currentAssignment.total})` : `Vegyes (${currentAssignment.centralCount}/${currentAssignment.total})`}
-                              </span>
-                            )}
-                          </label>
-                        </div>
+                        <label
+                          className={`flex items-center justify-between gap-2 p-2 rounded-lg border text-xs transition-colors ${
+                            !canGrantBankOnAnyTarget
+                              ? 'opacity-45 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400 font-medium'
+                              : currentAssignment.canEditBankAccounts
+                                ? 'bg-red-50/80 border-red-200 text-red-900 font-bold cursor-pointer'
+                                : currentAssignment.bankMixed
+                                  ? 'bg-amber-50/60 border-amber-300 border-dashed text-amber-950 font-semibold cursor-pointer'
+                                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium cursor-pointer'
+                          }`}
+                          title={!canGrantBankOnAnyTarget ? (isEn ? 'You do not have bank account editing permission on the selected buildings' : 'Nincs bankszámla-módosítási jogosultságod a kiválasztott házakon') : undefined}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <input
+                              type="checkbox"
+                              disabled={!canGrantBankOnAnyTarget}
+                              checked={Boolean(currentAssignment.canEditBankAccounts)}
+                              ref={(el) => { if (el) el.indeterminate = Boolean(currentAssignment.bankMixed); }}
+                              onChange={(e) => canGrantBankOnAnyTarget && setUnifiedAssignmentValue('canEditBankAccounts', currentAssignment.bankMixed ? true : e.target.checked)}
+                              className="w-3.5 h-3.5 rounded text-red-600 focus:ring-red-500 cursor-pointer shrink-0 disabled:cursor-not-allowed"
+                            />
+                            <Landmark className={`w-3.5 h-3.5 shrink-0 ${currentAssignment.canEditBankAccounts ? 'text-red-600' : currentAssignment.bankMixed ? 'text-amber-600' : 'text-gray-400'}`} />
+                            <span className="truncate">{t.team_bank_perm_badge || (isEn ? 'Modify IBAN (alerted)' : 'Bankszámla módosítás')}</span>
+                          </div>
+                          {currentAssignment.bankMixed && (
+                            <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
+                              {isEn ? `Mixed (${currentAssignment.bankCount}/${currentAssignment.total})` : `Vegyes (${currentAssignment.bankCount}/${currentAssignment.total})`}
+                            </span>
+                          )}
+                        </label>
                       </div>
                     )}
 
@@ -1927,6 +1880,45 @@ export function TeamManagementModal({ isOpen, onClose }) {
                           className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0 disabled:cursor-not-allowed"
                         />
                       </label>
+
+                      {/* Sub-option: Also show central company info to residents (ONLY visible when Resident Contact is enabled/mixed) */}
+                      {(currentAssignment.showManagerContact || currentAssignment.contactMixed) && (
+                        <div className="mt-2.5 pt-2.5 border-t border-purple-200/80 animate-fadeIn">
+                          <label
+                            className={`flex items-center justify-between gap-2 p-2 rounded-lg border text-xs transition-colors ${
+                              !canGrantCentralOnAnyTarget
+                                ? 'opacity-45 cursor-not-allowed bg-gray-50 border-gray-200 text-gray-400 font-medium'
+                                : currentAssignment.showCentralContact
+                                  ? 'bg-blue-50/90 border-blue-200 text-[#1E3A8A] font-bold cursor-pointer'
+                                  : currentAssignment.centralMixed
+                                    ? 'bg-amber-50/60 border-amber-300 border-dashed text-amber-950 font-semibold cursor-pointer'
+                                    : 'bg-white/90 border-purple-200/80 text-gray-700 hover:bg-white font-medium cursor-pointer'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <input
+                                type="checkbox"
+                                disabled={!canGrantCentralOnAnyTarget}
+                                checked={Boolean(currentAssignment.showCentralContact)}
+                                ref={(el) => { if (el) el.indeterminate = Boolean(currentAssignment.centralMixed); }}
+                                onChange={(e) => canGrantCentralOnAnyTarget && setUnifiedAssignmentValue('showCentralContact', currentAssignment.centralMixed ? true : e.target.checked)}
+                                className="w-3.5 h-3.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer shrink-0 disabled:cursor-not-allowed"
+                              />
+                              <Building2 className={`w-3.5 h-3.5 shrink-0 ${currentAssignment.showCentralContact ? 'text-[#1E3A8A]' : currentAssignment.centralMixed ? 'text-amber-600' : 'text-gray-400'}`} />
+                              <span className="truncate">
+                                {isEn
+                                  ? 'Also show central company info to residents'
+                                  : 'Központi cégadatok megjelenítése is a lakóknak'}
+                              </span>
+                            </div>
+                            {currentAssignment.centralMixed && (
+                              <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
+                                {isEn ? `Mixed (${currentAssignment.centralCount}/${currentAssignment.total})` : `Vegyes (${currentAssignment.centralCount}/${currentAssignment.total})`}
+                              </span>
+                            )}
+                          </label>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2041,37 +2033,6 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                       </button>
                                     )}
 
-                                    {/* Central Company Info toggle (Only when Full Manager AND actor has it on this building) */}
-                                    {!isViewer && canActorGrantCentralOnBuilding(b.id) && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const curAssignment = formBuildingAssignments[b.id] || {};
-                                          const curCentral = curAssignment.showCentralContact !== undefined
-                                            ? Boolean(curAssignment.showCentralContact)
-                                            : Boolean(allScopeDefaults.showCentralContact);
-                                          updateBuildingAssignment(b.id, 'showCentralContact', !curCentral);
-                                        }}
-                                        className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border flex items-center gap-1 cursor-pointer transition-colors ${
-                                          (formBuildingAssignments[b.id]?.showCentralContact !== undefined
-                                            ? formBuildingAssignments[b.id]?.showCentralContact
-                                            : allScopeDefaults.showCentralContact)
-                                            ? 'bg-blue-50 text-[#1E3A8A] border-blue-200 font-bold'
-                                            : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-                                        }`}
-                                        title={isEn ? 'Show central company escalation details to residents' : 'Központi cégadatok megjelenítése a lakóknak'}
-                                      >
-                                        <Building2 className="w-3 h-3" />
-                                        <span>
-                                          {(formBuildingAssignments[b.id]?.showCentralContact !== undefined
-                                            ? formBuildingAssignments[b.id]?.showCentralContact
-                                            : allScopeDefaults.showCentralContact)
-                                            ? (isEn ? 'Central: On' : 'Központi: Be')
-                                            : (isEn ? 'Central: Off' : 'Központi: Ki')}
-                                        </span>
-                                      </button>
-                                    )}
-
                                     {/* Copy to others button */}
                                     {((formScope === 'all' && orgBuildings.length > 1) || (formScope === 'selected' && formBuildingIds.length > 1)) && (
                                       <button
@@ -2114,26 +2075,63 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                     </div>
                                   </div>
 
-                                  <button
-                                    type="button"
-                                    disabled={!canActorManageOnBuilding(b.id)}
-                                    onClick={() => canActorManageOnBuilding(b.id) && updateBuildingAssignment(b.id, 'showManagerContact', !isContact)}
-                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1.5 transition-all shrink-0 ${
-                                      !canActorManageOnBuilding(b.id)
-                                        ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border-gray-200'
-                                        : isContact
-                                          ? 'bg-purple-600 text-white border-purple-700 shadow-2xs cursor-pointer'
-                                          : 'bg-purple-50/60 text-purple-800 border-purple-200 hover:bg-purple-100 cursor-pointer'
-                                    }`}
-                                    title={
-                                      !canActorManageOnBuilding(b.id)
-                                        ? (isEn ? 'Viewers cannot change the resident contact on this building' : 'Csak megtekintőként ennél a háznál nem állíthatod a lakói kapcsolattartót')
-                                        : (isEn ? 'Set as sole resident contact for this condominium' : 'Kijelölés egyedüli lakói kapcsolattartónak ennél a háznál')
-                                    }
-                                  >
-                                    <UserCheck className="w-3 h-3" />
-                                    <span>{isContact ? (isEn ? 'Active Contact' : 'Kapcsolattartó: Be') : (isEn ? 'Set as Contact' : 'Kapcsolattartó: Ki')}</span>
-                                  </button>
+                                  <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                                    {/* Central Company Info toggle — ONLY shown when Resident Contact is active */}
+                                    {isContact && (
+                                      <button
+                                        type="button"
+                                        disabled={!canActorManageOnBuilding(b.id)}
+                                        onClick={() => {
+                                          if (!canActorManageOnBuilding(b.id)) return;
+                                          const curAssignment = formBuildingAssignments[b.id] || {};
+                                          const curCentral = curAssignment.showCentralContact !== undefined
+                                            ? Boolean(curAssignment.showCentralContact)
+                                            : Boolean(allScopeDefaults.showCentralContact);
+                                          updateBuildingAssignment(b.id, 'showCentralContact', !curCentral);
+                                        }}
+                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1 transition-colors ${
+                                          !canActorManageOnBuilding(b.id)
+                                            ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border-gray-200'
+                                            : (formBuildingAssignments[b.id]?.showCentralContact !== undefined
+                                                ? formBuildingAssignments[b.id]?.showCentralContact
+                                                : allScopeDefaults.showCentralContact)
+                                              ? 'bg-blue-50 text-[#1E3A8A] border-blue-200 cursor-pointer'
+                                              : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50 cursor-pointer'
+                                        }`}
+                                        title={isEn ? 'Also show central company contact details to residents alongside this contact' : 'A lakói kapcsolattartó mellett a központi cégadatok is jelenjenek meg a lakóknak'}
+                                      >
+                                        <Building2 className="w-3 h-3" />
+                                        <span>
+                                          {(formBuildingAssignments[b.id]?.showCentralContact !== undefined
+                                            ? formBuildingAssignments[b.id]?.showCentralContact
+                                            : allScopeDefaults.showCentralContact)
+                                            ? (isEn ? '+ Central: On' : '+ Központi: Be')
+                                            : (isEn ? '+ Central: Off' : '+ Központi: Ki')}
+                                        </span>
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      disabled={!canActorManageOnBuilding(b.id)}
+                                      onClick={() => canActorManageOnBuilding(b.id) && updateBuildingAssignment(b.id, 'showManagerContact', !isContact)}
+                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1.5 transition-all shrink-0 ${
+                                        !canActorManageOnBuilding(b.id)
+                                          ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border-gray-200'
+                                          : isContact
+                                            ? 'bg-purple-600 text-white border-purple-700 shadow-2xs cursor-pointer'
+                                            : 'bg-purple-50/60 text-purple-800 border-purple-200 hover:bg-purple-100 cursor-pointer'
+                                      }`}
+                                      title={
+                                        !canActorManageOnBuilding(b.id)
+                                          ? (isEn ? 'Viewers cannot change the resident contact on this building' : 'Csak megtekintőként ennél a háznál nem állíthatod a lakói kapcsolattartót')
+                                          : (isEn ? 'Set as sole resident contact for this condominium' : 'Kijelölés egyedüli lakói kapcsolattartónak ennél a háznál')
+                                      }
+                                    >
+                                      <UserCheck className="w-3 h-3" />
+                                      <span>{isContact ? (isEn ? 'Active Contact' : 'Kapcsolattartó: Be') : (isEn ? 'Set as Contact' : 'Kapcsolattartó: Ki')}</span>
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             );
