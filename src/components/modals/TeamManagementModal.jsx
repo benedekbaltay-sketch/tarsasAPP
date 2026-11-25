@@ -102,6 +102,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
   const [buildingSearch, setBuildingSearch] = useState('');
   const [permCreateBuildings, setPermCreateBuildings] = useState(false);
   const [permManageTeam, setPermManageTeam] = useState(false);
+  const [permTeamManageScope, setPermTeamManageScope] = useState('all'); // 'all' | 'assigned'
   const [permEditBankAccounts, setPermEditBankAccounts] = useState(false);
   const [sendNotificationOnUpdate, setSendNotificationOnUpdate] = useState(true);
 
@@ -198,6 +199,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     setBuildingSearch('');
     setPermCreateBuildings(false);
     setPermManageTeam(false);
+    setPermTeamManageScope('all');
     setPermEditBankAccounts(false);
     setSendNotificationOnUpdate(true);
   };
@@ -235,6 +237,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     setBuildingSearch('');
     setPermCreateBuildings(Boolean(member.permissions?.canCreateBuildings));
     setPermManageTeam(Boolean(member.permissions?.canManageTeam));
+    setPermTeamManageScope(member.permissions?.teamManageScope === 'assigned' ? 'assigned' : 'all');
     setPermEditBankAccounts(Boolean(member.permissions?.canEditBankAccounts));
     setSendNotificationOnUpdate(true);
     setShowAllScopeBuildingOverrides(false);
@@ -399,6 +402,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
     const permissionsPayload = {
       canCreateBuildings: permCreateBuildings,
       canManageTeam: permManageTeam,
+      teamManageScope: permManageTeam ? permTeamManageScope : 'all',
       canEditBankAccounts: permEditBankAccounts,
     };
 
@@ -1346,23 +1350,108 @@ export function TeamManagementModal({ isOpen, onClose }) {
                 </div>
 
                 {/* 1. Cégszintű jogosultságok (A cég egészére érvényes) */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 space-y-3.5">
+                <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-2.5">
                   <div>
                     <h4 className="font-bold text-gray-950 text-xs flex items-center gap-1.5">
-                      <Crown className="w-4 h-4 text-amber-600" />
+                      <Crown className="w-3.5 h-3.5 text-amber-600" />
                       <span>{t.team_org_level_section_title || (isEn ? 'Company-level Permissions (Organization-wide)' : 'Cégszintű jogosultságok (A cég egészére érvényes)')}</span>
                     </h4>
-                    <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+                    <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">
                       {t.team_org_level_section_desc || (isEn
-                        ? 'These permissions cannot be assigned per building. They define the colleague’s administrative and system authority across the entire company.'
+                        ? 'These permissions cannot be assigned per building. They define the colleague’s administrative authority across the entire company.'
                         : 'Ezek a jogosultságok a munkatárs teljes rendszerbeli és adminisztratív hatáskörét határozzák meg, ezért nem oszthatóak házanként.')}
                     </p>
                   </div>
 
-                  <div className="space-y-2.5">
-                    {/* Card 1: Create New Buildings */}
+                  <div className="space-y-2">
+                    {/* Card 1: Manage Team (First!) */}
+                    <div className={`p-2.5 sm:p-3 rounded-xl border transition-colors ${
+                      canGrantManageTeam ? 'hover:bg-white border-gray-200 bg-white/80' : 'opacity-55 bg-gray-50 border-gray-100'
+                    }`}>
+                      <label className={`flex items-start gap-2.5 ${canGrantManageTeam ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                        <input
+                          type="checkbox"
+                          disabled={!canGrantManageTeam}
+                          checked={permManageTeam}
+                          onChange={(e) => {
+                            setPermManageTeam(e.target.checked);
+                            if (e.target.checked && !permTeamManageScope) {
+                              setPermTeamManageScope('all');
+                            }
+                          }}
+                          className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                            <span>{t.team_perm_manage_title || (isEn ? 'Can invite & assign colleagues' : 'Munkatársak meghívása és házak kiosztása (Csapatkezelés)')}</span>
+                          </div>
+                          <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">
+                            {t.team_perm_manage_desc || (isEn
+                              ? 'Allows managing colleagues and condominium assignments. Cannot delete condominiums or grant permissions they lack.'
+                              : 'Munkatársak meghívása és házak kiosztása. A tulajdonost nem módosíthatja és társasházat nem törölhet.')}
+                          </p>
+                        </div>
+                      </label>
+
+                      {/* Sub-options when Manage Team is enabled */}
+                      {permManageTeam && (
+                        <div className="mt-2 ml-6 pt-2 border-t border-gray-200/80 space-y-1.5 animate-fadeIn">
+                          <span className="text-[9.5px] font-bold text-gray-600 block uppercase tracking-wider">
+                            {t.team_manage_scope_label || (isEn ? 'Delegation scope:' : 'Jogosultság-kiosztási hatáskör:')}
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setPermTeamManageScope('all')}
+                              className={`p-2 rounded-lg border text-left cursor-pointer transition-all flex items-start gap-2 ${
+                                permTeamManageScope === 'all'
+                                  ? 'bg-blue-50 border-[#1E3A8A] text-blue-950 shadow-2xs font-bold'
+                                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                              }`}
+                            >
+                              <Crown className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${permTeamManageScope === 'all' ? 'text-[#1E3A8A]' : 'text-gray-400'}`} />
+                              <div className="min-w-0">
+                                <div className="text-[10.5px] font-bold truncate">
+                                  {t.team_manage_scope_all_title || (isEn ? 'Full company-wide (All buildings)' : 'Teljes jogosultság (Minden házra)')}
+                                </div>
+                                <p className="text-[9px] text-gray-500 mt-0.5 leading-tight font-normal">
+                                  {t.team_manage_scope_all_desc || (isEn
+                                    ? 'Co-admin level: can assign rights to all condominiums across entire company.'
+                                    : 'Társadminisztrátor: minden házhoz bármilyen jogosultságot kioszthat a cég egészében.')}
+                                </p>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setPermTeamManageScope('assigned')}
+                              className={`p-2 rounded-lg border text-left cursor-pointer transition-all flex items-start gap-2 ${
+                                permTeamManageScope === 'assigned'
+                                  ? 'bg-blue-50 border-[#1E3A8A] text-blue-950 shadow-2xs font-bold'
+                                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                              }`}
+                            >
+                              <Building2 className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${permTeamManageScope === 'assigned' ? 'text-[#1E3A8A]' : 'text-gray-400'}`} />
+                              <div className="min-w-0">
+                                <div className="text-[10.5px] font-bold truncate">
+                                  {t.team_manage_scope_assigned_title || (isEn ? 'Assigned condominiums only' : 'Csak a kijelölt házakra')}
+                                </div>
+                                <p className="text-[9px] text-gray-500 mt-0.5 leading-tight font-normal">
+                                  {t.team_manage_scope_assigned_desc || (isEn
+                                    ? 'Can only delegate access to condominiums explicitly assigned to them.'
+                                    : 'Kizárólag azokra a társasházakra oszthat ki jogot, amelyekhez ő maga is hozzáfér.')}
+                                </p>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card 2: Create New Buildings (Second!) */}
                     <label
-                      className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition-colors ${
+                      className={`flex items-start gap-2.5 p-2.5 sm:p-3 rounded-xl border transition-colors ${
                         canGrantCreate ? 'cursor-pointer hover:bg-white border-gray-200 bg-white/80' : 'opacity-55 bg-gray-50 border-gray-100 cursor-not-allowed'
                       }`}
                     >
@@ -1373,12 +1462,12 @@ export function TeamManagementModal({ isOpen, onClose }) {
                         onChange={(e) => setPermCreateBuildings(e.target.checked)}
                         className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
                       />
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                          <Building2 className="w-4 h-4 text-[#1E3A8A]" />
+                          <Building2 className="w-3.5 h-3.5 text-[#1E3A8A]" />
                           <span>{t.team_perm_create_title || (isEn ? 'Can create new condominiums' : 'Új társasház létrehozása')}</span>
                         </div>
-                        <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+                        <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">
                           {t.team_perm_create_desc || (isEn
                             ? 'Newly created condominiums automatically belong to your company organization and are visible to the Owner.'
                             : 'A munkatárs által létrehozott új társasházak automatikusan a cég tulajdonába kerülnek, és a tulajdonos is azonnal látja őket.')}
@@ -1386,40 +1475,14 @@ export function TeamManagementModal({ isOpen, onClose }) {
                       </div>
                     </label>
 
-                    {/* Card 2: Manage Team */}
-                    <label
-                      className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition-colors ${
-                        canGrantManageTeam ? 'cursor-pointer hover:bg-white border-gray-200 bg-white/80' : 'opacity-55 bg-gray-50 border-gray-100 cursor-not-allowed'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        disabled={!canGrantManageTeam}
-                        checked={permManageTeam}
-                        onChange={(e) => setPermManageTeam(e.target.checked)}
-                        className="mt-0.5 w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
-                      />
-                      <div className="flex-1">
-                        <div className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                          <Users className="w-4 h-4 text-[#1E3A8A]" />
-                          <span>{t.team_perm_manage_title || (isEn ? 'Can invite & assign colleagues' : 'Munkatársak meghívása és házak kiosztása (Csapat kezelés)')}</span>
-                        </div>
-                        <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-                          {t.team_perm_manage_desc || (isEn
-                            ? 'Allows managing team assignments (e.g. Office Manager), but cannot modify the Owner or grant permissions they lack.'
-                            : 'Irodavezetői szerepkör: munkatársak meghívása és házak kiosztása. A tulajdonost nem módosíthatja és nem adhat magasabb jogkört a sajátjánál.')}
-                        </p>
-                      </div>
-                    </label>
-
-                    {/* Card 3: Permanent Owner-Only Lock: Delete Buildings */}
-                    <div className="flex items-start gap-3.5 p-3.5 rounded-xl bg-slate-100/90 border border-slate-200">
-                      <Lock className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+                    {/* Card 3: Permanent Owner-Only Lock: Delete Buildings (Compact) */}
+                    <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-100/90 border border-slate-200">
+                      <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
                       <div>
                         <div className="font-bold text-slate-700 text-xs">
                           {t.team_perm_delete_locked_title || (isEn ? 'Delete condominiums — Strictly Owner Only' : 'Társasházak törlése — Kizárólag tulajdonosnak')}
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
                           {t.team_perm_delete_locked_desc || (isEn
                             ? 'Colleagues can never delete condominium buildings. This safeguard cannot be delegated.'
                             : 'Munkatársak semmilyen körülmények között nem törölhetnek társasházat. Ez a védelem nem adható át.')}
@@ -1429,12 +1492,12 @@ export function TeamManagementModal({ isOpen, onClose }) {
                   </div>
                 </div>
 
-                {/* 2. Házszintű jogosultságok */}
+                {/* 2. Házszintű jogosultságok: Jogosultságok és lakói megjelenítés */}
                 <div className="p-4 rounded-xl bg-blue-50/20 border border-blue-200/70 space-y-4">
                   <div>
                     <h4 className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
                       <Building2 className="w-4 h-4 text-[#1E3A8A]" />
-                      <span>{t.team_unified_permissions_title || (isEn ? 'Condominium Permissions' : 'Házszintű jogosultságok')}</span>
+                      <span>{t.team_unified_permissions_title || (isEn ? 'Condominium Permissions & Resident Visibility' : 'Jogosultságok és lakói megjelenítés')}</span>
                     </h4>
                     <p className="text-[11px] text-gray-500 mt-0.5">
                       {isEn
@@ -1470,10 +1533,10 @@ export function TeamManagementModal({ isOpen, onClose }) {
                         <Shield className={`w-4 h-4 mt-0.5 flex-shrink-0 ${currentAssignment.role !== 'viewer' ? 'text-[#1E3A8A]' : 'text-gray-400'}`} />
                         <div>
                           <div className={`font-bold text-xs ${currentAssignment.role !== 'viewer' ? 'text-[#1E3A8A]' : 'text-gray-800'}`}>
-                            {t.team_assign_role_manager || (isEn ? 'Full Manager' : 'Teljes kezelő / Szerkesztő')}
+                            {t.team_assign_role_manager || (isEn ? 'Full Manager' : 'Teljes kezelő (szerkesztés, könyvelés)')}
                           </div>
                           <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">
-                            {t.team_role_manager_opt || (isEn ? 'Edit, post payments, handle resident balances and documents.' : 'Szerkesztés, könyvelés, lakói adatok és terhelések kezelése.')}
+                            {isEn ? 'Full access: editing, accounting, resident balances and assessments.' : 'Teljes kezelő (szerkesztés, könyvelés, lakói adatok)'}
                           </p>
                         </div>
                       </button>
@@ -1490,53 +1553,71 @@ export function TeamManagementModal({ isOpen, onClose }) {
                         <Eye className={`w-4 h-4 mt-0.5 flex-shrink-0 ${currentAssignment.role === 'viewer' ? 'text-amber-600' : 'text-gray-400'}`} />
                         <div>
                           <div className={`font-bold text-xs ${currentAssignment.role === 'viewer' ? 'text-amber-800' : 'text-gray-800'}`}>
-                            {t.team_assign_role_viewer || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő')}
+                            {t.team_assign_role_viewer || (isEn ? 'Viewer (Read-only)' : 'Csak megtekintő (csak olvasás)')}
                           </div>
                           <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">
-                            {t.team_role_viewer_opt || (isEn ? 'Read-only access: review balances and reports without editing rights.' : 'Kizárólag olvasási jog — egyenlegek és kimutatások ellenőrzése módosítás nélkül.')}
+                            {isEn ? 'Read-only access: review balances and reports without editing rights.' : 'Csak megtekintő (olvasási jog, ellenőrzés)'}
                           </p>
                         </div>
                       </button>
                     </div>
 
-                    {/* Bulk Options (Bank, Manager contact, Central contact) */}
-                    <div className="pt-2 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                        currentAssignment.canEditBankAccounts ? 'bg-red-50/80 border-red-200 text-red-900 font-bold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
-                      }`}>
-                        <input
-                          type="checkbox"
-                          disabled={!canGrantEditBank}
-                          checked={Boolean(currentAssignment.canEditBankAccounts)}
-                          onChange={(e) => setUnifiedAssignmentValue('canEditBankAccounts', e.target.checked)}
-                          className="w-3.5 h-3.5 rounded text-red-600 focus:ring-red-500 cursor-pointer"
-                        />
-                        <span className="truncate">{t.team_bank_perm_badge || (isEn ? 'Modify IBAN (alerted)' : 'Bankszámla módosítás')}</span>
-                      </label>
+                    {/* Bulk Options: when Full Manager show Bank, Resident Contact, Central Info; when Viewer show ONLY Resident Contact */}
+                    <div className="pt-2 border-t border-gray-100">
+                      {currentAssignment.role !== 'viewer' ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            currentAssignment.canEditBankAccounts ? 'bg-red-50/80 border-red-200 text-red-900 font-bold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
+                          }`}>
+                            <input
+                              type="checkbox"
+                              disabled={!canGrantEditBank}
+                              checked={Boolean(currentAssignment.canEditBankAccounts)}
+                              onChange={(e) => setUnifiedAssignmentValue('canEditBankAccounts', e.target.checked)}
+                              className="w-3.5 h-3.5 rounded text-red-600 focus:ring-red-500 cursor-pointer"
+                            />
+                            <span className="truncate">{t.team_bank_perm_badge || (isEn ? 'Modify IBAN (alerted)' : 'Bankszámla módosítás')}</span>
+                          </label>
 
-                      <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                        currentAssignment.showManagerContact ? 'bg-purple-50/80 border-purple-200 text-purple-900 font-bold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
-                      }`}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(currentAssignment.showManagerContact)}
-                          onChange={(e) => setUnifiedAssignmentValue('showManagerContact', e.target.checked)}
-                          className="w-3.5 h-3.5 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
-                        />
-                        <span className="truncate">{t.team_contact_perm_badge || (isEn ? 'Resident Contact' : 'Lakói kapcsolattartó')}</span>
-                      </label>
+                          <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            currentAssignment.showManagerContact ? 'bg-purple-50/80 border-purple-200 text-purple-900 font-bold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
+                          }`}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(currentAssignment.showManagerContact)}
+                              onChange={(e) => setUnifiedAssignmentValue('showManagerContact', e.target.checked)}
+                              className="w-3.5 h-3.5 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                            />
+                            <span className="truncate">{t.team_contact_perm_badge || (isEn ? 'Resident Contact' : 'Lakói kapcsolattartó')}</span>
+                          </label>
 
-                      <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                        currentAssignment.showCentralContact ? 'bg-blue-50/80 border-blue-200 text-[#1E3A8A] font-bold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
-                      }`}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(currentAssignment.showCentralContact)}
-                          onChange={(e) => setUnifiedAssignmentValue('showCentralContact', e.target.checked)}
-                          className="w-3.5 h-3.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
-                        />
-                        <span className="truncate">{isEn ? 'Show Central Escalation' : 'Központi cégadatok'}</span>
-                      </label>
+                          <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            currentAssignment.showCentralContact ? 'bg-blue-50/80 border-blue-200 text-[#1E3A8A] font-bold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
+                          }`}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(currentAssignment.showCentralContact)}
+                              onChange={(e) => setUnifiedAssignmentValue('showCentralContact', e.target.checked)}
+                              className="w-3.5 h-3.5 rounded text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                            />
+                            <span className="truncate">{isEn ? 'Show Central Escalation' : 'Központi cégadatok'}</span>
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="flex items-center">
+                          <label className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors max-w-sm ${
+                            currentAssignment.showManagerContact ? 'bg-purple-50/80 border-purple-200 text-purple-900 font-bold' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
+                          }`}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(currentAssignment.showManagerContact)}
+                              onChange={(e) => setUnifiedAssignmentValue('showManagerContact', e.target.checked)}
+                              className="w-3.5 h-3.5 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                            />
+                            <span className="truncate">{t.team_contact_perm_badge || (isEn ? 'Resident Contact' : 'Lakói kapcsolattartó')}</span>
+                          </label>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1618,11 +1699,11 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                       }`}
                                     >
                                       <Shield className="w-3 h-3" />
-                                      <span>{t.team_assign_role_manager || (isEn ? 'Editor' : 'Szerkesztő')}</span>
+                                      <span>{t.team_assign_role_manager || (isEn ? 'Full Manager' : 'Teljes kezelő')}</span>
                                     </button>
                                   </div>
 
-                                  {/* Bank accounts toggle */}
+                                  {/* Bank accounts toggle (Only when Full Manager) */}
                                   {!isViewer && canGrantEditBank && (
                                     <button
                                       type="button"
@@ -1639,7 +1720,7 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                     </button>
                                   )}
 
-                                  {/* Contact toggle */}
+                                  {/* Resident Contact toggle (Shown for BOTH Full Manager AND Viewer) */}
                                   <button
                                     type="button"
                                     onClick={() => updateBuildingAssignment(b.id, 'showManagerContact', !isContact)}
@@ -1653,6 +1734,37 @@ export function TeamManagementModal({ isOpen, onClose }) {
                                     <UserCheck className="w-3 h-3" />
                                     <span>{isContact ? (isEn ? 'Contact: On' : 'Kapcsolattartó: Be') : (isEn ? 'Contact: Off' : 'Kapcsolattartó: Ki')}</span>
                                   </button>
+
+                                  {/* Central Company Info toggle (Only when Full Manager) */}
+                                  {!isViewer && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const curAssignment = formBuildingAssignments[b.id] || {};
+                                        const curCentral = curAssignment.showCentralContact !== undefined
+                                          ? Boolean(curAssignment.showCentralContact)
+                                          : Boolean(allScopeDefaults.showCentralContact);
+                                        updateBuildingAssignment(b.id, 'showCentralContact', !curCentral);
+                                      }}
+                                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border flex items-center gap-1 cursor-pointer transition-colors ${
+                                        (formBuildingAssignments[b.id]?.showCentralContact !== undefined
+                                          ? formBuildingAssignments[b.id]?.showCentralContact
+                                          : allScopeDefaults.showCentralContact)
+                                          ? 'bg-blue-50 text-[#1E3A8A] border-blue-200 font-bold'
+                                          : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                      }`}
+                                      title={isEn ? 'Show central company escalation details to residents' : 'Központi cégadatok megjelenítése a lakóknak'}
+                                    >
+                                      <Building2 className="w-3 h-3" />
+                                      <span>
+                                        {(formBuildingAssignments[b.id]?.showCentralContact !== undefined
+                                          ? formBuildingAssignments[b.id]?.showCentralContact
+                                          : allScopeDefaults.showCentralContact)
+                                          ? (isEn ? 'Central: On' : 'Központi: Be')
+                                          : (isEn ? 'Central: Off' : 'Központi: Ki')}
+                                      </span>
+                                    </button>
+                                  )}
 
                                   {/* Copy to others button */}
                                   {((formScope === 'all' && orgBuildings.length > 1) || (formScope === 'selected' && formBuildingIds.length > 1)) && (

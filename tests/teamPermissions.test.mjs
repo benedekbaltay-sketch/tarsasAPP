@@ -970,6 +970,30 @@ test('16. diffTeamMemberChanges & buildTeamUpdateNotification: granular diffing 
   assert.ok(emailContentEn.htmlBody.includes('+ Granted'));
 });
 
+test('17. normalizeStaffPermissions & diffTeamMemberChanges support teamManageScope delegation', () => {
+  const normalized = normalizeStaffPermissions({
+    canManageTeam: true,
+    teamManageScope: 'assigned',
+  });
+  assert.equal(normalized.canManageTeam, true);
+  assert.equal(normalized.teamManageScope, 'assigned');
+
+  const oldMember = {
+    email: 'delegate@test.hu',
+    permissions: { canManageTeam: true, teamManageScope: 'assigned' },
+  };
+  const newMember = {
+    email: 'delegate@test.hu',
+    permissions: { canManageTeam: true, teamManageScope: 'all' },
+  };
+
+  const diff = diffTeamMemberChanges(oldMember, newMember);
+  assert.equal(diff.hasChanges, true);
+  const scopeChange = diff.changes.find((c) => c.category === 'canManageTeam' && c.type === 'modified');
+  assert.ok(scopeChange);
+  assert.ok(scopeChange.labelHu.includes('Kiterjesztve minden házra'));
+});
+
 
 
 

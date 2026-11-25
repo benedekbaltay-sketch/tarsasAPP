@@ -35,6 +35,7 @@ export function normalizeStaffPermissions(raw = {}) {
   return {
     canCreateBuildings: Boolean(raw?.canCreateBuildings),
     canManageTeam: Boolean(raw?.canManageTeam),
+    teamManageScope: raw?.teamManageScope === 'assigned' ? 'assigned' : 'all',
     canEditBankAccounts: Boolean(raw?.canEditBankAccounts),
     canDeleteBuildings: false,
   };
@@ -800,6 +801,19 @@ export function diffTeamMemberChanges(oldMember, newMemberData, buildings = []) 
         labelEn: pc.revokedEn,
       });
     }
+  }
+
+  if (oldPerms.canManageTeam && newPerms.canManageTeam && oldPerms.teamManageScope !== newPerms.teamManageScope) {
+    changes.push({
+      type: 'modified',
+      category: 'canManageTeam',
+      labelHu: newPerms.teamManageScope === 'assigned'
+        ? 'Csapatkezelés hatásköre: Csak a kijelölt házakra korlátozva'
+        : 'Csapatkezelés hatásköre: Kiterjesztve minden házra (Társadminisztrátor)',
+      labelEn: newPerms.teamManageScope === 'assigned'
+        ? 'Team delegation scope: Restricted to assigned condominiums only'
+        : 'Team delegation scope: Expanded to all condominiums (Co-admin)',
+    });
   }
 
   // 5. Contact info update

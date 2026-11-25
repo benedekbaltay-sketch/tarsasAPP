@@ -862,10 +862,19 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
 
     - **Egységes Jogosultság Blokkok és Lenyitható Egyedi Felülbírálás (`TeamManagementModal.jsx`):**
       - A fejlécbeli és láblécbeli akciógombok egységesen és letisztultan **„Mentés”** feliratot kaptak a korábbi hosszabb címkék helyett, közvetlen HTML5 form-beküldéssel (`form="team-member-form"`).
-      - A házak kiválasztása után egyetlen fehér konténerben, **„Jogosultságok megadása”** főblokkban helyezkednek el a beállítások:
-        1. **Cégszintű jogosultságok (A cég egészére érvényes)**: új házak létrehozása, csapat kezelése, törlés tiltása.
-        2. **Házszintű jogosultságok**: a tömeges szerepkör (Teljes kezelő / Szerkesztő vs. Csak megtekintő), bank IBAN szerkesztés és lakói kapcsolattartó kijelölés automatikusan minden kiválasztott házra érvényesül.
-        3. **Házankénti egyedi jogosultságok testreszabása**: alapértelmezetten csukott állapotú (`showAllScopeBuildingOverrides = false`), kizárólag a kis nyílra kattintva nyílik le, és kizárólag a feljebb kiválasztott házakat jeleníti meg független egyedi finomhangolásra.
+      - **Cégszintű jogosultságok átrendezése és kompakttá tétele**:
+        1. **Munkatársak meghívása és házak kiosztása (Csapatkezelés)**: került az első helyre. Bekapcsolása esetén alatta azonnal választható a hatáskör:
+           - *Teljes jogosultság (Minden házra)*: Társadminisztrátor / co-admin szint, minden házra oszthat jogosultságot és mindent kezelhet, kivéve a társasházak törlését.
+           - *Csak a kijelölt házakra*: Kizárólag az általa kezelt társasházakra vonatkozóan oszthat ki jogosultságot.
+        2. **Új társasház létrehozása**: került a második helyre.
+        3. **Társasházak törlése — Kizárólag tulajdonosnak**: harmadik, zárolt védelem.
+      - **Jogosultságok és lakói megjelenítés**:
+        - Tömeges kártyán a fő választás: **Teljes kezelő (szerkesztés, könyvelés)** vs. **Csak megtekintő (csak olvasás)**.
+        - Ha **Teljes kezelő** van kiválasztva: megjelenik mind a 3 opció (Bankszámla módosítás, Lakói kapcsolattartó, Központi cégadatok).
+        - Ha **Csak megtekintő** van kiválasztva: a bank és a központi adatok rejtve maradnak, de a **Lakói kapcsolattartó** opció ekkor is megjelenik és beállítható.
+      - **Házankénti egyedi jogosultságok testreszabása**:
+        - Alapértelmezetten csukott állapotú (`showAllScopeBuildingOverrides = false`), kis nyíllal lenyitható, kizárólag a kijelölt házakat listázza.
+        - Minden háznál állítható a szerepkör (Teljes kezelő vs. Csak megtekintő). Teljes kezelőnél mind a három gomb (Bank, Kapcsolattartó, Központi adatok) aktív; Csak megtekintőnél a Bank és Központi adatok rejtve vannak, de a Lakói kapcsolattartó aktív és bekapcsolható.
 3. **Strukturált Jelvényes Megjelenítés az Értesítési Központban (`NotificationBell.jsx`)**:
    - Mind a lenyíló előnézeti menüben, mind a teljes üzenet részleteit megjelenítő felugró ablakban a jogosultságváltozások vizuálisan, színes jelvényekkel ellátva jelennek meg:
      - `+ Megadva` (zöld)
