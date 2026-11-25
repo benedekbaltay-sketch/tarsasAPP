@@ -1205,7 +1205,52 @@ test('21. Strict anti-privilege-escalation: delegator can ONLY grant permissions
     'privilege_escalation'
   );
 
-  // 6. Valid delegation within own permissions (manager on b1, viewer on b2, assigned-only team manage) IS allowed
+  // 6. Cannot grant showCentralContact on 'b1' when delegator does not hold it on 'b1'
+  assert.equal(
+    canActorManageTargetMember(
+      limitedDelegatorCtx,
+      target,
+      { canManageTeam: false },
+      'delegator@alfa.hu',
+      {
+        buildingScope: 'selected',
+        buildingIds: ['b1'],
+        buildingAssignments: { b1: { role: 'manager', canEditBankAccounts: false, showCentralContact: true } },
+      }
+    ).reason,
+    'privilege_escalation'
+  );
+
+  // 7. Viewer on 'b2' CANNOT assign Resident Contact (showManagerContact) on 'b2'
+  assert.equal(
+    canActorManageTargetMember(
+      limitedDelegatorCtx,
+      target,
+      { canManageTeam: false },
+      'delegator@alfa.hu',
+      {
+        buildingScope: 'selected',
+        buildingIds: ['b2'],
+        buildingAssignments: { b2: { role: 'viewer', showManagerContact: true } },
+      }
+    ).reason,
+    'privilege_escalation'
+  );
+
+  // 8. Assigned-only delegator CANNOT edit/suspend/remove a higher-privileged Co-admin
+  const coAdminTarget = {
+    id: 'm-coadmin',
+    email: 'coadmin@alfa.hu',
+    orgRole: 'staff',
+    buildingScope: 'all',
+    permissions: { canManageTeam: true, teamManageScope: 'all', canCreateBuildings: true },
+  };
+  assert.equal(
+    canActorManageTargetMember(limitedDelegatorCtx, coAdminTarget, null, 'delegator@alfa.hu').reason,
+    'privilege_escalation'
+  );
+
+  // 9. Valid delegation within own permissions (manager on b1, viewer on b2, assigned-only team manage) IS allowed
   assert.equal(
     canActorManageTargetMember(
       limitedDelegatorCtx,
@@ -1216,8 +1261,8 @@ test('21. Strict anti-privilege-escalation: delegator can ONLY grant permissions
         buildingScope: 'selected',
         buildingIds: ['b1', 'b2'],
         buildingAssignments: {
-          b1: { role: 'manager', canEditBankAccounts: false },
-          b2: { role: 'viewer', canEditBankAccounts: false },
+          b1: { role: 'manager', canEditBankAccounts: false, showCentralContact: false },
+          b2: { role: 'viewer', canEditBankAccounts: false, showCentralContact: false },
         },
       }
     ).allowed,

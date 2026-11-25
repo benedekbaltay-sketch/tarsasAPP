@@ -419,11 +419,44 @@ export function canActorManageTargetMember(
       return { allowed: false, reason: 'cannot_modify_self' };
     }
 
+    const actorHasAllScope =
+      actorCtx.member?.buildingScope === 'all' &&
+      actorCtx.permissions?.teamManageScope !== 'assigned';
+    const actorAllowedBIds = new Set((actorCtx.member?.buildingIds || []).map(String));
+    const actorHasAnyBankEdit =
+      Boolean(actorCtx.permissions?.canEditBankAccounts) ||
+      Object.values(actorCtx.member?.buildingAssignments || {}).some((a) => Boolean(a?.canEditBankAccounts));
+
+    // Prevent a staff member from editing/suspending/removing a colleague who holds higher privileges or out-of-scope buildings
+    if (targetMember && targetMember.orgRole === 'staff') {
+      if (targetMember.permissions?.canCreateBuildings && !actorCtx.permissions.canCreateBuildings) {
+        return { allowed: false, reason: 'privilege_escalation' };
+      }
+      if (
+        targetMember.permissions?.canManageTeam &&
+        targetMember.permissions?.teamManageScope !== 'assigned' &&
+        actorCtx.permissions.teamManageScope === 'assigned'
+      ) {
+        return { allowed: false, reason: 'privilege_escalation' };
+      }
+      if (!actorHasAllScope) {
+        if (targetMember.buildingScope === 'all') {
+          return { allowed: false, reason: 'privilege_escalation' };
+        }
+        const targetBIds = Array.isArray(targetMember.buildingIds) ? targetMember.buildingIds.map(String) : [];
+        for (const bId of targetBIds) {
+          if (!actorAllowedBIds.has(bId)) {
+            return { allowed: false, reason: 'privilege_escalation' };
+          }
+        }
+      }
+    }
+
     if (requestedPermissions) {
       if (requestedPermissions.canCreateBuildings && !actorCtx.permissions.canCreateBuildings) {
         return { allowed: false, reason: 'privilege_escalation' };
       }
-      if (requestedPermissions.canEditBankAccounts && !actorCtx.permissions.canEditBankAccounts) {
+      if (requestedPermissions.canEditBankAccounts && !actorHasAnyBankEdit) {
         return { allowed: false, reason: 'privilege_escalation' };
       }
       if (requestedPermissions.canManageTeam && !actorCtx.permissions.canManageTeam) {
@@ -441,11 +474,6 @@ export function canActorManageTargetMember(
 
     // Strict per-building & scope anti-privilege-escalation checks
     if (requestedScopePayload) {
-      const actorHasAllScope =
-        actorCtx.member?.buildingScope === 'all' &&
-        actorCtx.permissions?.teamManageScope !== 'assigned';
-      const actorAllowedBIds = new Set((actorCtx.member?.buildingIds || []).map(String));
-
       const reqScope = requestedScopePayload.buildingScope === 'all' ? 'all' : 'selected';
       const reqBuildingIds = Array.isArray(requestedScopePayload.buildingIds)
         ? requestedScopePayload.buildingIds.map(String)
@@ -473,11 +501,20 @@ export function canActorManageTargetMember(
         const actorIsViewerHere =
           actorAssign.role === 'viewer' ||
           (!actorAssign.role && (actorCtx.member?.role === 'viewer' || actorCtx.member?.defaultRole === 'viewer'));
-        const actorCanBankHere = Boolean(
-          actorAssign.canEditBankAccounts !== undefined
-            ? actorAssign.canEditBankAccounts
-            : actorCtx.permissions?.canEditBankAccounts
-        );
+        const actorCanBankHere =
+          !actorIsViewerHere &&
+          Boolean(
+            actorAssign.canEditBankAccounts !== undefined
+              ? actorAssign.canEditBankAccounts
+              : actorCtx.permissions?.canEditBankAccounts
+          );
+        const actorCanCentralHere =
+          !actorIsViewerHere &&
+          Boolean(
+            actorAssign.showCentralContact !== undefined
+              ? actorAssign.showCentralContact
+              : actorHasAllScope
+          );
 
         // A viewer on building B cannot grant Full Manager on building B
         if (reqAssign.role !== 'viewer' && actorIsViewerHere) {
@@ -485,6 +522,14 @@ export function canActorManageTargetMember(
         }
         // Cannot grant bank account editing on building B without holding it on B
         if (reqAssign.canEditBankAccounts && !actorCanBankHere) {
+          return { allowed: false, reason: 'privilege_escalation' };
+        }
+        // Cannot grant central company info display on building B without holding it on B
+        if (reqAssign.showCentralContact && !actorCanCentralHere) {
+          return { allowed: false, reason: 'privilege_escalation' };
+        }
+        // A viewer on building B cannot assign Resident Contact on building B
+        if (reqAssign.showManagerContact && actorIsViewerHere) {
           return { allowed: false, reason: 'privilege_escalation' };
         }
       }
