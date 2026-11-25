@@ -441,18 +441,23 @@ export function TeamManagementModal({ isOpen, onClose }) {
     }
 
     if (editingMemberId) {
-      const ok = updateTeamMember(editingMemberId, {
-        name: formName,
-        phone: formPhone,
-        buildingScope: formScope,
-        buildingIds: formBuildingIds,
-        permissions: permissionsPayload,
-        buildingAssignments: assignmentsPayload,
-        sendNotification: sendNotificationOnUpdate,
-      });
-      if (ok) {
-        resetInviteForm();
-        setActiveTab('members');
+      setIsSubmittingInvite(true);
+      try {
+        const ok = await updateTeamMember(editingMemberId, {
+          name: formName,
+          phone: formPhone,
+          buildingScope: formScope,
+          buildingIds: formBuildingIds,
+          permissions: permissionsPayload,
+          buildingAssignments: assignmentsPayload,
+          sendNotification: sendNotificationOnUpdate,
+        });
+        if (ok) {
+          resetInviteForm();
+          setActiveTab('members');
+        }
+      } finally {
+        setIsSubmittingInvite(false);
       }
       return;
     }

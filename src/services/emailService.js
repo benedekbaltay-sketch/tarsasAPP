@@ -12,6 +12,7 @@
 import {
   buildInviteWelcomeEmailContent,
   buildForgotPasswordEmailContent,
+  buildPermissionUpdateEmailContent,
   resolveBuildingResidentContact,
   normalizeEmail,
 } from '../utils/teamPermissions.js';
@@ -189,6 +190,60 @@ export async function sendColleagueInviteCustomEmail({
     buildingNames,
     buildingScope,
     actionUrl,
+    isEn,
+  });
+
+  return sendTransactionalEmail({
+    to: recipientEmail,
+    subject,
+    html: htmlBody,
+    text: textBody,
+    from: effective.senderEmail,
+    replyTo: dynamicReplyTo,
+    senderName: effective.senderName || orgName || 'TarsasApp',
+    apiKey: effective.apiKey,
+  });
+}
+
+/**
+ * Sends a notification email to a staff colleague when their condominium assignments
+ * or permissions are modified by the organization Owner.
+ */
+export async function sendColleaguePermissionUpdateEmail({
+  recipientName = '',
+  recipientEmail = '',
+  orgName = '',
+  actorName = '',
+  actorEmail = '',
+  changes = [],
+  actionUrl = '',
+  targetBuilding = null,
+  repProfile = {},
+  organizations = [],
+  isEn = false,
+  emailSettings = {},
+} = {}) {
+  const effective = resolveEffectiveEmailSettings(emailSettings);
+  if (!effective.isConfigured) {
+    return { success: false, skipped: true, error: 'not-configured', message: 'Nincs beállítva központi Resend API kulcs.' };
+  }
+
+  let dynamicReplyTo = '';
+  if (targetBuilding) {
+    dynamicReplyTo = resolveBuildingResidentEmail(targetBuilding, repProfile, organizations);
+  }
+  if (!dynamicReplyTo) {
+    dynamicReplyTo = normalizeEmail(actorEmail);
+  }
+
+  const { subject, textBody, htmlBody } = buildPermissionUpdateEmailContent({
+    recipientName,
+    recipientEmail,
+    orgName,
+    actorName,
+    actorEmail,
+    changes,
+    actionUrl: actionUrl || 'https://hazapp.hu',
     isEn,
   });
 

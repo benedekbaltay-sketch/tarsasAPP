@@ -11,6 +11,7 @@ import {
   buildNotification,
   diffTeamMemberChanges,
   buildTeamUpdateNotification,
+  buildPermissionUpdateEmailContent,
   getNotificationsForUser,
   buildInviteMailtoUrl,
 } from '../utils/teamPermissions';
@@ -21,6 +22,7 @@ import {
 import {
   resolveEffectiveEmailSettings,
   sendColleagueInviteCustomEmail,
+  sendColleaguePermissionUpdateEmail,
 } from '../services/emailService';
 import { formatTaxNumber } from '../utils/taxNumber';
 
@@ -490,7 +492,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
   };
 
   // Update an existing staff member's building scope, per-building assignments & permissions
-  const updateTeamMember = (memberId, { name, phone, buildingScope, buildingIds, permissions, buildingAssignments, sendNotification = true }) => {
+  const updateTeamMember = async (memberId, { name, phone, buildingScope, buildingIds, permissions, buildingAssignments, sendNotification = true }) => {
     const actor = state.currentUser;
     const actorCtx = resolveUserOrgContext(actor, state.organizations, state.buildings);
     if (!actor || !actorCtx.org || !canUserManageTeam(actor, state.organizations, state.buildings)) {
@@ -535,7 +537,19 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       buildingAssignments: cleanBuildingAssignments,
     }, state.buildings || []);
 
+    const orgDisplayName =
+      actorCtx.org?.name ||
+      state.repProfile?.companyName ||
+      state.repProfile?.name ||
+      actor.name ||
+      (isEn() ? 'Property Management' : 'Közös Képviselet');
+
+    const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://hazapp.hu';
+
     let updateNotif = null;
+    let outboxEntry = null;
+    let emailContent = null;
+
     if (sendNotification !== false && diff.hasChanges) {
       updateNotif = buildTeamUpdateNotification({
         actorUser: actor,
@@ -543,6 +557,37 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         changes: diff.changes,
         diff,
       });
+
+      emailContent = buildPermissionUpdateEmailContent({
+        recipientName: targetName,
+        recipientEmail: targetEmail,
+        orgName: orgDisplayName,
+        actorName: actor.name || actor.email,
+        actorEmail: actor.email,
+        changes: diff.changes,
+        actionUrl: origin,
+        isEn: isEn(),
+      });
+
+      const outboxId = `outbox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      outboxEntry = {
+        id: outboxId,
+        type: 'team_permissions_updated',
+        category: 'team',
+        recipient: targetEmail,
+        recipientEmail: targetEmail,
+        recipientName: targetName,
+        subject: emailContent.subject,
+        subjectHu: emailContent.subject,
+        subjectEn: emailContent.subject,
+        bodyText: emailContent.textBody,
+        message: emailContent.textBody,
+        status: 'sending',
+        buildingName: orgDisplayName,
+        queuedAt: new Date().toISOString(),
+        sentAt: new Date().toISOString(),
+        changes: diff.changes,
+      };
     }
 
     persistState((s) => {
@@ -610,10 +655,72 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         organizations: nextOrgs,
         buildings: nextBuildings,
         notifications: updateNotif ? [updateNotif, ...(s.notifications || [])].slice(0, 300) : (s.notifications || []),
+        emailOutbox: outboxEntry ? [outboxEntry, ...(s.emailOutbox || [])].slice(0, 500) : (s.emailOutbox || []),
       };
     }, true);
 
-    showToast(t.team_member_updated_toast || (isEn() ? 'Team member permissions updated!' : 'Munkatárs jogosultságai frissítve!'));
+    let isEmailSent = false;
+    let emailErr = null;
+    if (outboxEntry) {
+      try {
+        const emailSettings = resolveEffectiveEmailSettings(state.emailSettings);
+        const emailRes = await sendColleaguePermissionUpdateEmail({
+          recipientName: targetName,
+          recipientEmail: targetEmail,
+          orgName: orgDisplayName,
+          actorName: actor.name || actor.email,
+          actorEmail: actor.email,
+          changes: diff.changes,
+          actionUrl: origin,
+          repProfile: state.repProfile,
+          organizations: state.organizations,
+          isEn: isEn(),
+          emailSettings,
+        });
+
+        isEmailSent = Boolean(emailRes && (emailRes.success || emailRes.id || emailRes.messageId));
+        if (!isEmailSent) {
+          emailErr = emailRes?.message || emailRes?.error || 'send-failed';
+        }
+      } catch (err) {
+        emailErr = err?.message || 'send-failed';
+      }
+
+      persistState((s) => ({
+        ...s,
+        emailOutbox: (s.emailOutbox || []).map((item) =>
+          item.id === outboxEntry.id
+            ? {
+                ...item,
+                status: isEmailSent ? 'sent' : 'failed',
+                errorMessage: isEmailSent ? null : emailErr,
+                sentAt: new Date().toISOString(),
+              }
+            : item
+        ),
+      }), true);
+    }
+
+    if (outboxEntry && isEmailSent) {
+      showToast(
+        t.team_member_updated_and_notified_toast
+          ? t.team_member_updated_and_notified_toast.replace('{email}', targetEmail)
+          : (isEn()
+              ? `Team member permissions updated and notification email sent to ${targetEmail}!`
+              : `Munkatárs jogosultságai frissítve és az értesítő e-mail elküldve ide: ${targetEmail}!`)
+      );
+    } else if (outboxEntry && !isEmailSent) {
+      showToast(
+        t.team_member_updated_email_failed_toast
+          ? t.team_member_updated_email_failed_toast.replace('{email}', targetEmail)
+          : (isEn()
+              ? `Permissions saved, but email could not be delivered to ${targetEmail}.`
+              : `Jogosultságok mentve, de az e-mail kézbesítése sikertelen volt ide: ${targetEmail}.`),
+        'warning'
+      );
+    } else {
+      showToast(t.team_member_updated_toast || (isEn() ? 'Team member permissions updated!' : 'Munkatárs jogosultságai frissítve!'));
+    }
     return true;
   };
 

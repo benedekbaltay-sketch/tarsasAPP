@@ -1379,6 +1379,166 @@ export function buildForgotPasswordEmailContent({
 }
 
 /**
+ * Builds professional Hungarian or English email content (subject, textBody, htmlBody)
+ * for notifying a colleague when an Owner updates their condominium access or permissions,
+ * including a structured breakdown with badges (+ Megadva, − Visszavonva, ~ Módosítva).
+ */
+export function buildPermissionUpdateEmailContent({
+  recipientName = '',
+  recipientEmail = '',
+  orgName = '',
+  actorName = '',
+  actorEmail = '',
+  changes = [],
+  actionUrl = 'https://hazapp.hu',
+  isEn = false,
+} = {}) {
+  const cleanRecipientName = String(recipientName || '').trim();
+  const cleanRecipientEmail = String(recipientEmail || '').trim().toLowerCase();
+  const cleanRecipient = cleanRecipientName || cleanRecipientEmail || (isEn ? 'Colleague' : 'Kolléga');
+  const cleanOrg = String(orgName || (isEn ? 'Property Management' : 'Közös Képviselet')).trim();
+  const cleanActorName = String(actorName || '').trim();
+  const cleanActorEmail = String(actorEmail || '').trim().toLowerCase();
+  const actorDisplay = cleanActorName && cleanActorEmail
+    ? `${cleanActorName} (${cleanActorEmail})`
+    : cleanActorName || cleanActorEmail || cleanOrg;
+
+  const changesList = Array.isArray(changes) ? changes : [];
+
+  if (isEn) {
+    const subject = `TarsasApp – Condominium Access Updated (${cleanOrg})`;
+    const textChanges = changesList.map((ch) => {
+      const tag = ch.type === 'granted' ? '[+ Granted]' : ch.type === 'revoked' ? '[− Revoked]' : '[~ Modified]';
+      return `• ${tag} ${ch.labelEn || ch.labelHu}`;
+    }).join('\n');
+
+    const textBody = [
+      `Hello ${cleanRecipient},`,
+      '',
+      `${actorDisplay} has updated your property management access permissions in TarsasApp for ${cleanOrg}.`,
+      '',
+      'Summary of changes:',
+      textChanges || '• Your permissions were updated.',
+      '',
+      'You can access the updated condominiums and details at:',
+      actionUrl,
+      '',
+      'Best regards,',
+      cleanOrg,
+    ].join('\n');
+
+    const htmlChanges = changesList.map((ch) => {
+      const badgeStyle = ch.type === 'granted'
+        ? 'background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;'
+        : ch.type === 'revoked'
+        ? 'background:#fff1f2;color:#be123c;border:1px solid #fecdd3;'
+        : 'background:#fffbeb;color:#b45309;border:1px solid #fde68a;';
+      const badgeText = ch.type === 'granted' ? '+ Granted' : ch.type === 'revoked' ? '− Revoked' : '~ Modified';
+      return `
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:8px;">
+          <span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap;${badgeStyle}">${badgeText}</span>
+          <span style="font-size:13px;color:#1e293b;font-weight:500;line-height:1.4;">${escapeHtmlForEmail(ch.labelEn || ch.labelHu)}</span>
+        </div>
+      `;
+    }).join('');
+
+    const htmlBody = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:580px;margin:0 auto;padding:32px 24px;color:#1e293b;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 4px 12px rgba(0,0,0,0.04);">
+        <div style="display:flex;align-items:center;margin-bottom:20px;border-bottom:2px solid #f1f5f9;padding-bottom:16px;">
+          <h2 style="margin:0;color:#1E3A8A;font-size:20px;font-weight:800;letter-spacing:-0.02em;">TarsasApp</h2>
+          <span style="margin-left:auto;font-size:11px;font-weight:700;color:#64748b;background:#f8fafc;padding:4px 10px;border-radius:20px;border:1px solid #e2e8f0;">${escapeHtmlForEmail(cleanOrg)}</span>
+        </div>
+        <h3 style="margin:0 0 14px;color:#0f172a;font-size:17px;font-weight:700;">Condominium Access Updated</h3>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">
+          Hello <strong>${escapeHtmlForEmail(cleanRecipient)}</strong>,
+        </p>
+        <p style="font-size:14px;line-height:1.6;margin:0 0 16px;color:#334155;">
+          <strong>${escapeHtmlForEmail(actorDisplay)}</strong> has updated your condominium access permissions in TarsasApp for <strong>${escapeHtmlForEmail(cleanOrg)}</strong>.
+        </p>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:0 0 24px;">
+          <div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">
+            Detailed changes:
+          </div>
+          ${htmlChanges || '<p style="font-size:13px;color:#64748b;margin:0;">Your permissions have been updated.</p>'}
+        </div>
+        <div style="text-align:center;margin:28px 0;">
+          <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:12px;font-size:14px;box-shadow:0 2px 6px rgba(30,58,138,0.25);">
+            Open TarsasApp &rarr;
+          </a>
+        </div>
+      </div>
+    `.trim();
+
+    return { subject, textBody, htmlBody };
+  }
+
+  const subject = `TarsasApp – Házkezelési jogosultságaid módosultak (${cleanOrg})`;
+  const textChanges = changesList.map((ch) => {
+    const tag = ch.type === 'granted' ? '[+ Megadva]' : ch.type === 'revoked' ? '[− Visszavonva]' : '[~ Módosítva]';
+    return `• ${tag} ${ch.labelHu || ch.labelEn}`;
+  }).join('\n');
+
+  const textBody = [
+    `Kedves ${cleanRecipient}!`,
+    '',
+    `${actorDisplay} módosította a társasházkezelési jogosultságaidat a TarsasApp rendszerben (${cleanOrg}).`,
+    '',
+    'Változtatások összefoglalása:',
+    textChanges || '• A jogosultságaid frissültek.',
+    '',
+    'A módosított társasházakat és felületeket közvetlenül megtekintheted itt:',
+    actionUrl,
+    '',
+    'Üdvözlettel,',
+    cleanOrg,
+  ].join('\n');
+
+  const htmlChanges = changesList.map((ch) => {
+    const badgeStyle = ch.type === 'granted'
+      ? 'background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;'
+      : ch.type === 'revoked'
+      ? 'background:#fff1f2;color:#be123c;border:1px solid #fecdd3;'
+      : 'background:#fffbeb;color:#b45309;border:1px solid #fde68a;';
+    const badgeText = ch.type === 'granted' ? '+ Megadva' : ch.type === 'revoked' ? '− Visszavonva' : '~ Módosítva';
+    return `
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:8px;">
+        <span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap;${badgeStyle}">${badgeText}</span>
+        <span style="font-size:13px;color:#1e293b;font-weight:500;line-height:1.4;">${escapeHtmlForEmail(ch.labelHu || ch.labelEn)}</span>
+      </div>
+    `;
+  }).join('');
+
+  const htmlBody = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:580px;margin:0 auto;padding:32px 24px;color:#1e293b;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 4px 12px rgba(0,0,0,0.04);">
+      <div style="display:flex;align-items:center;margin-bottom:20px;border-bottom:2px solid #f1f5f9;padding-bottom:16px;">
+        <h2 style="margin:0;color:#1E3A8A;font-size:20px;font-weight:800;letter-spacing:-0.02em;">TarsasApp</h2>
+        <span style="margin-left:auto;font-size:11px;font-weight:700;color:#64748b;background:#f8fafc;padding:4px 10px;border-radius:20px;border:1px solid #e2e8f0;">${escapeHtmlForEmail(cleanOrg)}</span>
+      </div>
+      <h3 style="margin:0 0 14px;color:#0f172a;font-size:17px;font-weight:700;">Házkezelési jogosultságaid módosultak</h3>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;">
+        Kedves <strong>${escapeHtmlForEmail(cleanRecipient)}</strong>!
+      </p>
+      <p style="font-size:14px;line-height:1.6;margin:0 0 16px;color:#334155;">
+        <strong>${escapeHtmlForEmail(actorDisplay)}</strong> módosította a társasházkezelési jogosultságaidat a TarsasApp rendszerben (${escapeHtmlForEmail(cleanOrg)}).
+      </p>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:0 0 24px;">
+        <div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:10px;">
+          Részletes változások:
+        </div>
+        ${htmlChanges || '<p style="font-size:13px;color:#64748b;margin:0;">A jogosultságaid módosultak.</p>'}
+      </div>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${escapeHtmlForEmail(actionUrl)}" style="display:inline-block;background:#1E3A8A;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:12px;font-size:14px;box-shadow:0 2px 6px rgba(30,58,138,0.25);">
+          Megnyitás a TarsasApp-ban &rarr;
+        </a>
+      </div>
+    </div>
+  `.trim();
+
+  return { subject, textBody, htmlBody };
+}
+
+/**
  * Builds a pre-filled `mailto:` URL so an Owner can optionally send a personal welcome
  * email directly from their own mail client alongside the automatic password-setup email.
  */

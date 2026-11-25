@@ -29,6 +29,7 @@ import {
   resolveUserDisplayName,
   diffTeamMemberChanges,
   buildTeamUpdateNotification,
+  buildPermissionUpdateEmailContent,
 } from '../src/utils/teamPermissions.js';
 
 const BUILDINGS = [
@@ -934,6 +935,39 @@ test('16. diffTeamMemberChanges & buildTeamUpdateNotification: granular diffing 
   assert.ok(notif.messageHu.includes('Főtulajdonos Péter'));
   assert.ok(notif.messageHu.includes('Batyu u. 21.'));
   assert.equal(notif.changes.length, diff.changes.length);
+
+  // Test email content builder
+  const emailContentHu = buildPermissionUpdateEmailContent({
+    recipientName: oldMember.name,
+    recipientEmail: oldMember.email,
+    orgName: 'Batyu Kezelő Kft.',
+    actorName: 'Főtulajdonos Péter',
+    actorEmail: 'owner@test.hu',
+    changes: diff.changes,
+    actionUrl: 'https://hazapp.hu',
+    isEn: false,
+  });
+
+  assert.ok(emailContentHu.subject.includes('Házkezelési jogosultságaid módosultak'));
+  assert.ok(emailContentHu.textBody.includes('Kedves Kolléga Károly!'));
+  assert.ok(emailContentHu.textBody.includes('Batyu u. 21.'));
+  assert.ok(emailContentHu.htmlBody.includes('Főtulajdonos Péter'));
+  assert.ok(emailContentHu.htmlBody.includes('https://hazapp.hu'));
+
+  const emailContentEn = buildPermissionUpdateEmailContent({
+    recipientName: oldMember.name,
+    recipientEmail: oldMember.email,
+    orgName: 'Batyu Management Ltd.',
+    actorName: 'Peter Owner',
+    actorEmail: 'owner@test.hu',
+    changes: diff.changes,
+    actionUrl: 'https://hazapp.hu',
+    isEn: true,
+  });
+
+  assert.ok(emailContentEn.subject.includes('Condominium Access Updated'));
+  assert.ok(emailContentEn.textBody.includes('Hello Kolléga Károly,'));
+  assert.ok(emailContentEn.htmlBody.includes('+ Granted'));
 });
 
 

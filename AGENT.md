@@ -845,11 +845,16 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
      - **Elérhetőségi adatok**: Név és telefonszám változások.
    - Visszatérési érték: `{ hasChanges, changes: [{ type: 'granted'|'revoked'|'modified', category, labelHu, labelEn }], summaryLinesHu, summaryLinesEn }`.
 
-2. **Opcionális Értesítésküldés Jelölőnégyzet (`TeamManagementModal.jsx`)**:
+2. **Opcionális Értesítésküldés és Valós E-mail Kiküldés (`TeamManagementModal.jsx`, `emailService.js`, `teamActions.js`)**:
    - A munkatárs szerkesztésekor a mentés gomb bal oldalán található egy jelölőnégyzet:
      - `"Értesítés küldése a felhasználónak a változtatásokról"` (`team_send_notification_checkbox`).
      - Alapértelmezett értéke bepipált (`true`).
-     - Amennyiben a felhasználó kikapcsolja a jelölőnégyzetet, vagy nincs tényleges változás, a rendszer nem küld és nem rögzít értesítést.
+   - **Valós Tranzakciós E-mail Értesítés (`sendColleaguePermissionUpdateEmail`, `buildPermissionUpdateEmailContent`)**:
+     - Amikor az értesítés engedélyezve van és történt változás, a rendszer nemcsak belső értesítést hoz létre, hanem valós e-mailt küld ki a munkatárs hivatalos e-mail címére a központi hitelesített domainről (`kozoskepviselet@mail.hazapp.hu`), válaszcímként (`Reply-To`) a mentést végző tulajdonos címét megadva.
+     - Az e-mail sablon modern, kártyás megjelenésű, a TarsasApp hivatalos arculatával, a változások színes jelvényeivel (`+ Megadva`, `− Visszavonva`, `~ Módosítva`) és közvetlen belépési gombbal a `hazapp.hu`-ra.
+     - A kiküldött levél rögzítésre kerül a Kommunikációs Központ kimenő naplójában (`emailOutbox`) is, így a tulajdonos is nyomon tudja követni.
+     - A mentés gomb az e-mail elküldésének idejére betöltési animációt (`Loader2`) jelenít meg, és sikeres küldés esetén toast üzenetben visszaigazolja a címzett e-mail címét.
+   - Amennyiben a felhasználó kikapcsolja a jelölőnégyzetet, vagy nincs tényleges változás, a rendszer nem küld e-mailt és nem hoz létre értesítést.
 
 3. **Strukturált Jelvényes Megjelenítés az Értesítési Központban (`NotificationBell.jsx`)**:
    - Mind a lenyíló előnézeti menüben, mind a teljes üzenet részleteit megjelenítő felugró ablakban a jogosultságváltozások vizuálisan, színes jelvényekkel ellátva jelennek meg:
