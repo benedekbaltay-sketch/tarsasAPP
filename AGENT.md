@@ -858,7 +858,9 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
    - **Felhő Értesítés Deduplikáció Mentesség (`syncEngine.js`)**:
      - A `team_updated` és `bank_account_changed` típusú értesítések kivételt képeznek a napi deduplikációs szűrő alól, így ugyanazon a napon végzett többszöri tulajdonosi mentés sem veszik el, hanem minden módosítás azonnal célba ér a munkatárs fiókjában.
    - **Opcionális Kapcsoló a Szerkesztőben (`TeamManagementModal.jsx`)**:
-     - A tulajdonos a munkatárs szerkesztésekor a mentés gomb mellett eldöntheti, hogy megjelenjen-e profilbeli értesítés (`team_send_notification_checkbox`). Alapértelmezett értéke bepipált (`true`).
+     - A tulajdonos a munkatárs szerkesztésekor a mentés gomb mellett eldöntheti, hogy megjelenjen-e értesítés (`team_send_notification_checkbox`). Alapértelmezett értéke bepipált (`true`).
+     - **Szigorú változás-ellenőrzés (`teamActions.js`, `teamPermissions.js`)**: Ha ténylegesen **nem történt módosítás** (`diff.hasChanges === false`), a rendszer **nem küld értesítést**. A `diffTeamMemberChanges` normalizálja a régi `undefined` mezőket (`teamManageScope`, `phone`), és újonnan hozzárendelt házaknál nem generál megtévesztő `Teljes kezelő → Csak megtekintő` sort.
+     - **Duplikációmentes megjelenítés (`NotificationBell.jsx`, `CommunicationCenterModal.jsx`, `buildTeamUpdateNotification`)**: A `messageHu`/`messageEn` csak egy rövid összefoglaló bevezető sort tartalmaz, a konkrét változások pedig kizárólag egyszer, strukturált színes jelvényekkel jelennek meg.
 
     - **Egységes Jogosultság Blokkok és Lenyitható Egyedi Felülbírálás (`TeamManagementModal.jsx`):**
       - A fejlécbeli és láblécbeli akciógombok egységesen és letisztultan **„Mentés”** feliratot kaptak a korábbi hosszabb címkék helyett, közvetlen HTML5 form-beküldéssel (`form="team-member-form"`).

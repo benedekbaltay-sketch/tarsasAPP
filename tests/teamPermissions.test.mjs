@@ -933,8 +933,9 @@ test('16. diffTeamMemberChanges & buildTeamUpdateNotification: granular diffing 
   assert.equal(notif.type, 'team_updated');
   assert.equal(notif.recipientEmail, 'colleague@test.hu');
   assert.ok(notif.messageHu.includes('Főtulajdonos Péter'));
-  assert.ok(notif.messageHu.includes('Batyu u. 21.'));
+  assert.ok(!notif.messageHu.includes('•'), 'messageHu must not duplicate bullet list already rendered from changes[]');
   assert.equal(notif.changes.length, diff.changes.length);
+  assert.ok(notif.changes.some((c) => c.labelHu.includes('Batyu u. 21.')));
 
   // Test email content builder
   const emailContentHu = buildPermissionUpdateEmailContent({
@@ -1045,4 +1046,69 @@ test('19. Archived (soft-deleted) buildings are hidden from getAccessibleBuildin
   const newOwnerUser = { email: 'uj.owner@test.hu', role: 'admin' };
   const visibleToNewOwner = getAccessibleBuildings(newOwnerUser, [untaggedLegacyB, BUILDINGS[1]], [...ORGANIZATIONS, newOwnerOrg]);
   assert.equal(visibleToNewOwner.length, 0);
+});
+
+test('20. diffTeamMemberChanges returns hasChanges=false on no-op saves (legacy undefined fields) and avoids redundant newly-added diffs', () => {
+  const buildings = [
+    { id: 'b1', name: 'Alma u. 1.' },
+    { id: 'b2', name: 'Körte u. 2.' },
+  ];
+  const oldMember = {
+    id: 'm1',
+    name: 'Anna',
+    email: 'anna@test.hu',
+    // phone is undefined in legacy record
+    buildingScope: 'selected',
+    buildingIds: ['b1'],
+    permissions: {
+      canCreateBuildings: false,
+      canManageTeam: true,
+      // teamManageScope is undefined in legacy record (defaults to 'all')
+      canEditBankAccounts: false,
+    },
+    buildingAssignments: {
+      b1: { role: 'manager', canEditBankAccounts: false, showManagerContact: false },
+    },
+  };
+
+  // Saving identical data with normalized defaults ('', 'all') must produce ZERO changes
+  const noOpDiff = diffTeamMemberChanges(
+    oldMember,
+    {
+      name: 'Anna',
+      phone: '',
+      buildingScope: 'selected',
+      buildingIds: ['b1'],
+      permissions: {
+        canCreateBuildings: false,
+        canManageTeam: true,
+        teamManageScope: 'all',
+        canEditBankAccounts: false,
+      },
+      buildingAssignments: {
+        b1: { role: 'manager', canEditBankAccounts: false, showManagerContact: false },
+      },
+    },
+    buildings
+  );
+  assert.equal(noOpDiff.hasChanges, false);
+  assert.equal(noOpDiff.changes.length, 0);
+
+  // Adding a new building as viewer should produce only ONE clean entry, NOT a confusing Manager -> Viewer diff
+  const addViewerDiff = diffTeamMemberChanges(
+    oldMember,
+    {
+      ...oldMember,
+      buildingIds: ['b1', 'b2'],
+      buildingAssignments: {
+        ...oldMember.buildingAssignments,
+        b2: { role: 'viewer', canEditBankAccounts: false, showManagerContact: false },
+      },
+    },
+    buildings
+  );
+  assert.equal(addViewerDiff.hasChanges, true);
+  assert.equal(addViewerDiff.changes.length, 1);
+  assert.ok(addViewerDiff.changes[0].labelHu.includes('Körte u. 2.'));
+  assert.ok(addViewerDiff.changes[0].labelHu.includes('Csak megtekintő'));
 });

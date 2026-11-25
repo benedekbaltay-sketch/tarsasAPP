@@ -1672,8 +1672,20 @@ export function CommunicationCenterModal({
                 <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider mb-1.5">
                   {isEn ? "Message Content" : "Üzenet szövege"}
                 </span>
-                <div className="bg-gray-50/80 p-5 rounded-2xl border border-gray-200 text-xs whitespace-pre-wrap text-gray-800 leading-relaxed font-sans select-text">
-                  {isEn ? (viewingNotification.messageEn || viewingNotification.messageHu) : (viewingNotification.messageHu || viewingNotification.messageEn)}
+                <div className="bg-gray-50/80 p-4 rounded-2xl border border-gray-200 text-xs whitespace-pre-wrap text-gray-800 leading-relaxed font-sans select-text">
+                  {(() => {
+                    const rawMsg = isEn
+                      ? (viewingNotification.messageEn || viewingNotification.messageHu || '')
+                      : (viewingNotification.messageHu || viewingNotification.messageEn || '');
+                    if (
+                      viewingNotification.type === 'team_updated' &&
+                      Array.isArray(viewingNotification.changes) &&
+                      viewingNotification.changes.length > 0
+                    ) {
+                      return rawMsg.split('\n\n')[0];
+                    }
+                    return rawMsg;
+                  })()}
                 </div>
               </div>
 

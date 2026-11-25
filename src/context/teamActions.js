@@ -538,23 +538,12 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     }, state.buildings || []);
 
     let updateNotif = null;
-    if (sendNotification !== false) {
-      const notifChanges = diff.hasChanges && diff.changes.length > 0
-        ? diff.changes
-        : [
-            {
-              type: 'modified',
-              category: 'general',
-              labelHu: 'Társasházkezelői hozzáférés és jogosultságok ellenőrizve / frissítve',
-              labelEn: 'Condominium management access & permissions updated',
-            }
-          ];
-
+    if (sendNotification !== false && diff.hasChanges && diff.changes.length > 0) {
       updateNotif = buildTeamUpdateNotification({
         actorUser: actor,
         targetEmail: target.email,
         targetUid: target.uid || target.id || null,
-        changes: notifChanges,
+        changes: diff.changes,
         diff,
       });
     }

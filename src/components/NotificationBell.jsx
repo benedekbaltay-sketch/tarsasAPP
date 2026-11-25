@@ -222,7 +222,9 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                             isCritical ? 'text-red-900/90' : 'text-gray-600'
                           }`}
                         >
-                          {message}
+                          {notif.type === 'team_updated' && Array.isArray(notif.changes) && notif.changes.length > 0 && typeof message === 'string'
+                            ? message.split('\n\n')[0]
+                            : message}
                         </p>
 
                         {/* Structured changes breakdown (bank account diff or team permissions diff) */}
@@ -360,8 +362,20 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                 <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider mb-1.5">
                   {isEn ? "Message Content" : "Üzenet szövege"}
                 </span>
-                <div className="bg-gray-50/80 p-5 rounded-2xl border border-gray-200 text-xs whitespace-pre-wrap text-gray-800 leading-relaxed font-sans select-text">
-                  {isEn ? (selectedNotification.messageEn || selectedNotification.messageHu) : (selectedNotification.messageHu || selectedNotification.messageEn)}
+                <div className="bg-gray-50/80 p-4 rounded-2xl border border-gray-200 text-xs whitespace-pre-wrap text-gray-800 leading-relaxed font-sans select-text">
+                  {(() => {
+                    const rawMsg = isEn
+                      ? (selectedNotification.messageEn || selectedNotification.messageHu || '')
+                      : (selectedNotification.messageHu || selectedNotification.messageEn || '');
+                    if (
+                      selectedNotification.type === 'team_updated' &&
+                      Array.isArray(selectedNotification.changes) &&
+                      selectedNotification.changes.length > 0
+                    ) {
+                      return rawMsg.split('\n\n')[0];
+                    }
+                    return rawMsg;
+                  })()}
                 </div>
               </div>
 
