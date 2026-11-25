@@ -860,6 +860,12 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
    - **Opcionális Kapcsoló a Szerkesztőben (`TeamManagementModal.jsx`)**:
      - A tulajdonos a munkatárs szerkesztésekor a mentés gomb mellett eldöntheti, hogy megjelenjen-e profilbeli értesítés (`team_send_notification_checkbox`). Alapértelmezett értéke bepipált (`true`).
 
+    - **Egységes Jogosultság Blokkok és Lenyitható Egyedi Felülbírálás (`TeamManagementModal.jsx`):**
+      - A fejlécbeli és láblécbeli akciógombok egységesen és letisztultan **„Mentés”** feliratot kaptak a korábbi hosszabb címkék helyett, közvetlen HTML5 form-beküldéssel (`form="team-member-form"`).
+      - A házak kiválasztása után egyetlen fehér konténerben, **„Jogosultságok megadása”** főblokkban helyezkednek el a beállítások:
+        1. **Cégszintű jogosultságok (A cég egészére érvényes)**: új házak létrehozása, csapat kezelése, törlés tiltása.
+        2. **Házszintű jogosultságok**: a tömeges szerepkör (Teljes kezelő / Szerkesztő vs. Csak megtekintő), bank IBAN szerkesztés és lakói kapcsolattartó kijelölés automatikusan minden kiválasztott házra érvényesül.
+        3. **Házankénti egyedi jogosultságok testreszabása**: alapértelmezetten csukott állapotú (`showAllScopeBuildingOverrides = false`), kizárólag a kis nyílra kattintva nyílik le, és kizárólag a feljebb kiválasztott házakat jeleníti meg független egyedi finomhangolásra.
 3. **Strukturált Jelvényes Megjelenítés az Értesítési Központban (`NotificationBell.jsx`)**:
    - Mind a lenyíló előnézeti menüben, mind a teljes üzenet részleteit megjelenítő felugró ablakban a jogosultságváltozások vizuálisan, színes jelvényekkel ellátva jelennek meg:
      - `+ Megadva` (zöld)
