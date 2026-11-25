@@ -34,6 +34,7 @@ import {
 import { useBackdropClose } from '../../utils/useBackdropClose';
 import { formatPhoneNumber } from '../../utils/phone';
 import { formatTaxNumber } from '../../utils/taxNumber';
+import { NavLogoButton } from '../NavLogoButton';
 import {
   resolveUserOrgContext,
   canUserEditBankAccountNumbers,
@@ -428,58 +429,54 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn cursor-default"
-      {...backdropProps}
-    >
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden my-auto">
-        
-        {/* Header - Fixed */}
-        <div className="p-4 px-5 border-b border-gray-100 flex items-center justify-between bg-gray-50/70 flex-shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold flex-shrink-0">
-              {isAccountsOnly ? <Landmark className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-base font-bold text-gray-900 font-display truncate">
-                  {isAccountsOnly
-                    ? (isEffectiveReadOnly
-                        ? (isEn ? "View Bank Accounts & Reserves" : "Folyószámlák és Tartalékok megtekintése")
-                        : (t.bank_accounts_edit_title || (isEn ? "Edit Bank Accounts & Reserves" : "Folyószámlák és Tartalékok szerkesztése")))
-                    : (isEffectiveReadOnly
-                        ? (isEn ? "Building Settings & Banking (View-Only)" : "Társasház Beállításai & Bank (Megtekintés)")
-                        : (t.bld_settings_title || (isEn ? "Building Settings & Banking" : "Társasház Beállításai & Bank")))}
-                </h3>
-                {isEffectiveReadOnly && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold">
-                    <Eye className="w-3 h-3 text-amber-700" />
-                    <span>{t.team_viewer_badge || (isEn ? "Viewer (Read-only)" : "Csak megtekintő")}</span>
-                  </span>
-                )}
+    <div className="fixed inset-0 z-50 bg-[#F3F4F6] flex flex-col overflow-hidden animate-fadeIn cursor-default">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-20 w-full shadow-xs bg-white border-b border-gray-200 px-3 sm:px-4 md:px-8 py-3">
+        <div className="flex items-center justify-between gap-2 sm:gap-4">
+          {/* Left: Website Logo -> Back to Home */}
+          <div className="flex items-center justify-start gap-2 sm:gap-2.5 flex-1 min-w-0">
+            <NavLogoButton onClick={onClose} isReadOnly={isEffectiveReadOnly} />
+          </div>
+
+          {/* Center: Module Title & Icon */}
+          <div className="flex items-center justify-center text-center px-1 sm:px-2 flex-shrink-0 max-w-[55%] sm:max-w-[50%]">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-50 text-[#1E3A8A] flex items-center justify-center flex-shrink-0 shadow-2xs">
+                {isAccountsOnly ? <Landmark className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
               </div>
-              <p className="text-xs text-gray-500 truncate">
-                {targetBuilding?.name}{targetBuilding?.address ? ` • ${targetBuilding.address}` : ''}
-              </p>
+              <div className="min-w-0 text-left sm:text-center">
+                <h2 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 font-display truncate">
+                  {isAccountsOnly
+                    ? (t.bank_accounts_edit_title || (isEn ? "Bank Accounts & Reserves" : "Folyószámlák és Tartalékok"))
+                    : (t.bld_settings_title || (isEn ? "Building Settings & Banking" : "Társasház Beállításai & Bank"))}
+                </h2>
+                <span className="text-[10px] sm:text-xs text-gray-500 truncate block">
+                  {targetBuilding?.name}{targetBuilding?.address ? ` • ${targetBuilding.address}` : ''}
+                </span>
+              </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-500 hover:text-gray-800 flex items-center justify-center transition-colors cursor-pointer flex-shrink-0"
-            title={t.close || "Bezárás"}
-          >
-            <X className="w-4 h-4" />
-          </button>
+
+          {/* Right: Close button */}
+          <div className="flex items-center justify-end gap-2 flex-1 flex-shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-gray-200 bg-white hover:bg-gray-100 text-gray-500 hover:text-gray-800 flex items-center justify-center transition-colors cursor-pointer flex-shrink-0 shadow-2xs"
+              title={t.close || "Bezárás"}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Switcher: Only in full Building Settings mode (never in Folyószámlák & Tartalékok mode) */}
         {!isAccountsOnly && (
-          <div className="px-5 pt-3 pb-2 border-b border-gray-100 flex gap-2 bg-gray-50/30 flex-shrink-0">
+          <div className="mt-3 pt-2.5 border-t border-gray-100 flex gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('general')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'general'
                   ? 'bg-[#1E3A8A] text-white shadow-xs'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -492,7 +489,7 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
             <button
               type="button"
               onClick={() => setActiveTab('api')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'api'
                   ? 'bg-[#1E3A8A] text-white shadow-xs'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -506,23 +503,13 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
             </button>
           </div>
         )}
+      </div>
 
-        {/* Scrollable Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col">
-          <div className="p-5 space-y-6 flex-1 text-xs">
-            
-            {/* Read-only notification banner */}
-            {isEffectiveReadOnly && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-semibold flex items-center gap-2">
-                <Eye className="w-4 h-4 text-amber-700 flex-shrink-0" />
-                <span>
-                  {t.bld_settings_readonly_notice || (isEn
-                    ? "You have read-only permissions for this condominium. Building details and bank accounts cannot be edited."
-                    : "Kizárólag megtekintési jogosultsággal rendelkezel ehhez a társasházhoz. A ház adatai és bankszámlái nem szerkeszthetők.")}
-                </span>
-              </div>
-            )}
-
+      {/* Fullpage Form Body */}
+      <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 overflow-y-auto w-full overscroll-contain p-4 md:p-8">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-5 md:p-6 space-y-6 text-xs">
             {/* ============================================================== */}
             {/* TAB 1: ÉPÜLET ADATAI & FOLYÓSZÁMLÁK (vagy csak Bankszámlák)    */}
             {/* ============================================================== */}
@@ -1231,6 +1218,8 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
               </div>
             )}
 
+            </div>
+
             {saveError && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
@@ -1238,50 +1227,49 @@ export function GlobalBalancesModal({ isOpen, onClose, buildingId = null, mode =
               </div>
             )}
           </div>
+        </div>
 
-          {/* Fixed Footer Bar */}
-          <div className="p-4 px-5 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2.5 flex-shrink-0">
+        {/* Fixed Bottom Footer Bar */}
+        <div className="bg-white border-t border-gray-200 px-4 sm:px-8 py-3 flex items-center justify-end gap-2.5 shadow-md flex-shrink-0">
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 cursor-pointer transition-colors disabled:opacity-40"
+          >
+            {isEffectiveReadOnly ? (t.close || (isEn ? "Close" : "Bezárás")) : (t.cancel || "Mégse")}
+          </button>
+          {!isEffectiveReadOnly ? (
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="px-5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-60"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{t.saving || (isEn ? "Saving..." : "Mentés...")}</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>{t.save || "Mentés"}</span>
+                </>
+              )}
+            </button>
+          ) : (
             <button
               type="button"
-              disabled={isSaving}
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-white hover:text-gray-900 cursor-pointer transition-colors disabled:opacity-40"
+              disabled
+              className="px-4 py-2 bg-gray-100 border border-gray-200 text-gray-400 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-not-allowed"
+              title={t.team_viewer_readonly_error || (isEn ? "Read-only access" : "Csak megtekintési jogosultság")}
             >
-              {isEffectiveReadOnly ? (t.close || (isEn ? "Close" : "Bezárás")) : (t.cancel || "Mégse")}
+              <Lock className="w-3.5 h-3.5" />
+              <span>{t.view_only || (isEn ? "Read-Only" : "Csak megtekintés")}</span>
             </button>
-            {!isEffectiveReadOnly ? (
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-60"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{t.saving || (isEn ? "Saving..." : "Mentés...")}</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>{t.save || "Mentés"}</span>
-                  </>
-                )}
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="px-4 py-2 bg-gray-100 border border-gray-200 text-gray-400 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-not-allowed"
-                title={t.team_viewer_readonly_error || (isEn ? "Read-only access" : "Csak megtekintési jogosultság")}
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>{t.view_only || (isEn ? "Read-Only" : "Csak megtekintés")}</span>
-              </button>
-            )}
-          </div>
-        </form>
-
-      </div>
+          )}
+        </div>
+      </form>
     </div>
   );
 }

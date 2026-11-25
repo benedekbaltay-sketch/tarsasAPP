@@ -812,7 +812,23 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
 
 ---
 
-## 33. Maintenance Checklist for Future Sessions
+## 33. Teljes Oldalas Ház Adatai & Bank Felület és Egységesített Diszkrét Megtekintő Jelvény (`NavLogoButton.jsx`, `GlobalBalancesModal.jsx`)
+
+1. **Ház Adatai & Bank Teljes Oldalas Felület (`GlobalBalancesModal.jsx`)**:
+   - A korábbi felugró modális doboz helyett teljes oldalas felületté (`fixed inset-0 z-50 bg-[#F3F4F6] flex flex-col`) alakult át, pontosan illeszkedve a Naptár, a Lakások Adatai és a Tranzakciók oldal modern megjelenéséhez.
+   - **Fix Felső Sáv**: Bal oldalon a központi `NavLogoButton` (ház logó, ház neve és diszkrét megtekintő jelvény), középen a modul címe és a ház címe, jobb oldalon a bezárás gomb, alatta pedig a fülváltó sáv (Épület adatai & Számlák vs Banki API).
+   - **Tágas, Gördíthető Kártyás Tartalom**: A beviteli mezők egy `max-w-4xl` fehér kártyában rendezetten, kényelmesen használhatók asztali és mobil nézetben egyaránt.
+   - **Rögzített Alsó Műveleti Sáv**: A mentés és mégse/bezárás gombok mindig elérhetők a képernyő alján.
+   - **Bannerek Tisztítása**: A felesleges, zavaró belső sárga figyelmeztető sáv eltávolításra került.
+
+2. **Egységesített Diszkrét „Csak megtekintő” Jelvény a Logó és Cím Mellett (`NavLogoButton.jsx`)**:
+   - A központi `NavLogoButton` mostantól automatikusan megjeleníti az egységes diszkrét sárga jelvényt (`Eye` ikon + „Csak megtekintő”) közvetlenül a ház neve és logója mellett, amikor a felhasználó csak megtekintési jogosultsággal rendelkezik az aktív társasházban.
+   - Ezáltal minden olyan teljes oldalas nézetben, amely `NavLogoButton`-t használ (Naptár, Pénzügyi Helyzet, Ház Adatai & Bank, Lakások Adatai, Tranzakciók Története, stb.), automatikusan és egységesen jelenik meg a diszkrét jelzés.
+   - A Kommunikációs Központban (`CommunicationCenterModal.jsx`) a jelvény megmaradt a jobb felső sarokban a műveleti gomb helyén, elkerülve a felesleges duplikációt.
+
+---
+
+## 34. Maintenance Checklist for Future Sessions
 
 Mielőtt bármilyen feladatot befejeznél:
 1. **Szabály 1 (Kétnyelvűség)**: Lefordítottál minden új felhasználói szöveget, címkét és üzenetet angolra is a `translations.js` fájlban (`hu` és `en` szinkronban)?

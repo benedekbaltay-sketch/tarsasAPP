@@ -496,7 +496,7 @@ export function CommunicationCenterModal({
         <div className="px-3 sm:px-6 md:px-8 py-3 flex items-center justify-between gap-3">
           {/* Left: Logo & Title */}
           <div className="flex items-center gap-3 min-w-0">
-            <NavLogoButton onClick={handleRequestClose} />
+            <NavLogoButton onClick={handleRequestClose} hideViewerBadge={true} />
             <div className="hidden sm:block h-6 w-px bg-gray-200" />
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center flex-shrink-0 shadow-2xs">

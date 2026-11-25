@@ -1,12 +1,24 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
+import { Eye } from 'lucide-react';
+import { isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
 
-export function NavLogoButton({ onClick, title }) {
+export function NavLogoButton({ onClick, title, hideViewerBadge = false, isReadOnly = false }) {
   const { state, t } = useApp();
   const isEn = state?.currentLang === 'en';
+  const isHu = !isEn;
   const currentBuilding = (state?.buildings || []).find(b => b.id === state?.currentBuildingId) || state?.buildings?.[0];
-  const isAdmin = state?.currentUser?.role === 'admin' || state?.currentUser?.role === 'superadmin';
-  const isInBuilding = Boolean(currentBuilding && (!isAdmin || (!state?.isPortfolioView && state?.currentBuildingId)));
+  const isCurrentlyAdminMode = state?.currentUser?.role === 'admin' || state?.currentUser?.role === 'superadmin';
+  const isInBuilding = Boolean(currentBuilding && (!isCurrentlyAdminMode || (!state?.isPortfolioView && state?.currentBuildingId)));
+  
+  const isViewer = isCurrentlyAdminMode && Boolean(
+    isReadOnly ||
+    (currentBuilding && (
+      isUserBuildingViewer(state?.currentUser, currentBuilding, state?.organizations, state?.buildings) ||
+      !canUserManageBuilding(state?.currentUser, currentBuilding, state?.organizations, state?.buildings)
+    ))
+  );
+
   const displayTitle = isInBuilding
     ? currentBuilding.name
     : (t?.app_title || "Társasházkezelő");
@@ -29,11 +41,19 @@ export function NavLogoButton({ onClick, title }) {
           <path d="M10 18h4"/>
         </svg>
       </div>
-      <div className="hidden sm:flex flex-col text-left min-w-0 max-w-[200px] md:max-w-[280px]">
-        <span className="text-xs font-bold text-gray-900 leading-tight font-display truncate">
-          {displayTitle}
-        </span>
-        <span className="text-[10px] text-gray-500 font-medium">
+      <div className="flex flex-col text-left min-w-0 max-w-[200px] md:max-w-[320px]">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-xs sm:text-sm font-bold text-gray-900 leading-tight font-display truncate">
+            {displayTitle}
+          </span>
+          {isViewer && isInBuilding && !hideViewerBadge && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex-shrink-0">
+              <Eye className="w-2.5 h-2.5 text-amber-600" />
+              <span>{isHu ? 'Csak megtekintő' : 'View only'}</span>
+            </span>
+          )}
+        </div>
+        <span className="text-[10px] text-gray-500 font-medium hidden sm:inline">
           {isEn ? "← Back to Home" : "← Főmenü"}
         </span>
       </div>
