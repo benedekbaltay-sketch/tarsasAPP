@@ -17,7 +17,7 @@ import {
   Users,
   Eye
 } from 'lucide-react';
-import { canUserManageTeam, resolveUserDisplayName, isUserBuildingViewer, canUserManageBuilding, getNotificationsForUser } from '../utils/teamPermissions';
+import { canUserManageTeam, resolveUserDisplayName, isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
 
 export function IosSideDrawer({ 
   isOpen, 
@@ -46,11 +46,6 @@ export function IosSideDrawer({
     ? (t.menu_account_settings || "Fiók / Rendszerbeállítások") 
     : (myFlats.length > 1 ? (t.menu_my_flats || "Profilom / Lakásaim") : (t.menu_my_flat || "Profilom / Lakásom"));
   const ProfileIcon = isAdmin ? Settings : (myFlats.length > 1 ? Home : User);
-
-  const unreadTeamNotifsCount = useMemo(() => {
-    const notifs = getNotificationsForUser(state.notifications || [], currentUser);
-    return notifs.filter((n) => n && n.type === 'team_updated' && !n.read).length;
-  }, [state.notifications, currentUser]);
 
   useEffect(() => {
     if (isOpen) {
@@ -238,11 +233,6 @@ export function IosSideDrawer({
                       <span className="text-sm font-semibold text-gray-800">
                         {t.menu_account_settings || (isHu ? "Fiók / Rendszerbeállítások" : "Account / System Settings")}
                       </span>
-                      {unreadTeamNotifsCount > 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1E3A8A] text-white animate-pulse">
-                          {isHu ? 'Új' : 'New'}
-                        </span>
-                      )}
                     </div>
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
@@ -409,11 +399,6 @@ export function IosSideDrawer({
                       <ProfileIcon className="w-4 h-4" />
                     </div>
                     <span className="text-sm font-semibold text-gray-800">{profileLabel}</span>
-                    {unreadTeamNotifsCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1E3A8A] text-white animate-pulse">
-                        {isHu ? 'Új' : 'New'}
-                      </span>
-                    )}
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                 </button>
