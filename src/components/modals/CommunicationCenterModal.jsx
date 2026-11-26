@@ -181,18 +181,14 @@ export function CommunicationCenterModal({
   const [showRecipientList, setShowRecipientList] = useState(false);
   const [showLivePreview, setShowLivePreview] = useState(false);
 
-  // Universal Direct Compose / Reply / Financial Auditor Opinion Modal State
+  // Universal Direct Compose / Reply Modal State
   const [isDirectComposeOpen, setIsDirectComposeOpen] = useState(false);
   const [directReplyTarget, setDirectReplyTarget] = useState(null);
   const [directRecipientMode, setDirectRecipientMode] = useState('kk');
-  const [directMsgKind, setDirectMsgKind] = useState('general'); // 'general' | 'opinion' | 'observation'
   const [directCategory, setDirectCategory] = useState('general');
   const [directSubject, setDirectSubject] = useState('');
   const [directBody, setDirectBody] = useState('');
   const [directAttachments, setDirectAttachments] = useState([]);
-  const [directOpinionYear, setDirectOpinionYear] = useState(() => new Date().getFullYear() - 1);
-  const [directOpinionVerdict, setDirectOpinionVerdict] = useState('approved');
-  const [directObsSeverity, setDirectObsSeverity] = useState('warning');
   const [isSendingDirect, setIsSendingDirect] = useState(false);
 
   // Permission evaluation across accessible buildings
@@ -444,7 +440,7 @@ export function CommunicationCenterModal({
     showToast(isEn ? 'Message restored from archive.' : 'Levél visszaállítva az archívumból.', 'info');
   };
 
-  const handleOpenDirectCompose = ({ replyTo = null, defaultKind = null } = {}) => {
+  const handleOpenDirectCompose = ({ replyTo = null } = {}) => {
     setDirectReplyTarget(replyTo);
     setDirectAttachments([]);
     setDirectCategory('general');
@@ -452,22 +448,13 @@ export function CommunicationCenterModal({
       const origTitle = (isEn ? (replyTo.titleEn || replyTo.titleHu) : (replyTo.titleHu || replyTo.titleEn)) || '';
       setDirectSubject(origTitle.toLowerCase().startsWith('re:') ? origTitle : `Re: ${origTitle}`);
       setDirectBody('');
-      setDirectMsgKind('general');
       setDirectRecipientMode('kk');
     } else {
       setDirectSubject('');
       setDirectBody('');
       if (isAuditor) {
-        setDirectMsgKind(defaultKind || 'opinion');
         setDirectRecipientMode(activeBuildingSzvbList.length > 0 ? 'kk_and_szvb' : 'kk');
-        setDirectOpinionYear(new Date().getFullYear() - 1);
-        setDirectOpinionVerdict('approved');
-        setDirectObsSeverity('warning');
-      } else if (isSzvb) {
-        setDirectMsgKind('general');
-        setDirectRecipientMode('kk');
       } else {
-        setDirectMsgKind('general');
         setDirectRecipientMode('kk');
       }
     }
@@ -485,14 +472,6 @@ export function CommunicationCenterModal({
       return;
     }
 
-    const auditOpinionMeta = isAuditor && !directReplyTarget
-      ? (directMsgKind === 'opinion'
-          ? { isOfficialOpinion: true, year: directOpinionYear, verdict: directOpinionVerdict }
-          : directMsgKind === 'observation'
-          ? { isObservation: true, severity: directObsSeverity }
-          : null)
-      : null;
-
     setIsSendingDirect(true);
     try {
       const res = await sendDirectMessage({
@@ -503,7 +482,7 @@ export function CommunicationCenterModal({
         body: directBody.trim(),
         category: directCategory,
         attachments: directAttachments,
-        auditOpinionMeta,
+        auditOpinionMeta: null,
       });
       if (res?.success) {
         setIsDirectComposeOpen(false);
@@ -819,15 +798,6 @@ export function CommunicationCenterModal({
                   <span>{t.comm_viewer_badge || (isEn ? "View-Only" : "Csak megtekintő")}</span>
                 </span>
               )
-            ) : isAuditor ? (
-              <button
-                type="button"
-                onClick={() => handleOpenDirectCompose({ defaultKind: 'opinion' })}
-                className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 flex-shrink-0"
-              >
-                <ClipboardCheck className="w-3.5 h-3.5" />
-                <span>{t.mail_compose_auditor_btn || (isEn ? "Write Opinion / Message" : "Véleményezés / Új levél")}</span>
-              </button>
             ) : (
               <button
                 type="button"
@@ -853,24 +823,36 @@ export function CommunicationCenterModal({
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Tab Switcher & Search Bar */}
-        <div className="px-3 sm:px-6 md:px-8 py-2 bg-gray-50/70 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          {/* Tabs: Inbox, Sent/Outbox, Archive (+ Rules strictly for KK) */}
-          <div className="flex items-center gap-1 bg-white p-1 rounded-2xl border border-gray-200 shadow-2xs text-xs font-bold overflow-x-auto">
+      {/* Main Content Area */}
+      <div
+        className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8"
+        style={{ scrollbarGutter: 'stable' }}
+      >
+        <div className="max-w-5xl mx-auto space-y-5">
+
+          {/* Pénzügyek-style Segmented Tab Bar */}
+          <div
+            role="tablist"
+            aria-label={isEn ? "Messages & Mail" : "Levelezés & Üzenetek"}
+            className="bg-white rounded-2xl border border-gray-200 p-1.5 shadow-xs flex items-center gap-1.5 overflow-x-auto"
+          >
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'inbox'}
               onClick={() => setActiveTab('inbox')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
                 activeTab === 'inbox'
                   ? 'bg-[#1E3A8A] text-white shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
               }`}
             >
-              <Bell className="w-3.5 h-3.5" />
+              <Bell className={`w-4 h-4 shrink-0 ${activeTab === 'inbox' ? 'text-white' : 'text-gray-500'}`} />
               <span>{t.mail_tab_inbox || (isEn ? "Inbox" : "Beérkezett")}</span>
               {unreadCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white text-[10px] font-extrabold">
+                <span className="px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-extrabold leading-none">
                   {unreadCount}
                 </span>
               )}
@@ -878,21 +860,23 @@ export function CommunicationCenterModal({
 
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'outbox'}
               onClick={() => setActiveTab('outbox')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
                 activeTab === 'outbox'
                   ? 'bg-[#1E3A8A] text-white shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
               }`}
             >
-              <History className="w-3.5 h-3.5" />
+              <History className={`w-4 h-4 shrink-0 ${activeTab === 'outbox' ? 'text-white' : 'text-gray-500'}`} />
               <span>
                 {isAdmin
                   ? (t.comm_tab_outbox || (isEn ? "Sent & Outbox" : "Elküldött & Napló"))
                   : (t.mail_tab_sent || (isEn ? "Sent" : "Elküldött"))}
               </span>
               {totalSentCount > 0 && (
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold leading-none ${
                   activeTab === 'outbox' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
                 }`}>
                   {totalSentCount}
@@ -902,17 +886,19 @@ export function CommunicationCenterModal({
 
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'archive'}
               onClick={() => setActiveTab('archive')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
                 activeTab === 'archive'
                   ? 'bg-[#1E3A8A] text-white shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
               }`}
             >
-              <Archive className="w-3.5 h-3.5" />
+              <Archive className={`w-4 h-4 shrink-0 ${activeTab === 'archive' ? 'text-white' : 'text-gray-500'}`} />
               <span>{t.mail_tab_archive || (isEn ? "Archive" : "Archívum")}</span>
               {userArchivedNotifications.length > 0 && (
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold leading-none ${
                   activeTab === 'archive' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
                 }`}>
                   {userArchivedNotifications.length}
@@ -923,16 +909,18 @@ export function CommunicationCenterModal({
             {isAdmin && (
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'rules'}
                 onClick={() => setActiveTab('rules')}
-                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
                   activeTab === 'rules'
                     ? 'bg-[#1E3A8A] text-white shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
                 }`}
               >
-                <Settings2 className="w-3.5 h-3.5" />
+                <Settings2 className={`w-4 h-4 shrink-0 ${activeTab === 'rules' ? 'text-white' : 'text-gray-500'}`} />
                 <span>{t.comm_tab_rules || (isEn ? "Dunning Rules" : "Felszólítási Szabályok")}</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold leading-none ${
                   activeTab === 'rules' ? 'bg-white/20 text-white' : 'bg-blue-100 text-[#1E3A8A]'
                 }`}>
                   {activeRules.length}
@@ -941,70 +929,66 @@ export function CommunicationCenterModal({
             )}
           </div>
 
-          {/* Search Box & Tab Action */}
-          <div className="flex items-center gap-2 flex-1 sm:flex-initial max-w-md ml-auto">
-            <div className="relative flex-1">
+          {/* Search Box & Contextual Tab Action */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
               <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={isEn ? "Search..." : "Keresés..."}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#1E3A8A]"
+                className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-gray-200 rounded-xl shadow-2xs focus:outline-none focus:border-[#1E3A8A]"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
 
-            {isAdmin && activeTab === 'rules' && canManageAnyBuilding && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingRule(null);
-                  setIsEditRuleOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex-shrink-0 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{isEn ? "New Rule" : "Új szabály"}</span>
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {isAdmin && activeTab === 'rules' && canManageAnyBuilding && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingRule(null);
+                    setIsEditRuleOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex-shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isEn ? "New Rule" : "Új szabály"}</span>
+                </button>
+              )}
 
-            {activeTab === 'inbox' && unreadCount > 0 && (
-              <button
-                type="button"
-                onClick={markAllNotificationsRead}
-                className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
-              >
-                <CheckCheck className="w-3.5 h-3.5 text-blue-600" />
-                <span>{isEn ? "Mark all read" : "Mind olvasott"}</span>
-              </button>
-            )}
+              {activeTab === 'inbox' && unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={markAllNotificationsRead}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
+                >
+                  <CheckCheck className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{isEn ? "Mark all read" : "Mind olvasott"}</span>
+                </button>
+              )}
 
-            {isAdmin && activeTab === 'outbox' && (emailOutbox || []).length > 0 && canManageAnyBuilding && (
-              <button
-                type="button"
-                onClick={clearOutboxItems}
-                className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 hover:bg-red-50 hover:text-red-600 text-gray-600 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
-                title={isEn ? "Clear simulated outbox" : "Napló kiürítése"}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>{isEn ? "Clear" : "Ürítés"}</span>
-              </button>
-            )}
+              {isAdmin && activeTab === 'outbox' && (emailOutbox || []).length > 0 && canManageAnyBuilding && (
+                <button
+                  type="button"
+                  onClick={clearOutboxItems}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200 hover:bg-red-50 hover:text-red-600 text-gray-600 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
+                  title={isEn ? "Clear simulated outbox" : "Napló kiürítése"}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isEn ? "Clear" : "Ürítés"}</span>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
-        <div className="max-w-5xl mx-auto space-y-4">
           
           {/* TAB 1: INBOX & PROFILE NOTIFICATIONS */}
           {activeTab === 'inbox' && (
@@ -2502,20 +2486,16 @@ export function CommunicationCenterModal({
             {/* Header */}
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                  isAuditor && !directReplyTarget ? 'bg-teal-100 text-teal-700' : 'bg-blue-100 text-[#1E3A8A]'
-                }`}>
-                  {directReplyTarget ? <Reply className="w-4 h-4" /> : isAuditor ? <ClipboardCheck className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+                <div className="w-8 h-8 rounded-xl bg-blue-100 text-[#1E3A8A] flex items-center justify-center shrink-0">
+                  {directReplyTarget ? <Reply className="w-4 h-4" /> : <Send className="w-4 h-4" />}
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-sm sm:text-base font-bold text-gray-900 font-display truncate">
                     {directReplyTarget
                       ? (isEn ? `Reply to ${directReplyTarget.actorName || directReplyTarget.actorEmail}` : `Válasz küldése: ${directReplyTarget.actorName || directReplyTarget.actorEmail}`)
-                      : isAuditor
-                      ? (isEn ? 'Financial Audit Opinion & Correspondence' : 'Gazdasági ellenőri véleményezés & Levélküldés')
-                      : isSzvb
-                      ? (isEn ? 'New SZVB Message' : 'Új SZVB levél küldése')
-                      : (isEn ? 'Write to Common Representative (Management)' : 'Levél írása a Közös Képviseletnek')}
+                      : isResident
+                      ? (isEn ? 'Write to Common Representative (Management)' : 'Levél írása a Közös Képviseletnek')
+                      : (isEn ? 'New Message' : 'Új levél írása')}
                   </h3>
                   {activeBuilding && (
                     <span className="text-[11px] text-gray-500 block truncate">
@@ -2566,128 +2546,31 @@ export function CommunicationCenterModal({
                   </div>
                 </div>
               ) : isAuditor ? (
-                <div className="space-y-3">
-                  {/* Auditor Mode Tabs: Official Written Opinion | Observation | General Letter */}
-                  <div>
-                    <label className="block font-bold text-gray-700 mb-1.5">
-                      {isEn ? 'Message Type' : 'Üzenet / Véleményezés típusa'}
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {[
-                        { id: 'opinion', label: isEn ? 'Official Audit Opinion' : 'Hivatalos szakmai vélemény' },
-                        { id: 'observation', label: isEn ? 'Observation / Risk Flag' : 'Szakmai észrevétel' },
-                        { id: 'general', label: isEn ? 'General Letter' : 'Általános levél' },
-                      ].map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => setDirectMsgKind(opt.id)}
-                          className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                            directMsgKind === opt.id
-                              ? 'bg-teal-700 text-white border-teal-700 shadow-xs'
-                              : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1.5">
+                    {isEn ? 'Recipients' : 'Címzettek'}
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: 'kk_and_szvb', label: isEn ? 'Management + SZVB' : 'KK + SZVB együtt', disabled: false },
+                      { id: 'kk', label: isEn ? 'Management (KK) Only' : 'Csak Közös Képviselet', disabled: false },
+                      { id: 'szvb', label: isEn ? 'SZVB Only' : 'Csak SZVB', disabled: activeBuildingSzvbList.length === 0 },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        disabled={opt.disabled}
+                        onClick={() => setDirectRecipientMode(opt.id)}
+                        className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+                          directRecipientMode === opt.id
+                            ? 'bg-[#1E3A8A] text-white border-[#1E3A8A] shadow-xs'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
-
-                  {/* Auditor Recipient Selector */}
-                  <div>
-                    <label className="block font-bold text-gray-700 mb-1.5">
-                      {isEn ? 'Recipients' : 'Címzettek'}
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {[
-                        { id: 'kk_and_szvb', label: isEn ? 'Management + SZVB' : 'KK + SZVB együtt', disabled: false },
-                        { id: 'kk', label: isEn ? 'Management (KK) Only' : 'Csak Közös Képviselet', disabled: false },
-                        { id: 'szvb', label: isEn ? 'SZVB Only' : 'Csak SZVB', disabled: activeBuildingSzvbList.length === 0 },
-                      ].map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          disabled={opt.disabled}
-                          onClick={() => setDirectRecipientMode(opt.id)}
-                          className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
-                            directRecipientMode === opt.id
-                              ? 'bg-[#1E3A8A] text-white border-[#1E3A8A] shadow-xs'
-                              : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Official Audit Opinion Metadata */}
-                  {directMsgKind === 'opinion' && (
-                    <div className="p-3 rounded-xl bg-teal-50/70 border border-teal-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block font-bold text-teal-950 mb-1">
-                          {isEn ? 'Fiscal Year' : 'Elszámolási év'}
-                        </label>
-                        <input
-                          type="number"
-                          min="2000"
-                          max="2100"
-                          value={directOpinionYear}
-                          onChange={(e) => setDirectOpinionYear(Number(e.target.value) || new Date().getFullYear() - 1)}
-                          className="w-full px-3 py-1.5 bg-white border border-teal-200 rounded-lg text-xs font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-teal-950 mb-1">
-                          {isEn ? 'Audit Verdict' : 'Szakmai minősítés'}
-                        </label>
-                        <select
-                          value={directOpinionVerdict}
-                          onChange={(e) => setDirectOpinionVerdict(e.target.value)}
-                          className="w-full px-3 py-1.5 bg-white border border-teal-200 rounded-lg text-xs font-semibold"
-                        >
-                          <option value="approved">{isEn ? 'Recommended for approval' : 'Elfogadásra javasolt'}</option>
-                          <option value="approved_with_notes">{isEn ? 'Approved with notes' : 'Megjegyzéssel elfogadható'}</option>
-                          <option value="rejected">{isEn ? 'Objected / Revision required' : 'Kifogásolt / Javítás szükséges'}</option>
-                        </select>
-                      </div>
-                      <p className="sm:col-span-2 text-[11px] text-teal-900/85">
-                        {isEn
-                          ? 'This written opinion will be delivered via Mail and automatically recorded in Audit Opinions for the General Assembly.'
-                          : 'A hivatalos írásbeli vélemény elküldésre kerül a levelezésben, és automatikusan bekerül az Ellenőri vélemények közé is a közgyűléshez.'}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Audit Observation Severity */}
-                  {directMsgKind === 'observation' && (
-                    <div>
-                      <label className="block font-bold text-gray-700 mb-1">
-                        {isEn ? 'Severity' : 'Fontossági szint'}
-                      </label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { id: 'info', label: isEn ? 'Info / Advice' : 'Tájékoztató' },
-                          { id: 'warning', label: isEn ? 'Warning' : 'Figyelmeztetés' },
-                          { id: 'critical', label: isEn ? 'Critical Risk' : 'Sürgős / Kritikus' },
-                        ].map((s) => (
-                          <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => setDirectObsSeverity(s.id)}
-                            className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${
-                              directObsSeverity === s.id
-                                ? 'bg-amber-600 text-white border-amber-600'
-                                : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                            }`}
-                          >
-                            {s.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               ) : isSzvb ? (
                 <div>
@@ -2746,11 +2629,7 @@ export function CommunicationCenterModal({
                   type="text"
                   value={directSubject}
                   onChange={(e) => setDirectSubject(e.target.value)}
-                  placeholder={
-                    isAuditor && directMsgKind === 'opinion'
-                      ? (isEn ? `e.g. ${directOpinionYear} Annual Financial Audit Opinion` : `pl. ${directOpinionYear}. évi elszámolás szakmai véleménye`)
-                      : (isEn ? 'Enter subject...' : 'Levél tárgya...')
-                  }
+                  placeholder={isEn ? 'Enter subject...' : 'Levél tárgya...'}
                   className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#1E3A8A]"
                 />
               </div>
@@ -2764,11 +2643,7 @@ export function CommunicationCenterModal({
                   rows={6}
                   value={directBody}
                   onChange={(e) => setDirectBody(e.target.value)}
-                  placeholder={
-                    isAuditor && directMsgKind === 'opinion'
-                      ? (isEn ? 'Summarize your findings, audit opinion and recommendations...' : 'Írd le a vizsgálat eredményét, a szakmai vélemény összefoglalóját és javaslataidat...')
-                      : (isEn ? 'Write your message here...' : 'Írd meg a leveled szövegét...')
-                  }
+                  placeholder={isEn ? 'Write your message here...' : 'Írd meg a leveled szövegét...'}
                   className="w-full p-3.5 bg-white border border-gray-200 rounded-xl text-xs leading-relaxed resize-y focus:outline-none focus:border-[#1E3A8A]"
                 />
               </div>
@@ -2779,9 +2654,7 @@ export function CommunicationCenterModal({
                   <label className="font-bold text-gray-700 flex items-center gap-1.5">
                     <Paperclip className="w-3.5 h-3.5 text-[#1E3A8A]" />
                     <span>
-                      {isAuditor && directMsgKind === 'opinion'
-                        ? (isEn ? 'Attach Signed Audit Opinion (PDF / DOCX / XLSX)' : 'Aláírt szakmai vélemény / dokumentum csatolása (PDF / DOCX / XLSX)')
-                        : (t.mail_attachments_label || (isEn ? 'Attach Documents (optional)' : 'Dokumentumok csatolása (opcionális)'))}
+                      {t.mail_attachments_label || (isEn ? 'Attach Documents (optional)' : 'Dokumentumok csatolása (opcionális)')}
                     </span>
                   </label>
                   <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-[#1E3A8A] text-[11px] font-bold cursor-pointer transition-colors">
@@ -2835,16 +2708,12 @@ export function CommunicationCenterModal({
                 type="button"
                 disabled={isSendingDirect || !directSubject.trim() || !directBody.trim()}
                 onClick={handleSendDirectMessage}
-                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                  isAuditor && !directReplyTarget ? 'bg-teal-700 hover:bg-teal-800' : 'bg-[#1E3A8A] hover:bg-[#1e40af]'
-                }`}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#1E3A8A] hover:bg-[#1e40af] shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSendingDirect ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 <span>
                   {isSendingDirect
                     ? (isEn ? 'Sending...' : 'Küldés...')
-                    : isAuditor && !directReplyTarget && directMsgKind === 'opinion'
-                    ? (isEn ? 'Send Audit Opinion' : 'Szakmai vélemény elküldése')
                     : (isEn ? 'Send Message' : 'Levél elküldése')}
                 </span>
               </button>
