@@ -351,7 +351,8 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
   }, [meters]);
 
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
-  if (!isOpen || !flat || !isAdmin) return null;
+  const isSzvb = state.currentUser?.role === 'szvb';
+  if (!isOpen || !flat || !(isAdmin || isSzvb)) return null;
 
   // Unit Type helper config
   const unitTypeConfig = {

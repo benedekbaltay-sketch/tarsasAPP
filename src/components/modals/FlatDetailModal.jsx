@@ -42,6 +42,7 @@ export function FlatDetailModal({
   const { flats, currentLang, currentUser, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const isSzvb = currentUser?.role === 'szvb';
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const isEffectiveReadOnly = Boolean(
@@ -182,7 +183,7 @@ export function FlatDetailModal({
     return () => window.removeEventListener('click', handleGlobalClick);
   }, [isOpen]);
 
-  if (!isOpen || !flatNum || !isAdmin) return null;
+  if (!isOpen || !flatNum || !(isAdmin || isSzvb)) return null;
 
   const flat = (flats || []).find(f => f.flatNum === flatNum) || {
     flatNum: flatNum,
@@ -206,6 +207,7 @@ export function FlatDetailModal({
   const activeTimelineFilterCount = getActiveFilterCount(timelineFilters);
 
   const startEditMode = () => {
+    if (isEffectiveReadOnly) return;
     setBalA((flat.balance || 0).toString());
     setBalB((flat.renovationBalance || 0).toString());
     setFeeA(latestFeeA.toString());
@@ -225,6 +227,7 @@ export function FlatDetailModal({
 
   const handleSaveFinances = (e) => {
     e.preventDefault();
+    if (isEffectiveReadOnly) return;
     updateFlatFees(flatNum, feeA, feeB, balA, balB, customFeesDraft, customBalsDraft);
     setIsEditMode(false);
   };

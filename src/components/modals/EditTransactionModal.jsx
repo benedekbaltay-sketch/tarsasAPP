@@ -28,6 +28,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
   const { transactions, expenses, manualDebits, currentLang, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
+  const isSzvb = state.currentUser?.role === 'szvb';
   const effectiveReadOnly = Boolean(isReadOnly || !isAdmin);
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
@@ -259,7 +260,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
 
   const backdropProps = useBackdropClose(handleClose);
 
-  if (!isOpen || !itemId || !isAdmin) return null;
+  if (!isOpen || !itemId || !(isAdmin || isSzvb)) return null;
 
   const handleTypeSelect = (newType) => {
     setSelectedType(newType);
