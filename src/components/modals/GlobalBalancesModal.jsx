@@ -28,7 +28,8 @@ import {
   Pencil,
   Users,
   Shield,
-  ClipboardCheck
+  ClipboardCheck,
+  Info
 } from 'lucide-react';
 import { 
   getBuildingReserve, 
@@ -90,8 +91,9 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
   const [activeTab, setActiveTab] = useState('general');
   const [isEditingMasterData, setIsEditingMasterData] = useState(false);
   const [isEditingSzvb, setIsEditingSzvb] = useState(false);
-  const [isEditingAuditor, setIsEditingAuditor] = useState(false);
   const [isEditingApi, setIsEditingApi] = useState(false);
+  const [isAuditorInfoHovered, setIsAuditorInfoHovered] = useState(false);
+  const [isAuditorInfoPinned, setIsAuditorInfoPinned] = useState(false);
 
   // 1. Building Master Data
   const [buildingName, setBuildingName] = useState('');
@@ -106,8 +108,8 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
   const [szvbMemberKeys, setSzvbMemberKeys] = useState([]);
   const [szvbAddMemberKey, setSzvbAddMemberKey] = useState('');
 
-  // 1a-2. Economic Auditor (Tht. 51/A. §) state
-  const [auditorMode, setAuditorMode] = useState('none'); // 'none' | 'internal' | 'external'
+  // 1a-2. Economic Auditor (Tht. 51/A. §) state (unified inside SZVB card)
+  const [auditorMode, setAuditorMode] = useState('none'); // 'none' | 'szvb_member' | 'internal' | 'external'
   const [auditorInternalKey, setAuditorInternalKey] = useState('');
   const [auditorName, setAuditorName] = useState('');
   const [auditorEmail, setAuditorEmail] = useState('');
@@ -116,9 +118,6 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
   const [auditorRegNum, setAuditorRegNum] = useState('');
   const [auditorValidFrom, setAuditorValidFrom] = useState('');
   const [auditorValidTo, setAuditorValidTo] = useState('');
-  const [auditorExemptQualifiedSzvb, setAuditorExemptQualifiedSzvb] = useState(false);
-  const [auditorSendInvite, setAuditorSendInvite] = useState(true);
-  const [isSavingAuditor, setIsSavingAuditor] = useState(false);
 
   // 1b. Resident-Facing Contact Switcher ('company' | 'manager', editable by actual building manager)
   const [contactDisplayMode, setContactDisplayMode] = useState('company');
@@ -195,12 +194,21 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
 
       const curAud = targetBuilding.economicAuditor || {};
       const curCandidates = getBuildingOwnerCandidates(targetBuilding);
-      setAuditorMode(curAud.enabled ? (curAud.type === 'internal' ? 'internal' : 'external') : 'none');
+      const curSzvbAll = [currentSzvb.chairperson, ...(currentSzvb.members || [])].filter(Boolean);
+      const matchedSzvbAuditor =
+        curAud.enabled && curAud.type === 'internal' && curAud.email
+          ? curSzvbAll.find((p) => normalizeEmail(p.email) === normalizeEmail(curAud.email))
+          : null;
       const matchedInternal =
-        curAud.enabled && curAud.type === 'internal'
+        curAud.enabled && curAud.type === 'internal' && curAud.email
           ? curCandidates.find((c) => normalizeEmail(c.email) === normalizeEmail(curAud.email))
           : null;
-      setAuditorInternalKey(matchedInternal?.key || '');
+      setAuditorMode(
+        curAud.enabled
+          ? (matchedSzvbAuditor ? 'szvb_member' : (curAud.type === 'internal' ? 'internal' : 'external'))
+          : 'none'
+      );
+      setAuditorInternalKey(matchedSzvbAuditor?.key || matchedInternal?.key || '');
       setAuditorName(curAud.name || '');
       setAuditorEmail(curAud.email || '');
       setAuditorPhone(curAud.phone || '');
@@ -208,9 +216,8 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
       setAuditorRegNum(curAud.registrationNumber || '');
       setAuditorValidFrom(curAud.validFrom || '');
       setAuditorValidTo(curAud.validTo || '');
-      setAuditorExemptQualifiedSzvb(Boolean(curAud.exemptQualifiedSzvbMember));
-      setAuditorSendInvite(true);
-      setIsEditingAuditor(false);
+      setIsAuditorInfoHovered(false);
+      setIsAuditorInfoPinned(false);
 
       setContactDisplayMode(targetBuilding.contactDisplayMode === 'manager' ? 'manager' : 'company');
       setManagerName(targetBuilding.managerContact?.name || '');
@@ -339,11 +346,18 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
   };
 
   const handleSelectSzvbChairperson = (newKey) => {
+    const prevKey = szvbChairpersonKey;
     setSzvbChairpersonKey(newKey);
     if (newKey) {
       // Prevent same owner being both Chairperson and regular Member
       setSzvbMemberKeys((prev) => prev.filter((k) => k !== newKey));
       if (szvbAddMemberKey === newKey) setSzvbAddMemberKey('');
+    }
+    if (auditorMode === 'szvb_member' && prevKey && auditorInternalKey === prevKey && newKey !== prevKey) {
+      setAuditorMode('none');
+      setAuditorInternalKey('');
+      setAuditorName('');
+      setAuditorEmail('');
     }
   };
 
@@ -356,6 +370,44 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
 
   const handleRemoveSzvbMember = (keyToRemove) => {
     setSzvbMemberKeys((prev) => prev.filter((k) => k !== keyToRemove));
+    if (auditorMode === 'szvb_member' && auditorInternalKey === keyToRemove) {
+      setAuditorMode('none');
+      setAuditorInternalKey('');
+      setAuditorName('');
+      setAuditorEmail('');
+    }
+  };
+
+  const handleToggleSzvbPersonAsAuditor = (person) => {
+    if (!person) return;
+    if (!person.email) {
+      showToast(
+        isEn
+          ? 'Add an email address on this owner’s flat card first before assigning them as Financial Auditor.'
+          : 'Először add meg a tulajdonos e-mail címét a lakás adatlapján, hogy gazdasági ellenőrnek kijelölhesd!',
+        'error'
+      );
+      return;
+    }
+    if (auditorMode === 'szvb_member' && auditorInternalKey === person.key) {
+      setAuditorMode('none');
+      setAuditorInternalKey('');
+      setAuditorName('');
+      setAuditorEmail('');
+      return;
+    }
+    if (normalizeEmail(auditorEmail) !== normalizeEmail(person.email)) {
+      setAuditorPhone('');
+      setAuditorCompany('');
+      setAuditorRegNum('');
+      setAuditorValidFrom('');
+      setAuditorValidTo('');
+    }
+    setAuditorMode('szvb_member');
+    setAuditorInternalKey(person.key);
+    setAuditorName(person.name || '');
+    setAuditorEmail(person.email || '');
+    setSaveError(null);
   };
 
   if (!isOpen || !isAdmin) return null;
@@ -476,6 +528,100 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
           "error"
         );
         return;
+      }
+    }
+
+    // Build & validate Economic Auditor payload upfront whenever saving the unified SZVB & Auditor card
+    let nextAuditorPayload = null;
+    if (saveSzvb) {
+      const szvbKeySet = new Set([
+        ...(draftSzvb.chairperson?.key ? [draftSzvb.chairperson.key] : []),
+        ...(draftSzvb.members || []).map((m) => m.key).filter(Boolean),
+      ]);
+
+      if (auditorMode === 'szvb_member') {
+        const chosen =
+          (draftSzvb.chairperson?.key === auditorInternalKey ? draftSzvb.chairperson : null) ||
+          (draftSzvb.members || []).find((m) => m.key === auditorInternalKey) ||
+          candidateByKey.get(auditorInternalKey);
+        if (!chosen || !chosen.email) {
+          setSaveError(
+            isEn
+              ? 'The selected SZVB member has no email address recorded yet.'
+              : 'A kiválasztott SZVB-tagnak még nincs e-mail címe rögzítve!'
+          );
+          return;
+        }
+        nextAuditorPayload = {
+          enabled: true,
+          type: 'internal',
+          name: chosen.name,
+          email: chosen.email,
+          phone: auditorPhone.trim(),
+          companyName: auditorCompany.trim(),
+          registrationNumber: auditorRegNum.trim(),
+          flatNum: chosen.flatNum || chosen.primaryFlatNum || '',
+          validFrom: auditorValidFrom,
+          validTo: auditorValidTo,
+          isSzvbMember: true,
+          exemptQualifiedSzvbMember: true,
+        };
+      } else if (auditorMode === 'internal') {
+        const chosen = candidateByKey.get(auditorInternalKey);
+        if (!chosen || !chosen.email) {
+          setSaveError(
+            isEn
+              ? 'Please select an apartment owner who has a valid email address.'
+              : 'Kérjük, válassz olyan tulajdonost, akinek meg van adva az e-mail címe!'
+          );
+          return;
+        }
+        const isAlsoSzvb = szvbKeySet.has(chosen.key);
+        nextAuditorPayload = {
+          enabled: true,
+          type: 'internal',
+          name: chosen.name,
+          email: chosen.email,
+          phone: auditorPhone.trim(),
+          companyName: auditorCompany.trim(),
+          registrationNumber: auditorRegNum.trim(),
+          flatNum: chosen.primaryFlatNum || '',
+          validFrom: auditorValidFrom,
+          validTo: auditorValidTo,
+          isSzvbMember: isAlsoSzvb,
+          exemptQualifiedSzvbMember: isAlsoSzvb,
+        };
+      } else if (auditorMode === 'external') {
+        const cleanEmail = normalizeEmail(auditorEmail);
+        if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+          setSaveError(
+            isEn
+              ? 'Please enter a valid email address for the external Financial Auditor.'
+              : 'Kérjük, adj meg érvényes e-mail címet a külsős gazdasági ellenőrnek!'
+          );
+          return;
+        }
+        nextAuditorPayload = {
+          enabled: true,
+          type: 'external',
+          name: auditorName.trim() || cleanEmail,
+          email: cleanEmail,
+          phone: auditorPhone.trim(),
+          companyName: auditorCompany.trim(),
+          registrationNumber: auditorRegNum.trim(),
+          flatNum: '',
+          validFrom: auditorValidFrom,
+          validTo: auditorValidTo,
+          isSzvbMember: false,
+          exemptQualifiedSzvbMember: false,
+        };
+      } else {
+        nextAuditorPayload = {
+          enabled: false,
+          type: 'external',
+          isSzvbMember: false,
+          exemptQualifiedSzvbMember: false,
+        };
       }
     }
 
@@ -644,6 +790,16 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
         };
       });
 
+      // Persist Economic Auditor atomically alongside SZVB (external invite email is always automatic)
+      let auditorInviteSent = false;
+      if (saveSzvb && nextAuditorPayload && typeof updateBuildingEconomicAuditor === 'function') {
+        const audRes = await updateBuildingEconomicAuditor(targetBuildingId, nextAuditorPayload, {
+          sendInviteEmail: true,
+          silent: true,
+        });
+        auditorInviteSent = Boolean(audRes?.inviteSent);
+      }
+
       if (saveMaster) setIsEditingMasterData(false);
       if (saveSzvb) setIsEditingSzvb(false);
       if (saveApi) setIsEditingApi(false);
@@ -652,7 +808,13 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
         isAccountsOnly
           ? (t.bank_accounts_saved_toast || (isEn ? "Bank accounts & reserves saved!" : "A bankszámlák és tartalékok adatai sikeresen elmentve!"))
           : section === 'szvb'
-            ? (isEn ? "Accounting Committee (SZVB) settings saved!" : "A Számvizsgáló Bizottság (SZVB) beállításai elmentve!")
+            ? (auditorInviteSent
+                ? (isEn
+                    ? "SZVB & Financial Auditor saved, and login invitation email sent!"
+                    : "SZVB és gazdasági ellenőr elmentve, a belépési meghívó e-mail elküldve!")
+                : (isEn
+                    ? "SZVB & Financial Audit settings saved!"
+                    : "Az SZVB és a gazdasági ellenőrzés beállításai elmentve!"))
             : section === 'api'
               ? (isEn ? "Banking API settings saved!" : "A banki API beállítások sikeresen elmentve!")
               : (isEn ? "Condominium master data saved!" : "A társasház alapadatai sikeresen elmentve!")
@@ -673,19 +835,30 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
       handleSaveSection('master');
     } else if (isEditingSzvb) {
       handleSaveSection('szvb');
-    } else if (isEditingAuditor) {
-      handleSaveAuditor();
     }
   };
 
-  const resetAuditorDraftFromBuilding = () => {
+  const resetSzvbAndAuditorDraft = () => {
+    setSzvbChairpersonKey(existingSzvb.chairperson?.key || '');
+    setSzvbMemberKeys((existingSzvb.members || []).map((m) => m.key).filter(Boolean));
+    setSzvbAddMemberKey('');
+
     const curAud = targetBuilding?.economicAuditor || {};
-    setAuditorMode(curAud.enabled ? (curAud.type === 'internal' ? 'internal' : 'external') : 'none');
+    const curSzvbAll = [existingSzvb.chairperson, ...(existingSzvb.members || [])].filter(Boolean);
+    const matchedSzvbAuditor =
+      curAud.enabled && curAud.type === 'internal' && curAud.email
+        ? curSzvbAll.find((p) => normalizeEmail(p.email) === normalizeEmail(curAud.email))
+        : null;
     const matchedInternal =
-      curAud.enabled && curAud.type === 'internal'
+      curAud.enabled && curAud.type === 'internal' && curAud.email
         ? ownerCandidates.find((c) => normalizeEmail(c.email) === normalizeEmail(curAud.email))
         : null;
-    setAuditorInternalKey(matchedInternal?.key || '');
+    setAuditorMode(
+      curAud.enabled
+        ? (matchedSzvbAuditor ? 'szvb_member' : (curAud.type === 'internal' ? 'internal' : 'external'))
+        : 'none'
+    );
+    setAuditorInternalKey(matchedSzvbAuditor?.key || matchedInternal?.key || '');
     setAuditorName(curAud.name || '');
     setAuditorEmail(curAud.email || '');
     setAuditorPhone(curAud.phone || '');
@@ -693,79 +866,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
     setAuditorRegNum(curAud.registrationNumber || '');
     setAuditorValidFrom(curAud.validFrom || '');
     setAuditorValidTo(curAud.validTo || '');
-    setAuditorExemptQualifiedSzvb(Boolean(curAud.exemptQualifiedSzvbMember));
-    setAuditorSendInvite(true);
-  };
-
-  const handleSaveAuditor = async () => {
-    if (isEffectiveReadOnly || isSavingAuditor || typeof updateBuildingEconomicAuditor !== 'function') return;
     setSaveError(null);
-
-    let payload = {
-      enabled: false,
-      type: 'external',
-      exemptQualifiedSzvbMember: Boolean(auditorExemptQualifiedSzvb),
-    };
-
-    if (auditorMode === 'internal') {
-      const chosen = candidateByKey.get(auditorInternalKey);
-      if (!chosen || !chosen.email) {
-        setSaveError(
-          isEn
-            ? 'Please select an apartment owner who has a valid email address.'
-            : 'Kérjük, válassz olyan tulajdonost, akinek meg van adva az e-mail címe!'
-        );
-        return;
-      }
-      payload = {
-        enabled: true,
-        type: 'internal',
-        name: chosen.name,
-        email: chosen.email,
-        phone: auditorPhone.trim(),
-        companyName: auditorCompany.trim(),
-        registrationNumber: auditorRegNum.trim(),
-        flatNum: chosen.primaryFlatNum || '',
-        validFrom: auditorValidFrom,
-        validTo: auditorValidTo,
-        exemptQualifiedSzvbMember: Boolean(auditorExemptQualifiedSzvb),
-      };
-    } else if (auditorMode === 'external') {
-      const cleanEmail = normalizeEmail(auditorEmail);
-      if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-        setSaveError(
-          isEn
-            ? 'Please enter a valid email address for the external Financial Auditor.'
-            : 'Kérjük, adj meg érvényes e-mail címet a külsős gazdasági ellenőrnek!'
-        );
-        return;
-      }
-      payload = {
-        enabled: true,
-        type: 'external',
-        name: auditorName.trim() || cleanEmail,
-        email: cleanEmail,
-        phone: auditorPhone.trim(),
-        companyName: auditorCompany.trim(),
-        registrationNumber: auditorRegNum.trim(),
-        flatNum: '',
-        validFrom: auditorValidFrom,
-        validTo: auditorValidTo,
-        exemptQualifiedSzvbMember: Boolean(auditorExemptQualifiedSzvb),
-      };
-    }
-
-    setIsSavingAuditor(true);
-    try {
-      const res = await updateBuildingEconomicAuditor(targetBuildingId, payload, {
-        sendInviteEmail: auditorSendInvite,
-      });
-      if (res?.success) {
-        setIsEditingAuditor(false);
-      }
-    } finally {
-      setIsSavingAuditor(false);
-    }
   };
 
   const auditorCompliance = targetBuilding ? evaluateEconomicAuditorCompliance(targetBuilding) : null;
@@ -773,6 +874,29 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
     targetBuilding?.economicAuditor && isEconomicAuditorActive(targetBuilding.economicAuditor)
       ? targetBuilding.economicAuditor
       : null;
+
+  const isSzvbPersonAuditor = (person) => {
+    if (!person) return false;
+    if (isEditingSzvb) {
+      return auditorMode === 'szvb_member' && Boolean(person.key) && auditorInternalKey === person.key;
+    }
+    return Boolean(
+      currentActiveAuditor &&
+      currentActiveAuditor.type === 'internal' &&
+      person.email &&
+      normalizeEmail(currentActiveAuditor.email) === normalizeEmail(person.email)
+    );
+  };
+
+  const isCurrentAuditorInSzvb = Boolean(
+    currentActiveAuditor &&
+    currentActiveAuditor.type === 'internal' &&
+    [existingSzvb.chairperson, ...(existingSzvb.members || [])]
+      .filter(Boolean)
+      .some((p) => p.email && normalizeEmail(p.email) === normalizeEmail(currentActiveAuditor.email))
+  );
+
+  const showAuditorInfoTooltip = isAuditorInfoHovered || isAuditorInfoPinned;
 
   return (
     <div className="fixed inset-0 z-50 bg-[#F3F4F6] flex flex-col overflow-hidden animate-fadeIn cursor-default">
@@ -1106,17 +1230,23 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                   </div>
                 )}
 
-                {/* Section A1b: Számvizsgáló Bizottság (SZVB) Management */}
+                {/* Section A1b: Unified SZVB & Economic Auditor (Tht. 51/A. §) Card */}
                 {!isAccountsOnly && szvbCompliance && (
-                  <div className="bg-indigo-50/40 p-4 rounded-xl border border-indigo-200/80 space-y-3.5">
+                  <div className="bg-indigo-50/40 p-4 rounded-xl border border-indigo-200/80 space-y-4">
+                    {/* Unified Card Header */}
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-bold text-indigo-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
                           <Shield className="w-4 h-4 text-indigo-700" />
-                          <span>{t.szvb_section_title || (isEn ? "Accounting Committee (SZVB)" : "Számvizsgáló Bizottság (SZVB)")}</span>
+                          <span>
+                            {t.szvb_section_title ||
+                              (isEn
+                                ? "Accounting Committee (SZVB) & Financial Audit"
+                                : "Számvizsgáló Bizottság (SZVB) & Gazdasági ellenőrzés")}
+                          </span>
                         </h4>
                         <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-bold">
-                          {szvbCompliance.totalSzvbCount} {isEn ? "assigned" : "fő"} &bull; {szvbCompliance.albetetCount} {isEn ? "units (HRSZ)" : "albetét"}
+                          {szvbCompliance.totalSzvbCount} {isEn ? "SZVB" : "SZVB fő"} &bull; {szvbCompliance.albetetCount} {isEn ? "units (HRSZ)" : "albetét"}
                         </span>
                       </div>
 
@@ -1126,7 +1256,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                             type="button"
                             onClick={() => setIsEditingSzvb(true)}
                             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-indigo-200 bg-white hover:bg-indigo-50 hover:text-indigo-900 text-indigo-700 text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
-                            title={t.szvb_edit_btn || (isEn ? "Edit SZVB members" : "SZVB tagok szerkesztése")}
+                            title={t.szvb_edit_btn || (isEn ? "Edit SZVB & Financial Auditor" : "SZVB és gazdasági ellenőr szerkesztése")}
                           >
                             <Pencil className="w-3.5 h-3.5" />
                             <span>{t.edit || (isEn ? "Edit" : "Szerkesztés")}</span>
@@ -1137,9 +1267,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                               type="button"
                               disabled={isSaving}
                               onClick={() => {
-                                setSzvbChairpersonKey(existingSzvb.chairperson?.key || '');
-                                setSzvbMemberKeys((existingSzvb.members || []).map((m) => m.key).filter(Boolean));
-                                setSzvbAddMemberKey('');
+                                resetSzvbAndAuditorDraft();
                                 setIsEditingSzvb(false);
                               }}
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 text-[11px] font-semibold transition-colors cursor-pointer disabled:opacity-50"
@@ -1183,34 +1311,71 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                           </label>
 
                           {isEditingSzvb && !isEffectiveReadOnly ? (
-                            <select
-                              value={szvbChairpersonKey}
-                              onChange={(e) => handleSelectSzvbChairperson(e.target.value)}
-                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 focus:bg-white focus:outline-none focus:border-indigo-500"
-                            >
-                              <option value="">
-                                {isEn ? "— Not assigned —" : "— Nincs kijelölve —"}
-                              </option>
-                              {ownerCandidates
-                                .filter((c) => !szvbMemberKeys.includes(c.key) || c.key === szvbChairpersonKey)
-                                .map((c) => (
-                                  <option key={c.key} value={c.key}>
-                                    {c.name}{c.flatNums.length > 0 ? ` (${c.flatNums.join(', ')}. ${isEn ? 'unit' : 'lakás'})` : ''}{c.email ? ` — ${c.email}` : ` (${isEn ? 'no email' : 'nincs e-mail'})`}
-                                  </option>
-                                ))}
-                            </select>
+                            <div className="space-y-2">
+                              <select
+                                value={szvbChairpersonKey}
+                                onChange={(e) => handleSelectSzvbChairperson(e.target.value)}
+                                className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 focus:bg-white focus:outline-none focus:border-indigo-500"
+                              >
+                                <option value="">
+                                  {isEn ? "— Not assigned —" : "— Nincs kijelölve —"}
+                                </option>
+                                {ownerCandidates
+                                  .filter((c) => !szvbMemberKeys.includes(c.key) || c.key === szvbChairpersonKey)
+                                  .map((c) => (
+                                    <option key={c.key} value={c.key}>
+                                      {c.name}{c.flatNums.length > 0 ? ` (${c.flatNums.join(', ')}. ${isEn ? 'unit' : 'lakás'})` : ''}{c.email ? ` — ${c.email}` : ` (${isEn ? 'no email' : 'nincs e-mail'})`}
+                                    </option>
+                                  ))}
+                              </select>
+
+                              {draftSzvb.chairperson && (
+                                <button
+                                  type="button"
+                                  disabled={!draftSzvb.chairperson.email}
+                                  onClick={() => handleToggleSzvbPersonAsAuditor(draftSzvb.chairperson)}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+                                    isSzvbPersonAuditor(draftSzvb.chairperson)
+                                      ? 'bg-teal-600 text-white border-teal-600 shadow-2xs'
+                                      : 'bg-white hover:bg-teal-50 text-teal-800 border-teal-200'
+                                  }`}
+                                  title={
+                                    !draftSzvb.chairperson.email
+                                      ? (isEn ? 'Email address required on flat card' : 'E-mail cím szükséges a lakás adatlapján')
+                                      : (isEn
+                                          ? 'Mark this SZVB Chairperson as also serving as Financial Auditor (Tht. § 51/A)'
+                                          : 'Jelöld be, ha az SZVB Elnök egyben a Gazdasági ellenőrzést segítő személy is (Tht. 51/A. §)')
+                                  }
+                                >
+                                  <ClipboardCheck className="w-3.5 h-3.5 shrink-0" />
+                                  <span>
+                                    {isSzvbPersonAuditor(draftSzvb.chairperson)
+                                      ? (isEn ? 'Financial Auditor ✓' : 'Gazdasági ellenőr ✓')
+                                      : (isEn ? 'Also Financial Auditor' : 'Gazdasági ellenőr is')}
+                                  </span>
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <div className="text-xs">
                               {szvbCompliance.szvb.chairperson ? (
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="font-bold text-gray-900">
-                                    {szvbCompliance.szvb.chairperson.name}
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-bold text-gray-900">
+                                      {szvbCompliance.szvb.chairperson.name}
+                                    </span>
                                     {szvbCompliance.szvb.chairperson.flatNum && (
-                                      <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold">
+                                      <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold">
                                         {szvbCompliance.szvb.chairperson.flatNum}. {isEn ? "unit" : "lakás"}
                                       </span>
                                     )}
-                                  </span>
+                                    {isSzvbPersonAuditor(szvbCompliance.szvb.chairperson) && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold">
+                                        <ClipboardCheck className="w-3 h-3" />
+                                        <span>{isEn ? "Financial Auditor" : "Gazdasági ellenőr"}</span>
+                                      </span>
+                                    )}
+                                  </div>
                                   {szvbCompliance.szvb.chairperson.email ? (
                                     <span className="text-[11px] text-gray-500 font-mono">
                                       {szvbCompliance.szvb.chairperson.email}
@@ -1248,40 +1413,71 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                             const activeMembers = isEditingSzvb ? draftSzvb.members : (szvbCompliance.szvb.members || []);
                             return activeMembers.length > 0 ? (
                               <div className="space-y-1.5">
-                                {activeMembers.map((m) => (
-                                  <div
-                                    key={m.key}
-                                    className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-indigo-50/60 border border-indigo-100"
-                                  >
-                                    <div className="min-w-0">
-                                      <div className="text-xs font-bold text-gray-900 truncate">
-                                        {m.name}
-                                        {m.flatNum && (
-                                          <span className="ml-1.5 px-1.5 py-0.2 rounded bg-white text-indigo-700 text-[10px] font-semibold border border-indigo-100">
-                                            {m.flatNum}.
-                                          </span>
+                                {activeMembers.map((m) => {
+                                  const isAud = isSzvbPersonAuditor(m);
+                                  return (
+                                    <div
+                                      key={m.key}
+                                      className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-indigo-50/60 border border-indigo-100"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-gray-900">
+                                          <span className="truncate">{m.name}</span>
+                                          {m.flatNum && (
+                                            <span className="px-1.5 py-0.2 rounded bg-white text-indigo-700 text-[10px] font-semibold border border-indigo-100 shrink-0">
+                                              {m.flatNum}.
+                                            </span>
+                                          )}
+                                          {!isEditingSzvb && isAud && (
+                                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold shrink-0">
+                                              <ClipboardCheck className="w-2.5 h-2.5" />
+                                              <span>{isEn ? "Auditor" : "Gazd. ellenőr"}</span>
+                                            </span>
+                                          )}
+                                        </div>
+                                        {m.email ? (
+                                          <div className="text-[10px] text-gray-500 font-mono truncate">{m.email}</div>
+                                        ) : (
+                                          <div className="text-[10px] text-amber-700 font-semibold">
+                                            ⚠️ {isEn ? "No email set" : "Nincs e-mail"}
+                                          </div>
                                         )}
                                       </div>
-                                      {m.email ? (
-                                        <div className="text-[10px] text-gray-500 font-mono truncate">{m.email}</div>
-                                      ) : (
-                                        <div className="text-[10px] text-amber-700 font-semibold">
-                                          ⚠️ {isEn ? "No email set" : "Nincs e-mail"}
+                                      {isEditingSzvb && !isEffectiveReadOnly && (
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <button
+                                            type="button"
+                                            disabled={!m.email}
+                                            onClick={() => handleToggleSzvbPersonAsAuditor(m)}
+                                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                              isAud
+                                                ? 'bg-teal-600 text-white border-teal-600 shadow-2xs'
+                                                : 'bg-white hover:bg-teal-50 text-teal-800 border-teal-200'
+                                            }`}
+                                            title={
+                                              !m.email
+                                                ? (isEn ? 'Email address required on flat card' : 'E-mail cím szükséges a lakás adatlapján')
+                                                : (isEn
+                                                    ? 'Toggle Financial Auditor role for this SZVB member'
+                                                    : 'Beállítás: ez az SZVB-tag egyben a Gazdasági ellenőrzést segítő személy is')
+                                            }
+                                          >
+                                            <ClipboardCheck className="w-3 h-3 shrink-0" />
+                                            <span>{isAud ? (isEn ? 'Auditor ✓' : 'Ellenőr ✓') : (isEn ? 'Auditor' : 'Ellenőr')}</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemoveSzvbMember(m.key)}
+                                            className="p-1 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer flex-shrink-0"
+                                            title={isEn ? "Remove member" : "Tag eltávolítása"}
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
                                         </div>
                                       )}
                                     </div>
-                                    {isEditingSzvb && !isEffectiveReadOnly && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveSzvbMember(m.key)}
-                                        className="p-1 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer flex-shrink-0"
-                                        title={isEn ? "Remove member" : "Tag eltávolítása"}
-                                      >
-                                        <X className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             ) : (
                               <div className="text-xs text-gray-400 italic">
@@ -1327,350 +1523,385 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                         </div>
                       </div>
                     )}
-                  </div>
-                )}
 
-                {/* Section A1b: Economic Auditor (Gazdasági ellenőrzést segítő személy — Tht. 51/A. §) */}
-                {!isAccountsOnly && (
-                  <div className="bg-teal-50/40 p-4 rounded-xl border border-teal-200/80 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-teal-900">
-                          <ClipboardCheck className="w-4 h-4 text-teal-700" />
-                          <span>
-                            {t.auditor_card_title ||
-                              (isEn
-                                ? 'Financial Audit Assistant (Tht. § 51/A)'
-                                : 'Gazdasági ellenőrzést segítő személy (Tht. 51/A. §)')}
-                          </span>
-                        </h4>
-                        {currentActiveAuditor ? (
-                          <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold">
-                            {currentActiveAuditor.type === 'internal'
-                              ? (isEn ? 'Appointed (Internal Owner)' : 'Kijelölve (Belsős tulajdonos)')
-                              : (isEn ? 'Appointed (External)' : 'Kijelölve (Külsős szakember)')}
-                          </span>
-                        ) : targetBuilding?.economicAuditor?.exemptQualifiedSzvbMember ? (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                            {isEn ? 'Exempt (Qualified SZVB Member)' : 'Mentes (Képesített SZVB-tag)'}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[10px] font-bold">
-                            {isEn ? 'Not appointed' : 'Nincs kijelölve'}
-                          </span>
-                        )}
-                      </div>
+                    {/* Unified Sub-Section: Economic Auditor (Gazdasági ellenőrzést segítő személy — Tht. 51/A. §) */}
+                    <div className="pt-3.5 border-t border-indigo-200/70 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h5 className="font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 text-teal-900">
+                            <ClipboardCheck className="w-4 h-4 text-teal-700 shrink-0" />
+                            <span>
+                              {t.auditor_card_title ||
+                                (isEn
+                                  ? 'Financial Audit Assistant (Tht. § 51/A)'
+                                  : 'Gazdasági ellenőrzést segítő személy (Tht. 51/A. §)')}
+                            </span>
+                          </h5>
 
-                      {!isEffectiveReadOnly && (
-                        !isEditingAuditor ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsEditingAuditor(true)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-teal-200 bg-white hover:bg-teal-50 text-teal-800 text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                          {/* Compact Info "i" Icon with Hover & Click Tooltip */}
+                          <div
+                            className="relative inline-flex items-center"
+                            onMouseEnter={() => setIsAuditorInfoHovered(true)}
+                            onMouseLeave={() => setIsAuditorInfoHovered(false)}
                           >
-                            <Pencil className="w-3.5 h-3.5" />
-                            <span>{t.edit || (isEn ? 'Edit' : 'Szerkesztés')}</span>
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
                             <button
                               type="button"
-                              disabled={isSavingAuditor}
-                              onClick={() => {
-                                resetAuditorDraftFromBuilding();
-                                setIsEditingAuditor(false);
-                              }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 text-[11px] font-semibold transition-colors cursor-pointer disabled:opacity-50"
-                            >
-                              <X className="w-3 h-3" />
-                              <span>{t.cancel || (isEn ? 'Cancel' : 'Mégse')}</span>
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSavingAuditor}
-                              onClick={handleSaveAuditor}
-                              className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-[11px] font-bold transition-colors cursor-pointer shadow-2xs disabled:opacity-60"
-                            >
-                              {isSavingAuditor ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                              <span>{t.save || (isEn ? 'Save' : 'Mentés')}</span>
-                            </button>
-                          </div>
-                        )
-                      )}
-                    </div>
-
-                    <p className="text-[11px] text-teal-950/80 leading-relaxed">
-                      {isEn
-                        ? 'Independent internal or external accountant/auditor with strictly read-only inspection rights, annual statement review, written professional opinion uploads, and SZVB advisory tools. Mandatory over 50 units or 10M HUF annual turnover (unless an SZVB member holds the qualification).'
-                        : 'Belsős (tulajdonos) vagy külsős könyvelő/könyvvizsgáló szakember, tisztán ellenőrző és véleményező jogkörrel (könyvelés, bizonylatok, közgyűlési elszámolás ellenőrzése, kötelező írásbeli szakmai vélemény feltöltése és SZVB tanácsadás). 50 albetét vagy 10 millió Ft éves forgalom felett kötelező (kivéve képesített SZVB-tag esetén).'}
-                    </p>
-
-                    {auditorCompliance && (
-                      <div className="flex flex-wrap items-center gap-2 text-[10px]">
-                        <span className="px-2 py-0.5 rounded-md bg-white border border-teal-200 text-gray-700 font-semibold">
-                          {isEn ? 'Distinct units:' : 'Külön albetétek:'}{' '}
-                          <strong className={auditorCompliance.triggeredByUnits ? 'text-red-700' : 'text-gray-900'}>
-                            {auditorCompliance.albetetCount} / 50
-                          </strong>
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md bg-white border border-teal-200 text-gray-700 font-semibold">
-                          {isEn
-                            ? `${auditorCompliance.turnoverYear} turnover:`
-                            : `${auditorCompliance.turnoverYear}. évi forgalom:`}{' '}
-                          <strong className={auditorCompliance.triggeredByTurnover ? 'text-red-700' : 'text-gray-900'}>
-                            {formatCurrency(auditorCompliance.annualTurnoverHuf)}
-                          </strong>
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Read-Only Summary */}
-                    {!isEditingAuditor ? (
-                      <div className="p-3.5 rounded-xl bg-white border border-teal-100 space-y-2 text-xs">
-                        {currentActiveAuditor ? (
-                          <div className="space-y-1.5">
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                              <span className="font-bold text-gray-900">
-                                👤 {currentActiveAuditor.name}
-                              </span>
-                              <span className="text-gray-600">✉️ {currentActiveAuditor.email}</span>
-                              {currentActiveAuditor.phone && (
-                                <span className="text-gray-600">📞 {currentActiveAuditor.phone}</span>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-                              {currentActiveAuditor.type === 'internal' && currentActiveAuditor.flatNum && (
-                                <span className="px-2 py-0.5 rounded bg-blue-50 text-[#1E3A8A] font-semibold">
-                                  {currentActiveAuditor.flatNum}. {isEn ? 'Flat' : 'lakás'}
-                                </span>
-                              )}
-                              {currentActiveAuditor.companyName && (
-                                <span>🏢 {currentActiveAuditor.companyName}</span>
-                              )}
-                              {currentActiveAuditor.registrationNumber && (
-                                <span className="font-mono">
-                                  {isEn ? 'Reg. No.:' : 'Nyilv. szám:'} {currentActiveAuditor.registrationNumber}
-                                </span>
-                              )}
-                              {(currentActiveAuditor.validFrom || currentActiveAuditor.validTo) && (
-                                <span>
-                                  📅 {currentActiveAuditor.validFrom || '...'} – {currentActiveAuditor.validTo || (isEn ? 'Indefinite' : 'Határozatlan')}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-gray-500 italic">
-                            {targetBuilding?.economicAuditor?.exemptQualifiedSzvbMember
-                              ? (isEn
-                                  ? 'Statutory exemption active: an SZVB member holds registered accountant / certified auditor qualification.'
-                                  : 'Tht. 51/A. § mentesség aktív: az SZVB-ben van regisztrált mérlegképes könyvelő vagy okleveles könyvvizsgáló tag.')
-                              : (isEn
-                                  ? 'No Financial Auditor appointed yet. Click Edit to appoint an internal owner or external professional.'
-                                  : 'Még nincs kijelölve gazdasági ellenőrzést segítő személy. A Szerkesztés gombra kattintva belsős vagy külsős szakember is megadható.')}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      /* Edit Form */
-                      <div className="p-4 rounded-xl bg-white border border-teal-200 space-y-3.5 text-xs">
-                        {/* Mode Selector: None / Internal / External */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          {[
-                            { id: 'none', label: isEn ? 'None (Not appointed)' : 'Nincs kijelölve' },
-                            { id: 'internal', label: isEn ? 'Internal (Building Owner)' : 'Belsős (Tulajdonos)' },
-                            { id: 'external', label: isEn ? 'External Professional' : 'Külsős szakember' },
-                          ].map((opt) => (
-                            <button
-                              key={opt.id}
-                              type="button"
-                              onClick={() => setAuditorMode(opt.id)}
-                              className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                                auditorMode === opt.id
-                                  ? 'bg-teal-700 text-white border-teal-700 shadow-xs'
-                                  : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                              onClick={() => setIsAuditorInfoPinned((prev) => !prev)}
+                              className={`w-4.5 h-4.5 rounded-full flex items-center justify-center border transition-colors cursor-pointer ${
+                                showAuditorInfoTooltip
+                                  ? 'bg-teal-700 text-white border-teal-700'
+                                  : 'bg-white text-teal-700 border-teal-300 hover:bg-teal-50'
                               }`}
+                              aria-label={isEn ? 'More information about Financial Auditor' : 'Bővebb információ a gazdasági ellenőrről'}
+                              aria-expanded={showAuditorInfoTooltip}
                             >
-                              {opt.label}
+                              <Info className="w-3 h-3" />
                             </button>
-                          ))}
+
+                            {showAuditorInfoTooltip && (
+                              <div
+                                role="tooltip"
+                                className="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-2 z-40 w-72 sm:w-96 p-3 rounded-xl bg-gray-900 text-white text-[11px] leading-relaxed shadow-xl border border-gray-700"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p>
+                                    {isEn
+                                      ? 'Internal (owner) or external accountant/auditor professional with strictly inspection and advisory rights (checking bookkeeping, receipts, general assembly annual statement, uploading mandatory written professional opinion, and advising the SZVB). Mandatory over 50 units or 10M HUF annual turnover (unless an SZVB member holds the qualification).'
+                                      : 'Belsős (tulajdonos) vagy külsős könyvelő/könyvvizsgáló szakember, tisztán ellenőrző és véleményező jogkörrel (könyvelés, bizonylatok, közgyűlési elszámolás ellenőrzése, kötelező írásbeli szakmai vélemény feltöltése és SZVB tanácsadás). 50 albetét vagy 10 millió Ft éves forgalom felett kötelező (kivéve képesített SZVB-tag esetén).'}
+                                  </p>
+                                  {isAuditorInfoPinned && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setIsAuditorInfoPinned(false);
+                                        setIsAuditorInfoHovered(false);
+                                      }}
+                                      className="p-0.5 rounded text-gray-400 hover:text-white shrink-0 cursor-pointer"
+                                      aria-label={isEn ? 'Close info' : 'Bezárás'}
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {currentActiveAuditor ? (
+                            <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold">
+                              {isCurrentAuditorInSzvb
+                                ? (isEn ? 'Appointed (SZVB Member)' : 'Kijelölve (SZVB-tag)')
+                                : currentActiveAuditor.type === 'internal'
+                                  ? (isEn ? 'Appointed (Internal Owner)' : 'Kijelölve (Belsős tulajdonos)')
+                                  : (isEn ? 'Appointed (External)' : 'Kijelölve (Külsős szakember)')}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600 text-[10px] font-bold">
+                              {isEn ? 'Not appointed' : 'Nincs kijelölve'}
+                            </span>
+                          )}
                         </div>
 
-                        {auditorMode === 'internal' && (
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block font-bold text-gray-700 mb-1">
-                                {isEn ? 'Select Owner from Building' : 'Tulajdonos kiválasztása a házból'} *
-                              </label>
-                              <select
-                                value={auditorInternalKey}
-                                onChange={(e) => {
-                                  const key = e.target.value;
-                                  setAuditorInternalKey(key);
-                                  const c = candidateByKey.get(key);
-                                  if (c) {
-                                    setAuditorName(c.name || '');
-                                    setAuditorEmail(c.email || '');
-                                  }
-                                }}
-                                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
-                              >
-                                <option value="">{isEn ? '— Select an owner —' : '— Válassz tulajdonost —'}</option>
-                                {ownerCandidates.map((c) => (
-                                  <option key={c.key} value={c.key} disabled={!c.email}>
-                                    {c.name}
-                                    {c.flatNums.length > 0 ? ` (${c.flatNums.join(', ')}.)` : ''}
-                                    {c.email ? ` — ${c.email}` : (isEn ? ' (no email!)' : ' (nincs e-mail!)')}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-
-                        {auditorMode === 'external' && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <label className="block font-bold text-gray-700 mb-1">
-                                {isEn ? 'Full Name' : 'Teljes név'} *
-                              </label>
-                              <input
-                                type="text"
-                                value={auditorName}
-                                onChange={(e) => setAuditorName(e.target.value)}
-                                placeholder={isEn ? 'e.g. Dr. Anna Nagy' : 'pl. Dr. Nagy Anna'}
-                                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
-                              />
-                            </div>
-                            <div>
-                              <label className="block font-bold text-gray-700 mb-1">
-                                {isEn ? 'Email Address (Login)' : 'E-mail cím (belépéshez)'} *
-                              </label>
-                              <input
-                                type="email"
-                                value={auditorEmail}
-                                onChange={(e) => setAuditorEmail(e.target.value)}
-                                placeholder="ellenor@konyvvizsgalo.hu"
-                                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {auditorMode !== 'none' && (
-                          <>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              <div>
-                                <label className="block font-semibold text-gray-700 mb-1">
-                                  {isEn ? 'Phone (optional)' : 'Telefonszám (opcionális)'}
-                                </label>
-                                <input
-                                  type="tel"
-                                  value={auditorPhone}
-                                  onChange={(e) => setAuditorPhone(e.target.value)}
-                                  placeholder="+36 30 123 4567"
-                                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
-                                />
-                              </div>
-                              <div>
-                                <label className="block font-semibold text-gray-700 mb-1">
-                                  {isEn ? 'Company / Audit Firm' : 'Könyvelő / Könyvvizsgáló cég'}
-                                </label>
-                                <input
-                                  type="text"
-                                  value={auditorCompany}
-                                  onChange={(e) => setAuditorCompany(e.target.value)}
-                                  placeholder="pl. Audit Kft."
-                                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
-                                />
-                              </div>
-                              <div>
-                                <label className="block font-semibold text-gray-700 mb-1">
-                                  {isEn ? 'Chamber / Reg. Number' : 'Kamarai / Regisztrációs szám'}
-                                </label>
-                                <input
-                                  type="text"
-                                  value={auditorRegNum}
-                                  onChange={(e) => setAuditorRegNum(e.target.value)}
-                                  placeholder="pl. MKVK-001234"
-                                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:border-teal-600"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div>
-                                <label className="block font-semibold text-gray-700 mb-1">
-                                  {isEn ? 'Engagement Start (optional)' : 'Megbízás kezdete (opcionális)'}
-                                </label>
-                                <input
-                                  type="date"
-                                  value={auditorValidFrom}
-                                  onChange={(e) => setAuditorValidFrom(e.target.value)}
-                                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
-                                />
-                              </div>
-                              <div>
-                                <label className="block font-semibold text-gray-700 mb-1">
-                                  {isEn ? 'Engagement End (empty = indefinite)' : 'Megbízás vége (üres = határozatlan)'}
-                                </label>
-                                <input
-                                  type="date"
-                                  value={auditorValidTo}
-                                  onChange={(e) => setAuditorValidTo(e.target.value)}
-                                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
-                                />
-                              </div>
-                            </div>
-
-                            {auditorMode === 'external' && (
-                              <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-teal-50/70 border border-teal-200/80 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={auditorSendInvite}
-                                  onChange={(e) => setAuditorSendInvite(e.target.checked)}
-                                  className="w-4 h-4 mt-0.5 rounded text-teal-700 focus:ring-teal-600 cursor-pointer"
-                                />
-                                <span className="text-[11px] text-teal-950 leading-snug">
-                                  <strong>
-                                    {isEn
-                                      ? 'Send automatic login / password-setup invitation email'
-                                      : 'Automatikus belépési / jelszóbeállító meghívó e-mail küldése'}
-                                  </strong>
-                                  <span className="block text-teal-800/80 mt-0.5">
-                                    {isEn
-                                      ? 'If the external auditor does not have an account yet, an email with a secure password setup link will be sent automatically.'
-                                      : 'Ha a külsős szakembernek még nincs fiókja, automatikusan megkapja a biztonságos jelszóbeállító linket e-mailben.'}
-                                  </span>
-                                </span>
-                              </label>
-                            )}
-                          </>
-                        )}
-
-                        {/* Crystal-clear Tht. 51/A. § Statutory Exemption Checkbox */}
-                        <label className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50/70 border border-amber-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={auditorExemptQualifiedSzvb}
-                            onChange={(e) => setAuditorExemptQualifiedSzvb(e.target.checked)}
-                            className="w-4 h-4 mt-0.5 rounded text-amber-700 focus:ring-amber-600 cursor-pointer"
-                          />
-                          <span className="text-[11px] text-amber-950 leading-snug">
-                            <strong className="block">
-                              {isEn
-                                ? 'Qualified SZVB Member Exemption (Tht. § 51/A)'
-                                : 'Van képesített SZVB-tag (regisztrált mérlegképes könyvelő vagy okleveles könyvvizsgáló)'}
-                            </strong>
-                            <span className="block text-amber-900/85 mt-0.5">
-                              {isEn
-                                ? 'Check this ONLY if at least one SZVB member holds a registered accountant or certified auditor qualification. When checked, appointing a separate external auditor is not legally mandatory even above 50 units or 10M HUF annual turnover, and the Tht. § 51/A red alert is cleared.'
-                                : 'Kizárólag akkor pipáld be, ha az SZVB-ben már van regisztrált mérlegképes könyvelő vagy okleveles könyvvizsgáló végzettségű tag. Ebben az esetben a Tht. 51/A. § alapján 50 albetét vagy 10 millió Ft forgalom felett sem kötelező külön külső ellenőr, és a piros törvényi figyelmeztetés eltűnik.'}
+                        {auditorCompliance && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                            <span className="px-2 py-0.5 rounded-md bg-white border border-indigo-100 text-gray-700 font-semibold">
+                              {isEn ? 'Units:' : 'Albetétek:'}{' '}
+                              <strong className={auditorCompliance.triggeredByUnits ? 'text-red-700' : 'text-gray-900'}>
+                                {auditorCompliance.albetetCount} / 50
+                              </strong>
                             </span>
-                          </span>
-                        </label>
+                            <span className="px-2 py-0.5 rounded-md bg-white border border-indigo-100 text-gray-700 font-semibold">
+                              {isEn
+                                ? `${auditorCompliance.turnoverYear} turnover:`
+                                : `${auditorCompliance.turnoverYear}. forgalom:`}{' '}
+                              <strong className={auditorCompliance.triggeredByTurnover ? 'text-red-700' : 'text-gray-900'}>
+                                {formatCurrency(auditorCompliance.annualTurnoverHuf)}
+                              </strong>
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    )}
+
+                      {saveError && isEditingSzvb && (
+                        <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-800 text-[11px] font-semibold flex items-center gap-2">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600" />
+                          <span>{saveError}</span>
+                        </div>
+                      )}
+
+                      {/* Read-Only Summary */}
+                      {!isEditingSzvb ? (
+                        <div className="p-3 rounded-xl bg-white border border-indigo-100 space-y-1.5 text-xs">
+                          {currentActiveAuditor ? (
+                            <div className="space-y-1.5">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                <span className="font-bold text-gray-900">
+                                  👤 {currentActiveAuditor.name}
+                                </span>
+                                <span className="text-gray-600 font-mono text-[11px]">✉️ {currentActiveAuditor.email}</span>
+                                {currentActiveAuditor.phone && (
+                                  <span className="text-gray-600">📞 {currentActiveAuditor.phone}</span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                                {isCurrentAuditorInSzvb && (
+                                  <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 font-semibold">
+                                    {isEn ? 'SZVB Member' : 'SZVB-tag'}
+                                  </span>
+                                )}
+                                {currentActiveAuditor.type === 'internal' && currentActiveAuditor.flatNum && (
+                                  <span className="px-2 py-0.5 rounded bg-blue-50 text-[#1E3A8A] font-semibold">
+                                    {currentActiveAuditor.flatNum}. {isEn ? 'Flat' : 'lakás'}
+                                  </span>
+                                )}
+                                {currentActiveAuditor.companyName && (
+                                  <span>🏢 {currentActiveAuditor.companyName}</span>
+                                )}
+                                {currentActiveAuditor.registrationNumber && (
+                                  <span className="font-mono">
+                                    {isEn ? 'Reg. No.:' : 'Nyilv. szám:'} {currentActiveAuditor.registrationNumber}
+                                  </span>
+                                )}
+                                {(currentActiveAuditor.validFrom || currentActiveAuditor.validTo) && (
+                                  <span>
+                                    📅 {currentActiveAuditor.validFrom || '...'} – {currentActiveAuditor.validTo || (isEn ? 'Indefinite' : 'Határozatlan')}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-gray-400 italic">
+                              {isEn
+                                ? 'No Financial Auditor appointed yet. Click Edit to mark a qualified SZVB member above, or appoint an internal owner / external professional.'
+                                : 'Még nincs kijelölve gazdasági ellenőrzést segítő személy. A Szerkesztés gombra kattintva egy SZVB-tag neve mellett is bekapcsolhatod, vagy belsős/külsős szakembert választhatsz.'}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* Edit Form inside unified card */
+                        <div className="p-3.5 rounded-xl bg-white border border-teal-200/90 space-y-3 text-xs">
+                          {auditorMode === 'szvb_member' ? (
+                            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-teal-50/80 border border-teal-200">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <ClipboardCheck className="w-4 h-4 text-teal-700 shrink-0" />
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-teal-950 truncate">
+                                    {isEn ? 'Appointed via SZVB member:' : 'SZVB-tag kijelölve gazdasági ellenőrként:'}{' '}
+                                    <span>{auditorName}</span>
+                                  </div>
+                                  <div className="text-[11px] text-teal-800/80 font-mono truncate">{auditorEmail}</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAuditorMode('external');
+                                    setAuditorInternalKey('');
+                                    setAuditorName('');
+                                    setAuditorEmail('');
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-white border border-teal-200 hover:bg-teal-100/60 text-teal-800 text-[10px] font-bold cursor-pointer transition-colors"
+                                >
+                                  {isEn ? 'Pick External Instead' : 'Külsős választása'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAuditorMode('none');
+                                    setAuditorInternalKey('');
+                                    setAuditorName('');
+                                    setAuditorEmail('');
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-white border border-gray-200 hover:bg-red-50 hover:text-red-700 hover:border-red-200 text-gray-600 text-[10px] font-bold cursor-pointer transition-colors"
+                                >
+                                  {isEn ? 'Clear' : 'Levétel'}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Mode Selector: None / Internal Owner / External Professional */}
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                {[
+                                  { id: 'none', label: isEn ? 'None (Not appointed)' : 'Nincs kijelölve' },
+                                  { id: 'internal', label: isEn ? 'Internal (Building Owner)' : 'Belsős (Tulajdonos)' },
+                                  { id: 'external', label: isEn ? 'External Professional' : 'Külsős szakember' },
+                                ].map((opt) => (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setAuditorMode(opt.id);
+                                      setSaveError(null);
+                                    }}
+                                    className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                      auditorMode === opt.id
+                                        ? 'bg-teal-700 text-white border-teal-700 shadow-xs'
+                                        : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                                    }`}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {(draftSzvb.chairperson || draftSzvb.members.length > 0) && auditorMode === 'none' && (
+                                <p className="text-[11px] text-teal-800/90 bg-teal-50/60 border border-teal-100 px-2.5 py-1.5 rounded-lg">
+                                  💡 {isEn
+                                    ? 'Tip: If one of your SZVB members above is also the Financial Auditor, simply click the "Auditor" button next to their name.'
+                                    : 'Tipp: Ha a fenti SZVB-tagok valamelyike egyben a gazdasági ellenőr is, egyszerűen kapcsold be a neve melletti „Gazdasági ellenőr” gombot.'}
+                                </p>
+                              )}
+
+                              {auditorMode === 'internal' && (
+                                <div>
+                                  <label className="block font-bold text-gray-700 mb-1">
+                                    {isEn ? 'Select Owner from Building' : 'Tulajdonos kiválasztása a házból'} *
+                                  </label>
+                                  <select
+                                    value={auditorInternalKey}
+                                    onChange={(e) => {
+                                      const key = e.target.value;
+                                      setAuditorInternalKey(key);
+                                      const c = candidateByKey.get(key);
+                                      if (c) {
+                                        setAuditorName(c.name || '');
+                                        setAuditorEmail(c.email || '');
+                                        // If the picked owner is already an SZVB member, seamlessly link as szvb_member
+                                        const inSzvb =
+                                          draftSzvb.chairperson?.key === key ||
+                                          draftSzvb.members.some((m) => m.key === key);
+                                        if (inSzvb) {
+                                          setAuditorMode('szvb_member');
+                                        }
+                                      }
+                                    }}
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
+                                  >
+                                    <option value="">{isEn ? '— Select an owner —' : '— Válassz tulajdonost —'}</option>
+                                    {ownerCandidates.map((c) => (
+                                      <option key={c.key} value={c.key} disabled={!c.email}>
+                                        {c.name}
+                                        {c.flatNums.length > 0 ? ` (${c.flatNums.join(', ')}.)` : ''}
+                                        {c.email ? ` — ${c.email}` : (isEn ? ' (no email!)' : ' (nincs e-mail!)')}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+
+                              {auditorMode === 'external' && (
+                                <div className="space-y-2">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block font-bold text-gray-700 mb-1">
+                                        {isEn ? 'Full Name' : 'Teljes név'} *
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={auditorName}
+                                        onChange={(e) => setAuditorName(e.target.value)}
+                                        placeholder={isEn ? 'e.g. Dr. Anna Nagy' : 'pl. Dr. Nagy Anna'}
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block font-bold text-gray-700 mb-1">
+                                        {isEn ? 'Email Address (Login)' : 'E-mail cím (belépéshez)'} *
+                                      </label>
+                                      <input
+                                        type="email"
+                                        value={auditorEmail}
+                                        onChange={(e) => setAuditorEmail(e.target.value)}
+                                        placeholder="ellenor@konyvvizsgalo.hu"
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
+                                      />
+                                    </div>
+                                  </div>
+                                  <p className="text-[10px] text-teal-800/80 flex items-center gap-1.5">
+                                    <Mail className="w-3 h-3 shrink-0" />
+                                    <span>
+                                      {isEn
+                                        ? 'On save, an automatic login / password-setup invitation email will be sent to the external professional if they do not have an account yet.'
+                                        : 'Mentéskor a külsős szakember automatikusan megkapja a biztonságos belépési / jelszóbeállító meghívót e-mailben.'}
+                                    </span>
+                                  </p>
+                                </div>
+                              )}
+                            </>
+                          )}
+
+                          {auditorMode !== 'none' && (
+                            <>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                  <label className="block font-semibold text-gray-700 mb-1">
+                                    {isEn ? 'Phone (optional)' : 'Telefonszám (opcionális)'}
+                                  </label>
+                                  <input
+                                    type="tel"
+                                    value={auditorPhone}
+                                    onChange={(e) => setAuditorPhone(e.target.value)}
+                                    placeholder="+36 30 123 4567"
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block font-semibold text-gray-700 mb-1">
+                                    {isEn ? 'Company / Audit Firm' : 'Könyvelő / Könyvvizsgáló cég'}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={auditorCompany}
+                                    onChange={(e) => setAuditorCompany(e.target.value)}
+                                    placeholder="pl. Audit Kft."
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block font-semibold text-gray-700 mb-1">
+                                    {isEn ? 'Chamber / Reg. Number' : 'Kamarai / Regisztrációs szám'}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={auditorRegNum}
+                                    onChange={(e) => setAuditorRegNum(e.target.value)}
+                                    placeholder="pl. MKVK-001234"
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:border-teal-600"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block font-semibold text-gray-700 mb-1">
+                                    {isEn ? 'Engagement Start (optional)' : 'Megbízás kezdete (opcionális)'}
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={auditorValidFrom}
+                                    onChange={(e) => setAuditorValidFrom(e.target.value)}
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block font-semibold text-gray-700 mb-1">
+                                    {isEn ? 'Engagement End (empty = indefinite)' : 'Megbízás vége (üres = határozatlan)'}
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={auditorValidTo}
+                                    onChange={(e) => setAuditorValidTo(e.target.value)}
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-600"
+                                  />
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

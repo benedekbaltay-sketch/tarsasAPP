@@ -63,6 +63,7 @@ export function sanitizeEconomicAuditor(raw, actorEmail = '') {
     flatNum: enabled && type === 'internal' ? String(src.flatNum || '').trim() : '',
     validFrom: enabled ? cleanDate(src.validFrom) : '',
     validTo: enabled ? cleanDate(src.validTo) : '',
+    isSzvbMember: Boolean(enabled && type === 'internal' && src.isSzvbMember),
     exemptQualifiedSzvbMember: Boolean(src.exemptQualifiedSzvbMember),
     updatedAt: src.updatedAt || new Date().toISOString(),
     updatedBy: normalizeEmail(actorEmail) || normalizeEmail(src.updatedBy) || '',

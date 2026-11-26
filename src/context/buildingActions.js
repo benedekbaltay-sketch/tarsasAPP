@@ -1773,7 +1773,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
   // ECONOMIC AUDITOR (Tht. 51/A. §) — Appointment, Written Opinions & Observations
   // =========================================================================
 
-  const updateBuildingEconomicAuditor = async (buildingId, rawAuditor, { sendInviteEmail = true } = {}) => {
+  const updateBuildingEconomicAuditor = async (buildingId, rawAuditor, { sendInviteEmail = true, silent = false } = {}) => {
     const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
     if (!targetId || !requireAdmin(targetId)) return { success: false };
 
@@ -1827,16 +1827,18 @@ export function createBuildingActions({ state, setState, persistState, showToast
       }
     }
 
-    const isEn = state.currentLang === 'en';
-    showToast(
-      inviteSent
-        ? (isEn
-            ? 'Financial Auditor saved & login invitation email sent!'
-            : 'Gazdasági ellenőr elmentve és belépési meghívó e-mail elküldve!')
-        : (isEn
-            ? 'Financial Auditor settings saved!'
-            : 'Gazdasági ellenőr beállításai sikeresen elmentve!')
-    );
+    if (!silent) {
+      const isEn = state.currentLang === 'en';
+      showToast(
+        inviteSent
+          ? (isEn
+              ? 'Financial Auditor saved & login invitation email sent!'
+              : 'Gazdasági ellenőr elmentve és belépési meghívó e-mail elküldve!')
+          : (isEn
+              ? 'Financial Auditor settings saved!'
+              : 'Gazdasági ellenőr beállításai sikeresen elmentve!')
+      );
+    }
     return { success: true, inviteSent, auditor: nextAuditor };
   };
 

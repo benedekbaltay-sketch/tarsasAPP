@@ -83,12 +83,22 @@ test('1. Tht. 51/A. § compliance triggers over 50 units OR over 10M HUF turnove
   assert.equal(largeEval.triggeredByUnits, true);
   assert.equal(largeEval.showWarning, true);
 
-  // Qualified SZVB member exemption clears warning even without external auditor
+  // Qualified SZVB member appointed as Financial Auditor clears warning AND preserves isSzvbMember flag
   const exemptB = makeBuildingWithFlats(52, {
-    economicAuditor: sanitizeEconomicAuditor({ enabled: false, exemptQualifiedSzvbMember: true }),
+    economicAuditor: sanitizeEconomicAuditor({
+      enabled: true,
+      type: 'internal',
+      name: 'Tulajdonos 1',
+      email: 'b-51a-owner1@example.com',
+      flatNum: '1',
+      isSzvbMember: true,
+      exemptQualifiedSzvbMember: true,
+    }),
   });
+  assert.equal(exemptB.economicAuditor.isSzvbMember, true);
   const exemptEval = evaluateEconomicAuditorCompliance(exemptB, { nowDateStr: '2026-03-01' });
   assert.equal(exemptEval.required, true);
+  assert.equal(exemptEval.hasActiveAuditor, true);
   assert.equal(exemptEval.isExemptByQualifiedSzvb, true);
   assert.equal(exemptEval.compliant, true);
   assert.equal(exemptEval.showWarning, false);

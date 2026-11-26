@@ -98,8 +98,8 @@ export function getBuildingAlerts(
       dismissible: true,
       titleHu: 'Gazdasági ellenőrzést segítő személy kötelező (Tht. 51/A. §)',
       titleEn: 'Financial Auditor Required (Tht. § 51/A)',
-      messageHu: `A Társasházi törvény (Tht. 51/A. §) alapján kötelező gazdasági ellenőrzést segítő személyt (regisztrált mérlegképes könyvelőt vagy okleveles könyvvizsgálót) igénybe venni, mert ${auditorCompliance.triggerReasonHu}. Kérjük, jelölj ki belsős vagy külsős szakembert alább — vagy ha az SZVB-ben már van képesített könyvelő/könyvvizsgáló tag, pipáld be a mentesítő opciót!`,
-      messageEn: `Under the Hungarian Condominium Act (Tht. § 51/A), appointing a Financial Auditor (registered accountant or certified auditor) is mandatory because ${auditorCompliance.triggerReasonEn}. Please appoint an internal or external auditor below — or check the qualified SZVB member exemption if applicable.`,
+      messageHu: `A Társasházi törvény (Tht. 51/A. §) alapján kötelező gazdasági ellenőrzést segítő személyt (regisztrált mérlegképes könyvelőt vagy okleveles könyvvizsgálót) igénybe venni, mert ${auditorCompliance.triggerReasonHu}. Kérjük, jelölj ki belsős vagy külsős szakembert alább — vagy ha az SZVB valamelyik tagja rendelkezik ilyen képesítéssel, jelöld meg a neve mellett a „Gazdasági ellenőr” gombbal!`,
+      messageEn: `Under the Hungarian Condominium Act (Tht. § 51/A), appointing a Financial Auditor (registered accountant or certified auditor) is mandatory because ${auditorCompliance.triggerReasonEn}. Please appoint an internal or external auditor below — or if an SZVB member holds this qualification, mark them using the "Financial Auditor" button next to their name.`,
       meta: auditorCompliance,
     });
   }
