@@ -751,8 +751,11 @@ function MainLayout() {
             setIsCalendarOpen(true);
           }}
           onOpenCommunicationCenter={() => {
-            if (!isAdmin) return;
-            setCommunicationBuildingId(state.isPortfolioView || !state.currentBuildingId ? 'all' : state.currentBuildingId);
+            setCommunicationBuildingId(
+              isAdmin && (state.isPortfolioView || !state.currentBuildingId)
+                ? 'all'
+                : (state.currentBuildingId || currentUser?.buildingId || 'all')
+            );
             setIsCommunicationCenterOpen(true);
           }}
         />

@@ -757,7 +757,7 @@ export function CommunicationCenterModal({
     : userSentMessages.length;
 
   return (
-    <div className="fixed inset-0 z-40 bg-[#F3F4F6] flex flex-col overflow-hidden animate-fadeIn">
+    <div className="fixed inset-0 z-50 bg-[#F3F4F6] flex flex-col overflow-hidden animate-fadeIn">
       {/* Top Header Bar */}
       <div className="sticky top-0 z-20 w-full shadow-xs bg-white border-b border-gray-200">
         <ImpersonationBanner onExit={onClose} />
@@ -1568,7 +1568,7 @@ export function CommunicationCenterModal({
 
       {/* SUBMODAL 1: COMPOSE NOTICE MODAL (2-STEP WIZARD) */}
       {isComposeOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fadeIn">
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fadeIn">
           <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-scaleUp">
             {/* Header */}
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
@@ -2155,7 +2155,7 @@ export function CommunicationCenterModal({
 
       {/* SUBMODAL 3: View Letter Content Modal */}
       {viewingLetter && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-scaleUp">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
               <div className="flex items-center gap-2.5">
@@ -2228,7 +2228,7 @@ export function CommunicationCenterModal({
 
       {/* SUBMODAL: Full View for In-App Messages / Correspondence / Opinions */}
       {viewingNotification && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-scaleUp">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
               <div className="flex items-center gap-2.5">
@@ -2453,6 +2453,34 @@ export function CommunicationCenterModal({
                       <span>{t.mail_reply_btn || (isEn ? "Reply" : "Válasz")}</span>
                     </button>
                   )}
+
+                {/* 1-Click Forward Official Audit Opinion to All Residents (Managing KK only) */}
+                {isAdmin &&
+                  canManageAnyBuilding &&
+                  viewingNotification.meta?.isOfficialOpinion && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = viewingNotification;
+                        setViewingNotification(null);
+                        setComposeTargetBuildingId(target.buildingId || activeBuilding?.id || 'all');
+                        setComposeAudience('all');
+                        setComposeSubject(
+                          (isEn ? (target.titleEn || target.titleHu) : (target.titleHu || target.titleEn)) || ''
+                        );
+                        setComposeBody(
+                          (isEn ? (target.messageEn || target.messageHu) : (target.messageHu || target.messageEn)) || ''
+                        );
+                        setComposeAttachments(Array.isArray(target.attachments) ? target.attachments : []);
+                        setComposeStep(1);
+                        setIsComposeOpen(true);
+                      }}
+                      className="px-3.5 py-2 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>{isEn ? "Share with Owners" : "Kiküldés a lakóknak"}</span>
+                    </button>
+                  )}
               </div>
 
               <button
@@ -2469,7 +2497,7 @@ export function CommunicationCenterModal({
 
       {/* SUBMODAL 5: UNIVERSAL DIRECT COMPOSE / REPLY / FINANCIAL AUDITOR OPINION MODAL */}
       {isDirectComposeOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fadeIn">
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fadeIn">
           <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-scaleUp">
             {/* Header */}
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
@@ -2827,7 +2855,7 @@ export function CommunicationCenterModal({
 
       {/* SUBMODAL 4: Standalone Dry Run Viewer */}
       {ruleDryRunTarget && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden animate-scaleUp">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
               <div className="flex items-center gap-2.5">
