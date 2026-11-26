@@ -51,6 +51,10 @@ import {
   getUserSzvbRolesAcrossBuildings,
   isUserBuildingSzvb as checkUserBuildingSzvb,
 } from '../utils/szvb';
+import {
+  resolveUserProfiles,
+  saveLastActiveProfile,
+} from '../utils/userProfiles';
 
 const AppContext = createContext(null);
 
@@ -1238,35 +1242,42 @@ export function AppProvider({ children }) {
     );
   };
 
-  // Switch to Common Representative (KK) Mode
+  // Switch to Common Representative (KK) Mode (strictly verified via resolveUserProfiles)
   const switchToKkMode = (buildingId = null) => {
-    if (!isCurrentUserAdmin(state.currentUser, state.users)) return;
     const isEn = state.currentLang === 'en';
-    const userEmail = (state.currentUser?.email || "").toLowerCase().trim();
-    const adminUser = (state.users || []).find(u => (u.role === 'admin' || u.role === 'superadmin') && u.email?.toLowerCase().trim() === userEmail) ||
-                      (state.users || []).find(u => u.role === 'admin' || u.role === 'superadmin') || {
-                        id: "admin",
-                        name: state.currentUser?.name || (isEn ? "Common Representative" : "Közös Képviselő"),
-                        email: userEmail,
-                        role: "admin",
-                        flatNum: "0"
-                      };
+    const { kkProfile } = resolveUserProfiles(state.currentUser, {
+      buildings: state.buildings,
+      organizations: state.organizations,
+      users: state.users,
+    });
+    if (!kkProfile) {
+      showToast(
+        isEn ? "You do not have Common Representative access." : "Nincs közös képviseleti jogosultságod.",
+        "error"
+      );
+      return;
+    }
 
-    const targetBuildingId = buildingId || state.currentBuildingId || (state.buildings && state.buildings[0] && state.buildings[0].id) || null;
-    const curB = (state.buildings || []).find(b => b.id === targetBuildingId) || (state.buildings || [])[0];
+    const userEmail = (state.currentUser?.email || "").toLowerCase().trim();
+    const targetBuildingId = buildingId || null;
+    const curB = targetBuildingId ? (state.buildings || []).find(b => b.id === targetBuildingId) : null;
 
     const updatedUser = stripSensitiveUserFields({
-      ...adminUser,
-      id: adminUser.id || "admin",
-      uid: state.currentUser?.uid || adminUser.uid,
-      name: adminUser.name || state.currentUser?.name || (isEn ? "Common Representative" : "Közös Képviselő"),
-      email: userEmail || adminUser.email || "",
-      role: adminUser.role === 'superadmin' ? 'superadmin' : 'admin',
+      id: kkProfile.role === 'superadmin' ? (state.currentUser?.uid || 'superadmin') : (state.currentUser?.uid || 'admin'),
+      uid: state.currentUser?.uid,
+      name: kkProfile.name || state.currentUser?.name || (isEn ? "Common Representative" : "Közös Képviselő"),
+      email: userEmail || kkProfile.email || "",
+      role: kkProfile.role,
+      orgId: kkProfile.orgId || null,
+      orgRole: kkProfile.orgRole || null,
       flatNum: "0",
       buildingId: targetBuildingId,
       isAdminUser: true,
       memberships: state.currentUser?.memberships,
     });
+
+    setCopiedTx(null);
+    saveLastActiveProfile(updatedUser.email, { id: 'kk', type: 'kk', buildingId: null, flatNum: '0' });
 
     if (!IS_FIRESTORE_MODE) {
       try {
@@ -1285,15 +1296,16 @@ export function AppProvider({ children }) {
       currentBuildingId: targetBuildingId,
       activeRoleMode: 'kk',
       isPortfolioView: buildingId ? false : true,
-      flats: curB ? curB.flats : s.flats,
-      transactions: curB ? curB.transactions : s.transactions,
-      expenses: curB ? curB.expenses : s.expenses,
-      manualDebits: curB ? curB.manualDebits : s.manualDebits,
-      documents: curB ? curB.documents : s.documents,
+      flats: curB ? (curB.flats || []) : s.flats,
+      transactions: curB ? (curB.transactions || []) : s.transactions,
+      expenses: curB ? (curB.expenses || []) : s.expenses,
+      manualDebits: curB ? (curB.manualDebits || []) : s.manualDebits,
+      documents: curB ? (curB.documents || []) : s.documents,
       docFolders: curB ? (curB.docFolders || []) : (s.docFolders || []),
-      infoSections: curB ? curB.infoSections : s.infoSections,
-      buildingInitialReserveCommon: curB ? curB.buildingInitialReserveCommon : 0,
-      buildingInitialReserveRenovation: curB ? curB.buildingInitialReserveRenovation : 0
+      loans: curB ? (curB.loans || []) : (s.loans || []),
+      infoSections: curB ? (curB.infoSections || []) : s.infoSections,
+      buildingInitialReserveCommon: curB ? (curB.buildingInitialReserveCommon || 0) : 0,
+      buildingInitialReserveRenovation: curB ? (curB.buildingInitialReserveRenovation || 0) : 0
     }), 'localOnly');
 
     if (IS_FIRESTORE_MODE && targetBuildingId && !curB?.hydrated) {
@@ -1303,13 +1315,18 @@ export function AppProvider({ children }) {
     showToast(isEn ? "Switched to Common Representative Portfolio" : "Átváltva: Közös Képviseleti Portfólió");
   };
 
-  // Switch to Resident (Tenant) Mode
+  // Switch to Resident (Tenant / Owner) Mode
   const switchToTenantMode = (flatNum = null, buildingId = null) => {
     const isEn = state.currentLang === 'en';
-    const myFlats = getUserFlats(state.currentUser, state.buildings);
-    const targetFlat = (flatNum && buildingId) 
-      ? myFlats.find(f => f.flatNum === flatNum && f.buildingId === buildingId)
-      : (flatNum ? myFlats.find(f => f.flatNum === flatNum) : myFlats[0]);
+    const { kkProfile, ownerProfiles } = resolveUserProfiles(state.currentUser, {
+      buildings: state.buildings,
+      organizations: state.organizations,
+      users: state.users,
+    });
+    const myFlats = ownerProfiles.length > 0 ? ownerProfiles : getUserFlats(state.currentUser, state.buildings);
+    const targetFlat = (flatNum && buildingId)
+      ? myFlats.find(f => String(f.flatNum) === String(flatNum) && f.buildingId === buildingId)
+      : (flatNum ? myFlats.find(f => String(f.flatNum) === String(flatNum)) : myFlats[0]);
 
     if (!targetFlat && myFlats.length === 0) {
       showToast(isEn ? "No resident flat found for this account." : "Nincs lakói profil társítva ehhez a fiókhoz.", "warning");
@@ -1326,11 +1343,20 @@ export function AppProvider({ children }) {
       name: chosenFlat.ownerName || state.currentUser?.name,
       email: state.currentUser?.email || chosenFlat.email,
       role: "Owner",
+      szvbRole: null,
       flatNum: chosenFlat.flatNum,
       unitId: chosenFlat.unitId || chosenFlat.id,
       buildingId: targetBuildingId,
-      isAdminUser: state.currentUser?.isAdminUser === true,
+      isAdminUser: Boolean(kkProfile),
       memberships: state.currentUser?.memberships,
+    });
+
+    setCopiedTx(null);
+    saveLastActiveProfile(updatedUser.email, {
+      id: `owner:${targetBuildingId}:${chosenFlat.flatNum}`,
+      type: 'owner',
+      buildingId: targetBuildingId,
+      flatNum: chosenFlat.flatNum,
     });
 
     if (!IS_FIRESTORE_MODE) {
@@ -1350,18 +1376,19 @@ export function AppProvider({ children }) {
       currentBuildingId: targetBuildingId,
       activeRoleMode: 'tenant',
       isPortfolioView: false,
-      flats: curB ? curB.flats : s.flats,
-      transactions: curB ? curB.transactions : s.transactions,
-      expenses: curB ? curB.expenses : s.expenses,
-      manualDebits: curB ? curB.manualDebits : s.manualDebits,
-      documents: curB ? curB.documents : s.documents,
+      flats: curB ? (curB.flats || []) : s.flats,
+      transactions: curB ? (curB.transactions || []) : s.transactions,
+      expenses: curB ? (curB.expenses || []) : s.expenses,
+      manualDebits: curB ? (curB.manualDebits || []) : s.manualDebits,
+      documents: curB ? (curB.documents || []) : s.documents,
       docFolders: curB ? (curB.docFolders || []) : (s.docFolders || []),
-      infoSections: curB ? curB.infoSections : s.infoSections,
-      buildingInitialReserveCommon: curB ? curB.buildingInitialReserveCommon : 0,
-      buildingInitialReserveRenovation: curB ? curB.buildingInitialReserveRenovation : 0
+      loans: curB ? (curB.loans || []) : (s.loans || []),
+      infoSections: curB ? (curB.infoSections || []) : s.infoSections,
+      buildingInitialReserveCommon: curB ? (curB.buildingInitialReserveCommon || 0) : 0,
+      buildingInitialReserveRenovation: curB ? (curB.buildingInitialReserveRenovation || 0) : 0
     }), 'localOnly');
 
-    if (IS_FIRESTORE_MODE && targetBuildingId && !curB?.hydrated) {
+    if (IS_FIRESTORE_MODE && targetBuildingId) {
       reloadCurrentBuilding(targetBuildingId);
     }
 
@@ -1372,6 +1399,12 @@ export function AppProvider({ children }) {
   const switchToSzvbMode = (buildingId = null) => {
     const isEn = state.currentLang === 'en';
     if (!state.currentUser) return;
+
+    const { kkProfile } = resolveUserProfiles(state.currentUser, {
+      buildings: state.buildings,
+      organizations: state.organizations,
+      users: state.users,
+    });
 
     const szvbRoles = getUserSzvbRolesAcrossBuildings(state.currentUser, state.buildings);
     const matchedRole = buildingId
@@ -1401,8 +1434,16 @@ export function AppProvider({ children }) {
       szvbRole: verifiedInfo.role,
       flatNum: verifiedInfo.flatNum || state.currentUser?.flatNum || '0',
       buildingId: curB.id,
-      isAdminUser: state.currentUser?.isAdminUser === true,
+      isAdminUser: Boolean(kkProfile),
       memberships: state.currentUser?.memberships,
+    });
+
+    setCopiedTx(null);
+    saveLastActiveProfile(updatedUser.email, {
+      id: `szvb:${curB.id}`,
+      type: 'szvb',
+      buildingId: curB.id,
+      flatNum: verifiedInfo.flatNum || '0',
     });
 
     if (!IS_FIRESTORE_MODE) {

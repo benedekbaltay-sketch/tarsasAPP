@@ -333,10 +333,8 @@ export function Header({
           {/* Universal Notification Bell (visible to all users, but Communication Center is strictly admin-only) */}
           <NotificationBell onOpenCommunicationCenter={isCurrentlyAdminMode ? onOpenCommunicationCenter : null} />
 
-          {/* Profile Switcher (for multi-flat residents; admins use the unified building/portfolio switcher above) */}
-          {!isCurrentlyAdminMode && (
-            <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />
-          )}
+          {/* Unified Profile Switcher (visible across ALL modes whenever user holds >1 profile: KK / Owner / SZVB, with cross-profile unread red dot) */}
+          <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />
 
           {/* Language Flag Switcher */}
           <button

@@ -26,6 +26,12 @@ import {
 } from '../services/firestoreAdapter';
 import { normalizeEmail } from '../utils/teamPermissions';
 import { isUserBuildingSzvb } from '../utils/szvb';
+import {
+  resolveUserProfiles,
+  loadLastActiveProfile,
+  saveLastActiveProfile,
+  resolveInitialLoginProfile,
+} from '../utils/userProfiles';
 
 const MIN_PASSWORD_LENGTH = 10;
 
@@ -154,96 +160,86 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
       }
     }
 
-    const matchingUsers = effectiveUsers.filter(u => {
-      const uEmail = (u?.email || "").toLowerCase().trim();
-      return uEmail === verifiedEmail;
-    });
+    // Resolve ALL valid profiles belonging to this verified email (KK, Owner apartments, SZVB)
+    const {
+      kkProfile,
+      allProfiles,
+      isSuspendedStaff,
+    } = resolveUserProfiles(
+      {
+        uid: firebaseUser.uid,
+        email: verifiedEmail,
+        name: firebaseUser.displayName || '',
+        role: tokenClaims.role || null,
+      },
+      {
+        buildings: effectiveBuildings,
+        organizations: effectiveOrganizations,
+        users: effectiveUsers,
+      }
+    );
+
+    // Safe Offboarding: if user was suspended as org staff AND has zero personal apartments/SZVB profiles, block login.
+    // If they DO own a personal apartment, allow login straight into their Owner profile (KK profile is excluded)!
+    if (isSuspendedStaff && allProfiles.length === 0) {
+      try { await signOut(auth); } catch (e) {}
+      return {
+        success: false,
+        error: isEn
+          ? "Your colleague access has been suspended by the company owner. Please contact your administrator."
+          : "A munkatársi hozzáférésedet a cég tulajdonosa felfüggesztette. Kérjük, keresd a cégvezetőt!"
+      };
+    }
+
+    // Choose initial profile: restore last active profile if still valid, else KK -> Owner -> SZVB
+    const savedLastProfile = loadLastActiveProfile(verifiedEmail);
+    const chosenProfile = resolveInitialLoginProfile(allProfiles, savedLastProfile);
 
     let foundUser = null;
-    if (matchingUsers.length > 0) {
-      foundUser = matchingUsers.find(u => u.role === 'superadmin' || u.role === 'admin' || u.role === 'szvb') || matchingUsers[0];
-    }
-
-    // If user is a suspended staff member (and not a superadmin or resident owner), block admin login immediately!
-    if (matchedOrgMember && matchedOrgMember.orgRole !== 'owner' && matchedOrgMember.active === false) {
-      if (!foundUser || foundUser.role === 'admin') {
-        try { await signOut(auth); } catch (e) {}
-        return {
-          success: false,
-          error: isEn
-            ? "Your colleague access has been suspended by the company owner. Please contact your administrator."
-            : "A munkatársi hozzáférésedet a cég tulajdonosa felfüggesztette. Kérjük, keresd a cégvezetőt!"
+    if (chosenProfile) {
+      if (chosenProfile.type === 'kk') {
+        foundUser = {
+          id: matchedOrgMember?.id || firebaseUser.uid,
+          uid: firebaseUser.uid,
+          name: chosenProfile.name || firebaseUser.displayName || verifiedEmail,
+          email: verifiedEmail,
+          role: chosenProfile.role, // 'admin' or 'superadmin'
+          flatNum: '0',
+          orgId: chosenProfile.orgId || null,
+          orgRole: chosenProfile.orgRole || null,
+          isAdminUser: true,
+        };
+      } else if (chosenProfile.type === 'szvb') {
+        foundUser = {
+          id: `szvb-${chosenProfile.buildingId}`,
+          uid: firebaseUser.uid,
+          name: chosenProfile.name || firebaseUser.displayName || verifiedEmail,
+          email: verifiedEmail,
+          role: 'szvb',
+          szvbRole: chosenProfile.szvbRole,
+          flatNum: chosenProfile.flatNum || '0',
+          buildingId: chosenProfile.buildingId,
+          isAdminUser: Boolean(kkProfile),
+        };
+      } else {
+        // Owner / Apartment profile
+        foundUser = {
+          id: `${chosenProfile.buildingId}-${chosenProfile.flatNum}`,
+          uid: firebaseUser.uid,
+          name: chosenProfile.ownerName || chosenProfile.name || firebaseUser.displayName || verifiedEmail,
+          email: verifiedEmail,
+          role: 'Owner',
+          flatNum: chosenProfile.flatNum,
+          unitId: chosenProfile.unitId || null,
+          buildingId: chosenProfile.buildingId,
+          isAdminUser: Boolean(kkProfile),
         };
       }
-    }
-
-    // Active organization owner/staff member not yet listed in legacy top-level users array
-    if (!foundUser && matchedOrgMember && matchedOrgMember.active !== false) {
-      foundUser = {
-        id: matchedOrgMember.id || firebaseUser.uid,
-        uid: firebaseUser.uid,
-        name: matchedOrgMember.name || firebaseUser.displayName || verifiedEmail,
-        email: verifiedEmail,
-        role: 'admin',
-        flatNum: '0',
-        orgId: matchedOrgRecord?.id || null,
-        orgRole: matchedOrgMember.orgRole || 'staff',
-      };
-    } else if (foundUser && matchedOrgMember && matchedOrgMember.active !== false && foundUser.role === 'admin') {
-      foundUser = {
-        ...foundUser,
-        orgId: matchedOrgRecord?.id || foundUser.orgId || null,
-        orgRole: matchedOrgMember.orgRole || foundUser.orgRole || 'staff',
-      };
-    }
-
-    // Fallback lookup in building flat owner emails if not listed in top-level users array
-    if (!foundUser) {
-      for (const b of effectiveBuildings) {
-        const flat = (b.flats || []).find(f => {
-          const mainEmail = (f.email || "").toLowerCase().trim();
-          if (mainEmail === verifiedEmail) return true;
-          if (Array.isArray(f.owners)) {
-            return f.owners.some(o => {
-              const oEmail = (o.email || "").toLowerCase().trim();
-              const oEmails = Array.isArray(o.emails) ? o.emails.map(e => (e || "").toLowerCase().trim()) : [];
-              return oEmail === verifiedEmail || oEmails.includes(verifiedEmail);
-            });
-          }
-          return false;
-        });
-
-        if (flat) {
-          let individualName = flat.ownerName;
-          if (Array.isArray(flat.owners) && flat.owners.length > 0) {
-            const matchedOwner = flat.owners.find(o => {
-              const oEmail = (o.email || "").toLowerCase().trim();
-              const oEmails = Array.isArray(o.emails) ? o.emails.map(e => (e || "").toLowerCase().trim()) : [];
-              return oEmail === verifiedEmail || oEmails.includes(verifiedEmail);
-            });
-            if (matchedOwner && matchedOwner.name) {
-              individualName = matchedOwner.name;
-            } else if (flat.owners.length === 1 && flat.owners[0].name) {
-              individualName = flat.owners[0].name;
-            }
-          }
-
-          foundUser = {
-            id: flat.flatNum,
-            uid: firebaseUser.uid,
-            name: individualName,
-            email: verifiedEmail,
-            role: tokenClaims.role || "Owner",
-            flatNum: flat.flatNum,
-            buildingId: b.id
-          };
-          break;
-        }
-      }
+      saveLastActiveProfile(verifiedEmail, chosenProfile);
     }
 
     // If user exists in Firebase Auth with a custom role claim but not yet in legacy RTDB users list
-    if (!foundUser && tokenClaims.role) {
+    if (!foundUser && tokenClaims.role && !isSuspendedStaff) {
       foundUser = {
         id: firebaseUser.uid,
         uid: firebaseUser.uid,
@@ -268,30 +264,12 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
       };
     }
 
-    // Resolve exact individual name for Owner if needed
-    if (foundUser.role !== 'admin' && foundUser.role !== 'superadmin' && foundUser.role !== 'szvb') {
-      for (const b of effectiveBuildings) {
-        const flat = (b.flats || []).find(f => f.flatNum === foundUser.flatNum);
-        if (flat && Array.isArray(flat.owners) && flat.owners.length > 0) {
-          const matchedOwner = flat.owners.find(o => {
-            const oEmail = (o.email || "").toLowerCase().trim();
-            const oEmails = Array.isArray(o.emails) ? o.emails.map(e => (e || "").toLowerCase().trim()) : [];
-            return verifiedEmail && (oEmail === verifiedEmail || oEmails.includes(verifiedEmail));
-          });
-          if (matchedOwner && matchedOwner.name) {
-            foundUser = { ...foundUser, name: matchedOwner.name };
-            break;
-          }
-        }
-      }
-    }
-
     // 5. Construct sanitized session user object (NEVER store plaintext passwords!)
     const userCopy = stripSensitiveUserFields({
       ...JSON.parse(JSON.stringify(foundUser)),
       uid: firebaseUser.uid,
       email: verifiedEmail,
-      role: tokenClaims.role || foundUser.role
+      role: foundUser.role || tokenClaims.role
     });
 
     const targetBuildingId = userCopy.buildingId || state.currentBuildingId || effectiveBuildings[0]?.id || null;

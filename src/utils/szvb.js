@@ -467,21 +467,32 @@ export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null,
   const nextNorm = normalizeBuildingSzvb({ szvb: nextSzvb || { chairperson: null, members: [] } });
 
   const prevRoleByEmail = new Map();
+  const flatNumByEmail = new Map();
   if (prevNorm.chairperson?.email) {
-    prevRoleByEmail.set(normalizeEmail(prevNorm.chairperson.email), 'chairperson');
+    const em = normalizeEmail(prevNorm.chairperson.email);
+    prevRoleByEmail.set(em, 'chairperson');
+    if (prevNorm.chairperson.flatNum) flatNumByEmail.set(em, prevNorm.chairperson.flatNum);
   }
   (prevNorm.members || []).forEach((m) => {
     const em = normalizeEmail(m?.email);
-    if (em) prevRoleByEmail.set(em, 'member');
+    if (em) {
+      prevRoleByEmail.set(em, 'member');
+      if (m.flatNum) flatNumByEmail.set(em, m.flatNum);
+    }
   });
 
   const nextRoleByEmail = new Map();
   if (nextNorm.chairperson?.email) {
-    nextRoleByEmail.set(normalizeEmail(nextNorm.chairperson.email), 'chairperson');
+    const em = normalizeEmail(nextNorm.chairperson.email);
+    nextRoleByEmail.set(em, 'chairperson');
+    if (nextNorm.chairperson.flatNum) flatNumByEmail.set(em, nextNorm.chairperson.flatNum);
   }
   (nextNorm.members || []).forEach((m) => {
     const em = normalizeEmail(m?.email);
-    if (em) nextRoleByEmail.set(em, 'member');
+    if (em) {
+      nextRoleByEmail.set(em, 'member');
+      if (m.flatNum) flatNumByEmail.set(em, m.flatNum);
+    }
   });
 
   const bName = building.name || 'Társasház';
@@ -497,6 +508,12 @@ export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null,
     const prevRole = prevRoleByEmail.get(email) || null;
     const nextRole = nextRoleByEmail.get(email) || null;
     if (prevRole === nextRole) return;
+    const ownerFlatNum = flatNumByEmail.get(email) || null;
+    const ownerTargetProfile = {
+      type: 'owner',
+      buildingId: building.id,
+      flatNum: ownerFlatNum,
+    };
 
     if (!prevRole && nextRole) {
       // Newly granted SZVB membership
@@ -523,6 +540,8 @@ export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null,
           severity: 'info',
           buildingId: building.id,
           buildingName: bName,
+          flatNum: ownerFlatNum,
+          targetProfile: ownerTargetProfile,
           titleHu: `${rHu} jogosultságot kaptál — ${bName}`,
           titleEn: `${rEn} access granted — ${bName}`,
           messageHu,
@@ -572,6 +591,8 @@ export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null,
           severity: 'info',
           buildingId: building.id,
           buildingName: bName,
+          flatNum: ownerFlatNum,
+          targetProfile: ownerTargetProfile,
           titleHu: `SZVB szerepköröd módosult (${nextHu}) — ${bName}`,
           titleEn: `SZVB role updated (${nextEn}) — ${bName}`,
           messageHu,
@@ -609,6 +630,8 @@ export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null,
           severity: 'info',
           buildingId: building.id,
           buildingName: bName,
+          flatNum: ownerFlatNum,
+          targetProfile: ownerTargetProfile,
           titleHu: `${prevHu} jogosultságod visszavonva — ${bName}`,
           titleEn: `${prevEn} access revoked — ${bName}`,
           messageHu,

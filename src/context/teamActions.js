@@ -16,6 +16,10 @@ import {
   buildInviteMailtoUrl,
 } from '../utils/teamPermissions';
 import {
+  resolveUserProfiles,
+  getNotificationsForActiveProfile,
+} from '../utils/userProfiles';
+import {
   provisionAndSendColleagueInviteEmail,
   sendColleaguePasswordSetupEmail,
 } from '../services/inviteAuthService';
@@ -207,6 +211,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       type: 'team_assigned',
       severity: 'info',
       recipientEmail: cleanEmail,
+      targetProfile: { type: 'kk' },
       actorUser: actor,
       titleHu: existingMember ? 'Jogosultságaid frissültek' : 'Meghívást kaptál társasház-kezelésre',
       titleEn: existingMember ? 'Your Permissions Were Updated' : 'You Were Assigned to Manage Condominiums',
@@ -792,6 +797,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       type: 'team_handover',
       severity: 'info',
       recipientEmail: toMember.email,
+      targetProfile: { type: 'kk' },
       actorUser: actor,
       titleHu: 'Társasházak átadva számodra',
       titleEn: 'Condominiums Handed Over to You',
@@ -996,8 +1002,13 @@ export function createTeamActions({ state, persistState, showToast, t }) {
 
   const markAllNotificationsRead = () => {
     if (!state.currentUser) return;
+    const { allProfiles } = resolveUserProfiles(state.currentUser, {
+      buildings: state.buildings,
+      organizations: state.organizations,
+      users: state.users,
+    });
     const myUnreadIds = new Set(
-      getNotificationsForUser(state.notifications || [], state.currentUser)
+      getNotificationsForActiveProfile(state.notifications || [], state.currentUser, allProfiles)
         .filter((n) => !n.read)
         .map((n) => n.id)
     );

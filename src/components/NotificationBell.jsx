@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Mail, ShieldAlert, Shield, Info, CheckCheck, X, Clock, Maximize2 } from 'lucide-react';
-import { getNotificationsForUser } from '../utils/teamPermissions';
 import { isUserBuildingSzvb } from '../utils/szvb';
+import { resolveUserProfiles, getNotificationsForActiveProfile } from '../utils/userProfiles';
 
 function formatNotifTime(iso, isEn) {
   if (!iso) return '';
@@ -36,9 +36,9 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
     dismissNotification,
     switchToSzvbMode,
   } = useApp();
-  const { currentUser, currentLang, notifications, buildings } = state;
+  const { currentUser, currentLang, notifications, buildings, organizations, users } = state;
   const isEn = currentLang === 'en';
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin' || state.roleMode === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const canOpenCommCenter = isAdmin && Boolean(onOpenCommunicationCenter);
 
   const [isOpen, setIsOpen] = useState(false);
@@ -63,9 +63,19 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
     };
   }, [isOpen]);
 
+  const allUserProfiles = useMemo(
+    () =>
+      resolveUserProfiles(currentUser, {
+        buildings,
+        organizations,
+        users,
+      }).allProfiles,
+    [currentUser, buildings, organizations, users]
+  );
+
   const userNotifications = useMemo(
-    () => getNotificationsForUser(notifications || [], currentUser),
-    [notifications, currentUser]
+    () => getNotificationsForActiveProfile(notifications || [], currentUser, allUserProfiles),
+    [notifications, currentUser, allUserProfiles]
   );
 
   const unreadCount = useMemo(

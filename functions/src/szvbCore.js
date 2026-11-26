@@ -79,12 +79,18 @@ function buildServerSzvbNotification({
   nextRole,
   buildingId,
   buildingName,
+  flatNum = null,
   actor,
   recipientEmail,
 }) {
   const bName = buildingName || buildingId || 'Társasház';
   const roleHu = (r) => (r === 'chairperson' ? 'SZVB Elnök' : 'SZVB Tag');
   const roleEn = (r) => (r === 'chairperson' ? 'SZVB Chairperson' : 'SZVB Member');
+  const ownerTargetProfile = {
+    type: 'owner',
+    buildingId: buildingId || null,
+    flatNum: flatNum || null,
+  };
 
   if (action === 'granted') {
     const rHu = roleHu(nextRole);
@@ -95,6 +101,8 @@ function buildServerSzvbNotification({
       recipientEmail,
       buildingId,
       buildingName: bName,
+      flatNum: flatNum || null,
+      targetProfile: ownerTargetProfile,
       actorUid: actor?.uid || null,
       actorEmail: actor?.email || '',
       actorName: actor?.name || actor?.email || '',
@@ -146,6 +154,8 @@ function buildServerSzvbNotification({
       recipientEmail,
       buildingId,
       buildingName: bName,
+      flatNum: flatNum || null,
+      targetProfile: ownerTargetProfile,
       actorUid: actor?.uid || null,
       actorEmail: actor?.email || '',
       actorName: actor?.name || actor?.email || '',
@@ -181,6 +191,8 @@ function buildServerSzvbNotification({
     recipientEmail,
     buildingId,
     buildingName: bName,
+    flatNum: flatNum || null,
+    targetProfile: ownerTargetProfile,
     actorUid: actor?.uid || null,
     actorEmail: actor?.email || '',
     actorName: actor?.name || actor?.email || '',
@@ -367,6 +379,7 @@ export function computeSzvbMembershipPlan({
           nextRole: szvbRole,
           buildingId,
           buildingName,
+          flatNum: person?.flatNum || existing?.flatNum || null,
           actor,
           recipientEmail: email,
         }),
@@ -381,6 +394,7 @@ export function computeSzvbMembershipPlan({
           nextRole: szvbRole,
           buildingId,
           buildingName,
+          flatNum: person?.flatNum || existing?.flatNum || null,
           actor,
           recipientEmail: email,
         }),
@@ -451,6 +465,7 @@ export function computeSzvbMembershipPlan({
         nextRole: null,
         buildingId,
         buildingName,
+        flatNum: existing?.flatNum || null,
         actor,
         recipientEmail: resolvedEmail,
       }),
