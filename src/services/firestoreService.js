@@ -131,6 +131,7 @@ export async function updateBuildingMetadata(buildingId, rawUpdates = {}) {
     balances,
     aggregates,
     initialReserves,
+    szvb,
     ...safe
   } = rawUpdates || {};
 
@@ -458,6 +459,12 @@ export async function callProvisionBuilding(buildingData) {
 export async function callManageBuildingMember(memberData) {
   const fn = httpsCallable(requireFunctions(), 'manageBuildingMember');
   const res = await fn(memberData);
+  return res.data;
+}
+
+export async function callManageSzvbMembers({ buildingId, chairperson = null, members = [] }) {
+  const fn = httpsCallable(requireFunctions(), 'manageSzvbMembers');
+  const res = await fn({ buildingId, chairperson, members });
   return res.data;
 }
 

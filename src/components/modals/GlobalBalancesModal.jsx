@@ -62,6 +62,8 @@ import {
   getBuildingAlerts,
   dismissBuildingAlertInList,
 } from '../../utils/buildingAlerts';
+import { IS_FIRESTORE_MODE } from '../../constants/firebaseConfig';
+import { callManageSzvbMembers } from '../../services/firestoreService';
 
 export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId = null, mode = 'full', isReadOnly = false }) {
   const { state, t, setGlobalBalances, persistState, showToast, canUserManageBuilding } = useApp();
@@ -504,7 +506,17 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
           }
         : null;
 
-      const szvbNotifications = saveSzvb && targetBuilding && nextSzvbPayload
+      // In Cloud Firestore mode, commit SZVB atomically via the server-side Cloud Function
+      // so buildings/{id}.szvb, buildings/{id}/members/{uid}, units, notifications & auditLogs stay 100% synced.
+      if (saveSzvb && IS_FIRESTORE_MODE && targetBuildingId && nextSzvbPayload) {
+        await callManageSzvbMembers({
+          buildingId: targetBuildingId,
+          chairperson: nextSzvbPayload.chairperson || null,
+          members: nextSzvbPayload.members || [],
+        });
+      }
+
+      const szvbNotifications = saveSzvb && !IS_FIRESTORE_MODE && targetBuilding && nextSzvbPayload
         ? buildSzvbUpdateNotifications({
             prevSzvb: existingSzvb,
             nextSzvb: nextSzvbPayload,

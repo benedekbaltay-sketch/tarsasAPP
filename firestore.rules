@@ -205,10 +205,11 @@ service cloud.firestore {
       allow read: if isBuildingMember(buildingId);
 
       // Admin updates non-financial metadata only; balances/aggregates/initialReserves
-      // are mutated strictly via atomic Cloud Functions (Option A).
+      // and SZVB RBAC committee (`szvb`) are mutated strictly via atomic Cloud Functions (Option A).
       // Modifying `bankAccounts` requires Owner or explicit `canEditBankAccounts` permission.
       allow update: if isBuildingAdmin(buildingId)
         && buildingFinancialsUnchanged()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['szvb'])
         && hasNoBankApiSecrets(request.resource.data)
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['bankAccounts'])
             || canEditBuildingBankAccounts(buildingId));
