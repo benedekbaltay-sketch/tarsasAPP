@@ -621,7 +621,7 @@ function MainLayout() {
         if (canAuditBuilding) setIsFlatsDataOpen(true);
         break;
       case 'assembly':
-        if (canAuditBuilding) setIsAssemblyOpen(true);
+        if (isAdmin) setIsAssemblyOpen(true);
         break;
       case 'loans':
         setFinanceInitialTab('loans');
@@ -815,7 +815,7 @@ function MainLayout() {
             onOpenQuickPayConfirm={undefined}
             onOpenFullscreenTx={(type) => setFullscreenTxData({ type, fromFlatDetail: false })}
             onNavigateToCase={handleNavigateToCase}
-            onOpenAssembly={() => setIsAssemblyOpen(true)}
+            onOpenAssembly={undefined}
             onOpenLoans={() => {
               setFinanceInitialTab('loans');
               setIsFinancialSituationOpen(true);
@@ -898,7 +898,7 @@ function MainLayout() {
       />
 
       <AssemblyModal
-        isOpen={Boolean(canAuditBuilding && isAssemblyOpen)}
+        isOpen={Boolean(isAdmin && isAssemblyOpen)}
         onClose={() => setIsAssemblyOpen(false)}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}

@@ -39,7 +39,6 @@ import { TransactionFilterBar } from '../components/TransactionFilterBar';
 import { initialFilterState, applyTransactionFilters, getActiveFilterCount } from '../utils/filterUtils';
 import { StickyMonthSection } from '../components/StickyMonthGroup';
 import { groupItemsByMonth } from '../utils/dateGrouping';
-import { getUserBuildingSzvbRole } from '../utils/szvb';
 
 export function AdminView({
   onBackToPortfolio,
@@ -67,7 +66,6 @@ export function AdminView({
   // Building and accounts
   const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
   const isSzvbMode = state.currentUser?.role === 'szvb';
-  const szvbRole = isSzvbMode ? (state.currentUser?.szvbRole || getUserBuildingSzvbRole(state.currentUser, currentBuilding)) : null;
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     isSzvbMode ||
@@ -279,36 +277,6 @@ export function AdminView({
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 md:py-8 space-y-6">
-      {/* SZVB Audit Read-Only Banner */}
-      {isSzvbMode && (
-        <div className="bg-indigo-50/90 border border-indigo-200 rounded-2xl p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-              <Shield className="w-4.5 h-4.5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-xs sm:text-sm font-bold text-indigo-950">
-                  {t.szvb_audit_banner_title || (isEn
-                    ? "Accounting Committee (SZVB) Audit View"
-                    : "Számvizsgáló Bizottsági (SZVB) ellenőrző nézet")}
-                </h3>
-                <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-bold">
-                  {szvbRole === 'chairperson'
-                    ? (t.szvb_role_chairperson || (isEn ? "SZVB Chairperson" : "SZVB Elnök"))
-                    : (t.szvb_role_member || (isEn ? "SZVB Member" : "SZVB Tag"))} &bull; {isEn ? "Read-Only" : "Csak olvasás"}
-                </span>
-              </div>
-              <p className="text-[11px] text-indigo-900/80 mt-0.5 leading-relaxed">
-                {t.szvb_audit_banner_desc || (isEn
-                  ? "You have full read-only audit access to building income, expenses, bank balances, arrears, loans, and documents. Editing, deleting, and sending emails are disabled."
-                  : "Teljes, kizárólag olvasási ellenőrzési jogod van a ház bevételeihez, kiadásaihoz, banki egyenlegeihez, hátraléklistájához, hiteleihez és irataihoz. Módosítás, törlés és e-mail küldés nem engedélyezett.")}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 1. Top KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         

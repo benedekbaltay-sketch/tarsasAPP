@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { Users, Shield } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { resolveUserProfiles, getUnreadNotificationCountsByProfile } from '../utils/userProfiles';
 
 export function ProfileSwitcherButton({ onOpenProfileSelector, className = "", label = null }) {
@@ -28,10 +28,7 @@ export function ProfileSwitcherButton({ onOpenProfileSelector, className = "", l
   const isSzvbMode = currentUser.role === 'szvb';
 
   const buttonLabel =
-    label ||
-    (isSzvbMode
-      ? (isHu ? "SZVB • Profilváltás" : "SZVB • Switch Profile")
-      : (t.profile_selector_btn || (isHu ? "Profilváltás" : "Switch Profile")));
+    label || (t.profile_selector_btn || (isHu ? "Profilváltás" : "Switch Profile"));
 
   const tooltipText = hasOtherProfilesUnread
     ? (isHu
@@ -44,19 +41,13 @@ export function ProfileSwitcherButton({ onOpenProfileSelector, className = "", l
       type="button"
       onClick={onOpenProfileSelector}
       className={`relative flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl border font-semibold text-xs shadow-2xs transition-all cursor-pointer flex-shrink-0 active:scale-95 ${
-        isSzvbMode
-          ? 'border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-900'
-          : isAdmin
+        isAdmin || isSzvbMode
           ? 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-gray-800'
           : 'border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#1E3A8A] hover:border-blue-300'
       } ${className}`}
       title={tooltipText}
     >
-      {isSzvbMode ? (
-        <Shield className="w-3.5 h-3.5 text-indigo-700 flex-shrink-0" />
-      ) : (
-        <Users className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
-      )}
+      <Users className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
       <span className="leading-none whitespace-nowrap hidden sm:inline">{buttonLabel}</span>
       {hasOtherProfilesUnread && (
         <span

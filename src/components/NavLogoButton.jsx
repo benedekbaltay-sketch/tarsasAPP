@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Eye } from 'lucide-react';
+import { Eye, Shield } from 'lucide-react';
 import { isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
 
 export function NavLogoButton({ onClick, title, hideViewerBadge = false, isReadOnly = false }) {
@@ -9,6 +9,7 @@ export function NavLogoButton({ onClick, title, hideViewerBadge = false, isReadO
   const isHu = !isEn;
   const currentBuilding = (state?.buildings || []).find(b => b.id === state?.currentBuildingId) || state?.buildings?.[0];
   const isCurrentlyAdminMode = state?.currentUser?.role === 'admin' || state?.currentUser?.role === 'superadmin';
+  const isSzvbMode = state?.currentUser?.role === 'szvb';
   const isInBuilding = Boolean(currentBuilding && (!isCurrentlyAdminMode || (!state?.isPortfolioView && state?.currentBuildingId)));
   
   const isViewer = isCurrentlyAdminMode && Boolean(
@@ -41,7 +42,7 @@ export function NavLogoButton({ onClick, title, hideViewerBadge = false, isReadO
           <path d="M10 18h4"/>
         </svg>
       </div>
-      <div className="flex flex-col text-left min-w-0 max-w-[200px] md:max-w-[320px]">
+      <div className="flex flex-col text-left min-w-0 max-w-[240px] sm:max-w-[300px] md:max-w-[400px]">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-xs sm:text-sm font-bold text-gray-900 leading-tight font-display truncate">
             {displayTitle}
@@ -50,6 +51,12 @@ export function NavLogoButton({ onClick, title, hideViewerBadge = false, isReadO
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex-shrink-0">
               <Eye className="w-2.5 h-2.5 text-amber-600" />
               <span>{isHu ? 'Csak megtekintő' : 'View only'}</span>
+            </span>
+          )}
+          {isSzvbMode && isInBuilding && !hideViewerBadge && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
+              <Shield className="w-2.5 h-2.5 text-indigo-600" />
+              <span>{isHu ? 'SZVB • Csak olvasás' : 'SZVB • Read-Only'}</span>
             </span>
           )}
         </div>

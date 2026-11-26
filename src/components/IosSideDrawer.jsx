@@ -124,7 +124,7 @@ export function IosSideDrawer({
                   {isSzvb && currentBuilding && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
                       <Shield className="w-2.5 h-2.5 text-indigo-600" />
-                      <span>{isHu ? 'SZVB' : 'SZVB'}</span>
+                      <span>{isHu ? 'SZVB • Csak olvasás' : 'SZVB • Read-Only'}</span>
                     </span>
                   )}
                 </div>
@@ -423,22 +423,6 @@ export function IosSideDrawer({
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
 
-                  {/* Közgyűlés (Elszámolások megtekintése/letöltése) */}
-                  <button
-                    onClick={() => handleAction('assembly')}
-                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                        <FileSpreadsheet className="w-4 h-4" />
-                      </div>
-                      <span className="text-sm font-semibold text-gray-800">
-                        {t.menu_assembly || (isHu ? "Közgyűlés" : "General Assembly")}
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
-                  </button>
-
                   {/* Dokumentumok (Iratok, szerződések, bankkivonatok megtekintése/letöltése) */}
                   <button
                     onClick={() => handleAction('docs')}
@@ -453,31 +437,6 @@ export function IosSideDrawer({
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
                 </div>
-
-                {/* Quick switch back to own Resident/Owner view */}
-                {myFlats.length > 0 && (
-                  <div className="bg-blue-50/70 rounded-2xl p-2 border border-blue-200/80">
-                    <button
-                      onClick={() => handleAction('switch-to-tenant')}
-                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-[#1E3A8A] text-white flex items-center justify-center shadow-xs">
-                          <Home className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <span className="text-sm font-bold text-[#1E3A8A] block leading-tight">
-                            {isHu ? "Váltás saját lakásomra" : "Switch to My Apartment"}
-                          </span>
-                          <span className="text-[11px] text-gray-500 font-medium block">
-                            {isHu ? "Tulajdonosi (lakó) nézet" : "Personal owner view"}
-                          </span>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-[#1E3A8A] group-hover:translate-x-0.5 transition-transform" />
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
