@@ -93,6 +93,38 @@ export async function updateUserPreferences(uid, updates = {}) {
   });
 }
 
+export async function fetchUserNotifications(uid, maxCount = 200) {
+  if (!uid) return [];
+  const db = requireFirestore();
+  const snap = await getDocs(
+    query(
+      collection(db, 'users', uid, 'notifications'),
+      orderBy('createdAt', 'desc'),
+      limit(maxCount)
+    )
+  );
+  return snap.docs.map((d) => {
+    const data = d.data() || {};
+    const createdIso =
+      typeof data.createdAt?.toDate === 'function'
+        ? data.createdAt.toDate().toISOString()
+        : (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString());
+    return { id: d.id, ...data, createdAt: createdIso };
+  });
+}
+
+export async function updateUserNotification(uid, notifId, patch = {}) {
+  if (!uid || !notifId) return;
+  const db = requireFirestore();
+  const allowedKeys = ['read', 'readAt', 'dismissed', 'archived', 'archivedAt', 'archivedUpdatedAt', 'deleted', 'deletedAt'];
+  const clean = {};
+  for (const k of allowedKeys) {
+    if (patch[k] !== undefined) clean[k] = patch[k];
+  }
+  if (Object.keys(clean).length === 0) return;
+  await updateDoc(doc(db, 'users', uid, 'notifications', notifId), clean);
+}
+
 export async function fetchBuildingMember(buildingId, uid) {
   if (!buildingId || !uid) return null;
   const db = requireFirestore();
@@ -132,6 +164,7 @@ export async function updateBuildingMetadata(buildingId, rawUpdates = {}) {
     aggregates,
     initialReserves,
     szvb,
+    economicAuditor,
     ...safe
   } = rawUpdates || {};
 
@@ -179,7 +212,7 @@ export async function fetchScopedUnits(buildingId, role, uid) {
   const db = requireFirestore();
   const unitsCol = collection(db, 'buildings', buildingId, 'units');
 
-  if (role === 'admin' || role === 'superadmin' || role === 'szvb') {
+  if (role === 'admin' || role === 'superadmin' || role === 'szvb' || role === 'auditor') {
     const snap = await getDocs(query(unitsCol, orderBy('unitCode', 'asc')));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   }
@@ -192,10 +225,10 @@ export async function fetchScopedUnits(buildingId, role, uid) {
 }
 
 /**
- * Loans collection is strictly Admin & SZVB ONLY (Regular Owners see their own slice inside units/{unitId}.activeLoanShares).
+ * Loans collection is strictly Admin, SZVB & Economic Auditor ONLY (Regular Owners see their own slice inside units/{unitId}.activeLoanShares).
  */
 export async function fetchScopedLoans(buildingId, role) {
-  if (role !== 'admin' && role !== 'superadmin' && role !== 'szvb') {
+  if (role !== 'admin' && role !== 'superadmin' && role !== 'szvb' && role !== 'auditor') {
     return [];
   }
   const db = requireFirestore();
@@ -260,7 +293,7 @@ export async function fetchPaginatedTransactions({
   const txCol = collection(db, 'buildings', buildingId, 'transactions');
   const constraints = [];
 
-  const isPrivileged = role === 'admin' || role === 'superadmin' || role === 'szvb';
+  const isPrivileged = role === 'admin' || role === 'superadmin' || role === 'szvb' || role === 'auditor';
 
   if (isPrivileged) {
     if (unitId) {
@@ -322,7 +355,7 @@ export async function fetchPaginatedTransactions({
 export async function fetchBuildingDocuments(buildingId, role) {
   const db = requireFirestore();
   const colRef = collection(db, 'buildings', buildingId, 'documents');
-  const isPrivileged = role === 'admin' || role === 'superadmin' || role === 'szvb';
+  const isPrivileged = role === 'admin' || role === 'superadmin' || role === 'szvb' || role === 'auditor';
   const q = isPrivileged ? colRef : query(colRef, where('visibility', '==', 'building'));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -352,7 +385,7 @@ export async function deleteBuildingDocument(buildingId, docId) {
 export async function fetchBuildingInfoSections(buildingId, role) {
   const db = requireFirestore();
   const colRef = collection(db, 'buildings', buildingId, 'infoSections');
-  const isPrivileged = role === 'admin' || role === 'superadmin' || role === 'szvb';
+  const isPrivileged = role === 'admin' || role === 'superadmin' || role === 'szvb' || role === 'auditor';
   const q = isPrivileged ? colRef : query(colRef, where('visibility', '==', 'building'));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -381,7 +414,7 @@ export async function deleteBuildingInfoSection(buildingId, sectionId) {
 export async function fetchBuildingCalendarEvents(buildingId, role) {
   const db = requireFirestore();
   const colRef = collection(db, 'buildings', buildingId, 'calendarEvents');
-  const isPrivileged = role === 'admin' || role === 'superadmin' || role === 'szvb';
+  const isPrivileged = role === 'admin' || role === 'superadmin' || role === 'szvb' || role === 'auditor';
   const q = isPrivileged ? colRef : query(colRef, where('visibility', '==', 'building'));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -465,6 +498,18 @@ export async function callManageBuildingMember(memberData) {
 export async function callManageSzvbMembers({ buildingId, chairperson = null, members = [] }) {
   const fn = httpsCallable(requireFunctions(), 'manageSzvbMembers');
   const res = await fn({ buildingId, chairperson, members });
+  return res.data;
+}
+
+export async function callManageEconomicAuditor({ buildingId, auditor = {} }) {
+  const fn = httpsCallable(requireFunctions(), 'manageEconomicAuditor');
+  const res = await fn({ buildingId, auditor });
+  return res.data;
+}
+
+export async function callSendDirectMail(payload) {
+  const fn = httpsCallable(requireFunctions(), 'sendDirectMail');
+  const res = await fn(payload);
   return res.data;
 }
 

@@ -1012,8 +1012,24 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
     const buildingDoc = {
       id: buildingId,
       name: String(b.name || buildingId),
+      officialName: String(b.officialName || ''),
       address: String(b.address || ''),
       taxNumber: String(b.taxNumber || ''),
+      hrsz: String(b.hrsz || ''),
+      totalOwnershipShare: Number(b.totalOwnershipShare) || 10000,
+      organizationId: b.organizationId || null,
+      contactDisplayMode: b.contactDisplayMode || 'company',
+      managerContact: b.managerContact || null,
+      showCentralContactToResidents: Boolean(b.showCentralContactToResidents),
+      archived: Boolean(b.archived),
+      ...(b.archivedAt ? { archivedAt: b.archivedAt } : {}),
+      szvb: b.szvb || null,
+      economicAuditor: b.economicAuditor || null,
+      auditOpinions: Array.isArray(b.auditOpinions)
+        ? b.auditOpinions.map(({ fileData: _omit, ...rest }) => rest)
+        : [],
+      auditObservations: Array.isArray(b.auditObservations) ? b.auditObservations : [],
+      dismissedAlerts: Array.isArray(b.dismissedAlerts) ? b.dismissedAlerts : [],
       paymentCodePrefix: String(b.code || b.shortName || 'TH').trim().slice(0, 16),
       defaultBank: String(b.defaultBank || 'OTP'),
       repContact: {
@@ -1060,6 +1076,41 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
       updatedAt: nowIso,
       lastAuditLogId: migrationAuditId,
     };
+
+    // Provision Economic Auditor membership if enabled and resolved in Auth
+    if (b.economicAuditor?.enabled && b.economicAuditor?.email) {
+      const audEmail = String(b.economicAuditor.email).toLowerCase().trim();
+      const audUid = resolveUid(audEmail);
+      if (audUid) {
+        ensureUserDoc(audUid, audEmail, b.economicAuditor.name || audEmail, false, b.economicAuditor.phone || '');
+        const existingMem = members[audUid];
+        const nextRole = existingMem?.role === 'admin' || existingMem?.role === 'szvb'
+          ? existingMem.role
+          : 'auditor';
+        members[audUid] = {
+          ...(existingMem || {}),
+          uid: audUid,
+          email: audEmail,
+          name: b.economicAuditor.name || existingMem?.name || audEmail,
+          role: nextRole,
+          isEconomicAuditor: true,
+          unitIds: Array.isArray(existingMem?.unitIds) ? existingMem.unitIds : [],
+          active: true,
+          grantedBy: 'system:migration',
+          grantedAt: existingMem?.grantedAt || nowIso,
+          updatedAt: nowIso,
+        };
+        if (usersDocs[audUid]) {
+          usersDocs[audUid].memberships[buildingId] = {
+            role: nextRole,
+            isEconomicAuditor: true,
+            unitIds: members[audUid].unitIds,
+            active: true,
+            buildingName: String(b.name || buildingId),
+          };
+        }
+      }
+    }
 
     const auditLogs = {
       [migrationAuditId]: {

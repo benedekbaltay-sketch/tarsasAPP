@@ -170,7 +170,7 @@ service cloud.firestore {
         allow update: if isSignedIn()
           && request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['read', 'readAt', 'dismissed']);
+               .hasOnly(['read', 'readAt', 'dismissed', 'archived', 'archivedAt', 'archivedUpdatedAt', 'deleted', 'deletedAt']);
         allow create, delete: if false; // Written exclusively server-side by Cloud Functions
       }
     }
@@ -213,7 +213,7 @@ service cloud.firestore {
       // Modifying `bankAccounts` requires Owner or explicit `canEditBankAccounts` permission.
       allow update: if isBuildingAdmin(buildingId)
         && buildingFinancialsUnchanged()
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['szvb'])
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['szvb', 'economicAuditor'])
         && hasNoBankApiSecrets(request.resource.data)
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['bankAccounts'])
             || canEditBuildingBankAccounts(buildingId));

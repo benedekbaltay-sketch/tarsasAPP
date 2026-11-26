@@ -15,7 +15,11 @@ import {
 } from '../utils/dunningRules.js';
 import { ref, set, get } from 'firebase/database';
 import { getFirebaseInstance, IS_FIRESTORE_MODE } from '../constants/firebaseConfig.js';
-import { uploadBase64ToStorage, getSecureStorageDownloadUrl } from '../services/firestoreService.js';
+import {
+  uploadBase64ToStorage,
+  getSecureStorageDownloadUrl,
+  callSendDirectMail,
+} from '../services/firestoreService.js';
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
 import { sanitizeMailAttachments, buildDirectMessagePayload } from '../utils/directMessaging.js';
 import { sendResidentCustomNoticeEmail, resolveEffectiveEmailSettings } from '../services/emailService.js';
@@ -1056,6 +1060,32 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         revision: (prev.revision || 0) + 1,
       };
     };
+
+    if (IS_FIRESTORE_MODE) {
+      try {
+        await callSendDirectMail({
+          buildingId: building.id,
+          recipientMode: recipientMode || 'kk',
+          replyToEmail: replyToNotif?.actorEmail || '',
+          subject: subject.trim(),
+          body: body.trim(),
+          attachments: uploadedAttachments,
+          senderRole: enrichedActor?.role || '',
+          senderName: enrichedActor?.name || enrichedActor?.email || '',
+          deliveryChannel,
+          sendInApp,
+        });
+      } catch (err) {
+        console.warn('Firestore sendDirectMail error:', err?.message);
+        if (typeof showToast === 'function') {
+          showToast(
+            isEn() ? 'Failed to send message.' : 'Nem sikerült elküldeni a levelet.',
+            'error'
+          );
+        }
+        return { success: false, error: err?.message };
+      }
+    }
 
     if (typeof persistState === 'function') {
       await persistState(updater, payload.syncedAuditOpinion ? true : 'notificationsOnly');

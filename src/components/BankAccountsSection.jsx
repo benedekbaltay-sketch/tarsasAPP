@@ -25,6 +25,11 @@ import {
   buildBankChangeNotification,
   findOrganizationForBuilding,
 } from '../utils/teamPermissions';
+import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
+import {
+  updateBuildingMetadata,
+  callCalibrateBuildingBalances,
+} from '../services/firestoreService';
 
 /**
  * Unified collapsible "Számlák" (Accounts) management section.
@@ -33,7 +38,7 @@ import {
  * when the user does not have bank account editing permission or is read-only.
  */
 export function BankAccountsSection({ buildingId = null, isReadOnly = false }) {
-  const { state, t, persistState, showToast, canUserManageBuilding } = useApp();
+  const { state, t, persistState, reloadCurrentBuilding, showToast, canUserManageBuilding } = useApp();
   const { currentLang, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
 
@@ -308,6 +313,35 @@ export function BankAccountsSection({ buildingId = null, isReadOnly = false }) {
       }
 
       const nowTs = Date.now();
+      if (IS_FIRESTORE_MODE && targetBuildingId) {
+        const customTargets = {};
+        updatedCustomAccounts.forEach((acc) => {
+          customTargets[acc.id] = Math.round(parseCleanNumber(customBalances[acc.id]));
+        });
+        await updateBuildingMetadata(targetBuildingId, {
+          bankAccounts: {
+            KK: nextBankKK,
+            FA: nextBankFA,
+            custom: updatedCustomAccounts,
+          },
+        });
+        await callCalibrateBuildingBalances({
+          buildingId: targetBuildingId,
+          targetKK: Math.round(cleanCommon),
+          targetFA: Math.round(cleanRenovation),
+          customTargets,
+        });
+        if (typeof reloadCurrentBuilding === 'function') {
+          await reloadCurrentBuilding(targetBuildingId);
+        }
+        setIsDirty(false);
+        showToast(
+          t.bank_accounts_saved_toast ||
+            (isEn ? 'Bank accounts & reserves saved!' : 'A bankszámlák és tartalékok adatai sikeresen elmentve!')
+        );
+        return;
+      }
+
       await persistState((s) => ({
         ...s,
         buildings: (s.buildings || []).map((b) =>

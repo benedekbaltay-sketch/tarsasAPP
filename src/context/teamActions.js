@@ -28,6 +28,8 @@ import {
   sendColleagueInviteCustomEmail,
   sendColleaguePermissionUpdateEmail,
 } from '../services/emailService';
+import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
+import { updateUserNotification } from '../services/firestoreService';
 import { formatTaxNumber } from '../utils/taxNumber';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -994,10 +996,14 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     if (!notifId || !state.currentUser) return;
     const existsUnread = (state.notifications || []).some((n) => n && n.id === notifId && !n.read);
     if (!existsUnread) return;
+    const nowIso = new Date().toISOString();
+    if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
+      updateUserNotification(state.currentUser.uid, notifId, { read: true, readAt: nowIso }).catch(() => {});
+    }
     persistState((s) => ({
       ...s,
       notifications: (s.notifications || []).map((n) =>
-        n && n.id === notifId ? { ...n, read: true, readAt: new Date().toISOString() } : n
+        n && n.id === notifId ? { ...n, read: true, readAt: nowIso } : n
       ),
     }), 'notificationsOnly');
   };
@@ -1017,6 +1023,11 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     if (myUnreadIds.size === 0) return;
 
     const nowIso = new Date().toISOString();
+    if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
+      for (const nId of myUnreadIds) {
+        updateUserNotification(state.currentUser.uid, nId, { read: true, readAt: nowIso }).catch(() => {});
+      }
+    }
     persistState((s) => ({
       ...s,
       notifications: (s.notifications || []).map((n) =>
@@ -1029,6 +1040,15 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     if (!notifId || !state.currentUser) return;
     const nowIso = new Date().toISOString();
     const nowTs = Date.now();
+    if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
+      updateUserNotification(state.currentUser.uid, notifId, {
+        read: true,
+        archived: true,
+        dismissed: false,
+        archivedAt: nowIso,
+        archivedUpdatedAt: nowTs,
+      }).catch(() => {});
+    }
     persistState((s) => ({
       ...s,
       notifications: (s.notifications || []).map((n) =>
@@ -1042,6 +1062,14 @@ export function createTeamActions({ state, persistState, showToast, t }) {
   const unarchiveNotification = (notifId) => {
     if (!notifId || !state.currentUser) return;
     const nowTs = Date.now();
+    if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
+      updateUserNotification(state.currentUser.uid, notifId, {
+        archived: false,
+        dismissed: false,
+        archivedAt: null,
+        archivedUpdatedAt: nowTs,
+      }).catch(() => {});
+    }
     persistState((s) => ({
       ...s,
       notifications: (s.notifications || []).map((n) =>
@@ -1055,6 +1083,13 @@ export function createTeamActions({ state, persistState, showToast, t }) {
   const deleteNotification = (notifId) => {
     if (!notifId || !state.currentUser) return;
     const nowIso = new Date().toISOString();
+    if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
+      updateUserNotification(state.currentUser.uid, notifId, {
+        read: true,
+        deleted: true,
+        deletedAt: nowIso,
+      }).catch(() => {});
+    }
     persistState((s) => ({
       ...s,
       notifications: (s.notifications || []).map((n) =>

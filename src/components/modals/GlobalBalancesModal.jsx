@@ -69,10 +69,14 @@ import {
   isEconomicAuditorActive,
 } from '../../utils/economicAuditor';
 import { IS_FIRESTORE_MODE } from '../../constants/firebaseConfig';
-import { callManageSzvbMembers } from '../../services/firestoreService';
+import {
+  callManageSzvbMembers,
+  updateBuildingMetadata,
+  callCalibrateBuildingBalances,
+} from '../../services/firestoreService';
 
 export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId = null, mode = 'full', isReadOnly = false }) {
-  const { state, t, setGlobalBalances, persistState, showToast, canUserManageBuilding, updateBuildingEconomicAuditor } = useApp();
+  const { state, t, setGlobalBalances, persistState, reloadCurrentBuilding, showToast, canUserManageBuilding, updateBuildingEconomicAuditor } = useApp();
   const { currentLang, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
   const isHu = !isEn;
@@ -336,6 +340,14 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
   const handleDismissAlert = async (alertId) => {
     if (!targetBuildingId || !alertId || isEffectiveReadOnly) return;
     try {
+      const nextDismissed = Array.from(new Set([...(targetBuilding?.dismissedAlerts || []), alertId]));
+      if (IS_FIRESTORE_MODE) {
+        await updateBuildingMetadata(targetBuildingId, { dismissedAlerts: nextDismissed });
+        if (typeof reloadCurrentBuilding === 'function') {
+          await reloadCurrentBuilding(targetBuildingId);
+        }
+        return;
+      }
       await persistState((s) => ({
         ...s,
         buildings: dismissBuildingAlertInList(s.buildings || [], targetBuildingId, alertId),
@@ -691,14 +703,78 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
           }
         : null;
 
-      // In Cloud Firestore mode, commit SZVB atomically via the server-side Cloud Function
-      // so buildings/{id}.szvb, buildings/{id}/members/{uid}, units, notifications & auditLogs stay 100% synced.
-      if (saveSzvb && IS_FIRESTORE_MODE && targetBuildingId && nextSzvbPayload) {
-        await callManageSzvbMembers({
-          buildingId: targetBuildingId,
-          chairperson: nextSzvbPayload.chairperson || null,
-          members: nextSzvbPayload.members || [],
-        });
+      // In Cloud Firestore mode, commit metadata & SZVB via server-verified paths (zero RTDB writes)
+      if (IS_FIRESTORE_MODE && targetBuildingId) {
+        if (saveSzvb && nextSzvbPayload) {
+          await callManageSzvbMembers({
+            buildingId: targetBuildingId,
+            chairperson: nextSzvbPayload.chairperson || null,
+            members: nextSzvbPayload.members || [],
+          });
+        }
+        if (saveMaster) {
+          await updateBuildingMetadata(targetBuildingId, {
+            name: buildingName.trim() || targetBuilding?.name || '',
+            officialName: buildingOfficialName.trim(),
+            address: buildingAddress.trim() || targetBuilding?.address || '',
+            taxNumber: formatTaxNumber(buildingTaxNumber).trim(),
+            hrsz: buildingHrsz.trim(),
+            totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000,
+          });
+        }
+        if (saveApi) {
+          await updateBuildingMetadata(targetBuildingId, {
+            bankApi: {
+              provider: apiProvider,
+              environment: apiEnv,
+              clientId: apiClientId.trim(),
+              autoSync: Boolean(apiAutoSync),
+              syncInterval: 'daily',
+              secretManagedServerSide: true,
+            },
+          });
+        }
+        if (isAccountsOnly && canEditBankAcc) {
+          const customTargets = {};
+          updatedCustomAccounts.forEach((acc) => {
+            customTargets[acc.id] = Math.round(parseCleanNumber(customBalances[acc.id]));
+          });
+          await updateBuildingMetadata(targetBuildingId, {
+            bankAccounts: {
+              KK: nextBankKK,
+              FA: nextBankFA,
+              custom: updatedCustomAccounts,
+            },
+          });
+          await callCalibrateBuildingBalances({
+            buildingId: targetBuildingId,
+            targetKK: Math.round(cleanCommon),
+            targetFA: Math.round(cleanRenovation),
+            customTargets,
+          });
+        }
+        if (saveSzvb && nextAuditorPayload && typeof updateBuildingEconomicAuditor === 'function') {
+          await updateBuildingEconomicAuditor(targetBuildingId, nextAuditorPayload, {
+            sendInviteEmail: true,
+            silent: true,
+          });
+        }
+        if (typeof reloadCurrentBuilding === 'function') {
+          await reloadCurrentBuilding(targetBuildingId);
+        }
+        if (saveMaster) setIsEditingMasterData(false);
+        if (saveSzvb) setIsEditingSzvb(false);
+        if (saveApi) setIsEditingApi(false);
+        showToast(
+          isAccountsOnly
+            ? (t.bank_accounts_saved_toast || (isEn ? "Bank accounts & reserves saved!" : "A bankszámlák és tartalékok adatai sikeresen elmentve!"))
+            : section === 'szvb'
+              ? (isEn ? "SZVB & Financial Audit settings saved!" : "Az SZVB és a gazdasági ellenőrzés beállításai elmentve!")
+              : section === 'api'
+                ? (isEn ? "Banking API settings saved!" : "A banki API beállítások sikeresen elmentve!")
+                : (isEn ? "Condominium master data saved!" : "A társasház alapadatai sikeresen elmentve!")
+        );
+        return;
       }
 
       const szvbNotifications = saveSzvb && !IS_FIRESTORE_MODE && targetBuilding && nextSzvbPayload

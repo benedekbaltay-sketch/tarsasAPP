@@ -16,6 +16,8 @@ export { scheduledMonthlyAssessments, triggerMonthlyAssessments } from './src/as
 export { scheduledDailyDunningEmails, sendTransactionalEmail } from './src/dunning.js';
 export { provisionBuilding, manageBuildingMember, manageUnitLifecycle } from './src/members.js';
 export { manageSzvbMembers } from './src/szvb.js';
+export { manageEconomicAuditor } from './src/auditor.js';
+export { sendDirectMail } from './src/mail.js';
 export { mutateLoan } from './src/loans.js';
 export {
   manageOrganizationMember,

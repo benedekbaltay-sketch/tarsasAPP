@@ -4,6 +4,7 @@ import { ref, set, get } from 'firebase/database';
 import {
   callProvisionBuilding,
   callManageUnitLifecycle,
+  callManageEconomicAuditor,
   updateBuildingMetadata,
   updateUnitMasterData,
   updateOwnerUnitContact,
@@ -1798,6 +1799,35 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
     const prevAuditor = curB.economicAuditor || null;
     const nextAuditor = sanitizeEconomicAuditor(rawAuditor, state.currentUser?.email || '');
+
+    if (IS_FIRESTORE_MODE) {
+      try {
+        await callManageEconomicAuditor({ buildingId: targetId, auditor: nextAuditor });
+        if (typeof reloadCurrentBuilding === 'function') {
+          await reloadCurrentBuilding(targetId);
+        }
+      } catch (err) {
+        console.warn('Firestore updateBuildingEconomicAuditor error:', err?.message);
+        if (!silent) {
+          showToast(
+            state.currentLang === 'en'
+              ? 'Failed to save Financial Auditor settings.'
+              : 'Nem sikerült elmenteni a gazdasági ellenőr beállításait.',
+            'error'
+          );
+        }
+        return { success: false };
+      }
+      if (!silent) {
+        showToast(
+          state.currentLang === 'en'
+            ? 'Financial Auditor settings saved!'
+            : 'Gazdasági ellenőr beállításai sikeresen elmentve!'
+        );
+      }
+      return { success: true, inviteSent: false, auditor: nextAuditor };
+    }
+
     const notifs = buildEconomicAuditorUpdateNotifications({
       building: curB,
       prevAuditor,

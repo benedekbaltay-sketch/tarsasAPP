@@ -9,6 +9,7 @@
 
 import {
   fetchUserProfile,
+  fetchUserNotifications,
   fetchBuildingMember,
   fetchBuildingMembers,
   fetchBuildingRoot,
@@ -65,6 +66,7 @@ export function normalizeRoleForUi(fsRole) {
   if (r === 'superadmin') return 'superadmin';
   if (r === 'admin') return 'admin';
   if (r === 'szvb') return 'szvb';
+  if (r === 'auditor') return 'auditor';
   return 'Owner';
 }
 
@@ -73,6 +75,7 @@ export function normalizeRoleForFirestore(uiRole) {
   if (r === 'superadmin') return 'superadmin';
   if (r === 'admin') return 'admin';
   if (r === 'szvb') return 'szvb';
+  if (r === 'auditor') return 'auditor';
   return 'owner';
 }
 
@@ -298,9 +301,15 @@ export function firestoreBuildingToUiBuilding(buildingDoc, extras = {}) {
   return {
     id: buildingDoc.id,
     name: buildingDoc.name || buildingDoc.id,
+    officialName: buildingDoc.officialName || '',
     address: buildingDoc.address || '',
     taxNumber: buildingDoc.taxNumber || '',
     totalOwnershipShare: Number(buildingDoc.totalOwnershipShare) || 10000,
+    organizationId: buildingDoc.organizationId || null,
+    contactDisplayMode: buildingDoc.contactDisplayMode || 'company',
+    managerContact: buildingDoc.managerContact || null,
+    showCentralContactToResidents: Boolean(buildingDoc.showCentralContactToResidents),
+    archived: Boolean(buildingDoc.archived),
     code: buildingDoc.paymentCodePrefix || 'TH',
     defaultBank: buildingDoc.defaultBank || 'OTP',
     repName: rep.name || '',
@@ -330,6 +339,9 @@ export function firestoreBuildingToUiBuilding(buildingDoc, extras = {}) {
     aggregates: buildingDoc.aggregates || null,
     hrsz: buildingDoc.hrsz || '',
     szvb: buildingDoc.szvb || null,
+    economicAuditor: buildingDoc.economicAuditor || null,
+    auditOpinions: Array.isArray(buildingDoc.auditOpinions) ? buildingDoc.auditOpinions : [],
+    auditObservations: Array.isArray(buildingDoc.auditObservations) ? buildingDoc.auditObservations : [],
     dismissedAlerts: Array.isArray(buildingDoc.dismissedAlerts) ? buildingDoc.dismissedAlerts : [],
     firestoreMonthlySummaries: monthlyMap,
     categories: Array.isArray(extras.categories) ? extras.categories : [],
@@ -547,7 +559,7 @@ export async function hydrateFirestoreBuilding(
   { role = 'owner', uid = null, unitIds = [], accessFromDate = null, txPageSize = 50 } = {}
 ) {
   const fsRole = normalizeRoleForFirestore(role);
-  const isPrivileged = fsRole === 'admin' || fsRole === 'superadmin' || fsRole === 'szvb';
+  const isPrivileged = fsRole === 'admin' || fsRole === 'superadmin' || fsRole === 'szvb' || fsRole === 'auditor';
 
   const [
     buildingDoc,
@@ -711,13 +723,16 @@ export async function hydrateFirestoreSession(firebaseUser) {
   // Resolve primary role & initial building
   const hasAdminMembership = activeMemberships.some((m) => m.role === 'admin');
   const hasSzvbMembership = activeMemberships.some((m) => m.role === 'szvb');
+  const hasAuditorMembership = activeMemberships.some((m) => m.role === 'auditor');
   const primaryRole = isSuperAdmin
     ? 'superadmin'
     : hasAdminMembership
       ? 'admin'
       : hasSzvbMembership
         ? 'szvb'
-        : 'Owner';
+        : hasAuditorMembership
+          ? 'auditor'
+          : 'Owner';
 
   const primaryMembership =
     activeMemberships.find((m) => m.role === normalizeRoleForFirestore(primaryRole)) ||
@@ -726,13 +741,16 @@ export async function hydrateFirestoreSession(firebaseUser) {
 
   const primaryBuildingId = primaryMembership?.buildingId || buildingRootDocs[0]?.id || null;
 
-  // Fetch active member record (for accessFromDate on owners)
+  // Fetch active member record (for accessFromDate on owners) & user notifications
   let accessFromDate = null;
-  if (primaryBuildingId && !isSuperAdmin) {
-    const memberDoc = await fetchBuildingMember(primaryBuildingId, uid).catch(() => null);
-    if (memberDoc?.accessFromDate) {
-      accessFromDate = memberDoc.accessFromDate;
-    }
+  const [memberDoc, userNotifications] = await Promise.all([
+    primaryBuildingId && !isSuperAdmin
+      ? fetchBuildingMember(primaryBuildingId, uid).catch(() => null)
+      : Promise.resolve(null),
+    fetchUserNotifications(uid, 200).catch(() => []),
+  ]);
+  if (memberDoc?.accessFromDate) {
+    accessFromDate = memberDoc.accessFromDate;
   }
 
   // Hydrate the active building's scoped subcollections
@@ -761,11 +779,11 @@ export async function hydrateFirestoreSession(firebaseUser) {
     email: verifiedEmail,
     role: primaryRole,
     flatNum:
-      primaryRole === 'admin' || primaryRole === 'superadmin' || primaryRole === 'szvb'
+      primaryRole === 'admin' || primaryRole === 'superadmin' || primaryRole === 'szvb' || primaryRole === 'auditor'
         ? '0'
         : (firstOwnedFlat?.flatNum || ''),
     unitId:
-      primaryRole === 'admin' || primaryRole === 'superadmin' || primaryRole === 'szvb'
+      primaryRole === 'admin' || primaryRole === 'superadmin' || primaryRole === 'szvb' || primaryRole === 'auditor'
         ? null
         : (firstOwnedFlat?.unitId || primaryMembership?.unitIds?.[0] || null),
     buildingId: primaryBuildingId,
@@ -779,6 +797,7 @@ export async function hydrateFirestoreSession(firebaseUser) {
     buildings,
     activeBuilding: hydratedActive?.building || buildings[0] || null,
     users: hydratedActive?.users || [],
+    notifications: userNotifications,
     calendarEvents: hydratedActive?.calendarEvents || [],
     txPagination: hydratedActive?.txPagination || { cursorDoc: null, hasMore: false },
     repProfile: userProfile?.repProfile || null,

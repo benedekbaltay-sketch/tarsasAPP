@@ -94,6 +94,15 @@ service firebase.storage {
       allow delete: if isBuildingAdmin(buildingId) || isBuildingAuditor(buildingId);
     }
 
+    // Direct Mail & Correspondence Attachments (max 10 MB, strict MIME allowlist)
+    match /buildings/{buildingId}/mail/{mailId}/{fileName} {
+      allow read: if hasActiveMembership(buildingId) || isSuperAdmin();
+      allow write: if (hasActiveMembership(buildingId) || isSuperAdmin())
+        && request.resource.size <= 10 * 1024 * 1024
+        && isAllowedDocumentType();
+      allow delete: if isBuildingAdmin(buildingId);
+    }
+
     // Default deny everything else
     match /{allPaths=**} {
       allow read, write: if false;
