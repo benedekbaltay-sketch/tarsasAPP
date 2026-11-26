@@ -57,6 +57,10 @@ import {
   evaluateSzvbCompliance,
   syncSzvbToBuildingFlats,
 } from '../../utils/szvb';
+import {
+  getBuildingAlerts,
+  dismissBuildingAlertInList,
+} from '../../utils/buildingAlerts';
 
 export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId = null, mode = 'full', isReadOnly = false }) {
   const { state, t, setGlobalBalances, persistState, showToast, canUserManageBuilding } = useApp();
@@ -265,6 +269,32 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
         szvb: isEditingSzvb ? draftSzvb : targetBuilding.szvb,
       })
     : null;
+
+  const buildingAlerts = !isAccountsOnly && targetBuilding
+    ? getBuildingAlerts(targetBuilding, {
+        user: state.currentUser,
+        organizations: state.organizations,
+        buildings,
+      })
+    : [];
+  const generalTabAlerts = buildingAlerts.filter(
+    (a) => a.targetMenu === 'building-settings' && a.targetTab === 'general'
+  );
+  const apiTabAlerts = buildingAlerts.filter(
+    (a) => a.targetMenu === 'building-settings' && a.targetTab === 'api'
+  );
+
+  const handleDismissAlert = async (alertId) => {
+    if (!targetBuildingId || !alertId || isEffectiveReadOnly) return;
+    try {
+      await persistState((s) => ({
+        ...s,
+        buildings: dismissBuildingAlertInList(s.buildings || [], targetBuildingId, alertId),
+      }));
+    } catch (err) {
+      console.error("Failed to dismiss building alert:", err);
+    }
+  };
 
   const handleSelectSzvbChairperson = (newKey) => {
     setSzvbChairpersonKey(newKey);
@@ -722,6 +752,14 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                 >
                   <Building2 className={`w-4 h-4 shrink-0 ${activeTab === 'general' ? 'text-white' : 'text-gray-500'}`} />
                   <span>{t.bld_settings_tab_general || (isEn ? "Building Details" : "Épület adatai")}</span>
+                  {generalTabAlerts.length > 0 && (
+                    <span
+                      className={`w-2 h-2 rounded-full bg-red-500 shrink-0 ${
+                        activeTab === 'general' ? 'ring-2 ring-white/80' : ''
+                      }`}
+                      aria-hidden="true"
+                    />
+                  )}
                 </button>
 
                 <button
@@ -744,6 +782,14 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                   }`}>
                     {apiEnv === 'sandbox' ? 'Test' : 'Live'}
                   </span>
+                  {apiTabAlerts.length > 0 && (
+                    <span
+                      className={`w-2 h-2 rounded-full bg-red-500 shrink-0 ${
+                        activeTab === 'api' ? 'ring-2 ring-white/80' : ''
+                      }`}
+                      aria-hidden="true"
+                    />
+                  )}
                 </button>
               </div>
             )}
@@ -755,6 +801,41 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
             {(isAccountsOnly || activeTab === 'general') && (
               <div className="space-y-6">
                 
+                {/* Dismissible Actionable Building Alerts (FIRST block above Condominium Master Data) */}
+                {!isAccountsOnly && generalTabAlerts.length > 0 && (
+                  <div className="space-y-2.5">
+                    {generalTabAlerts.map((alert) => (
+                      <div
+                        key={alert.id}
+                        className="p-3.5 rounded-xl bg-red-50/80 border border-red-200 text-red-950 flex items-start justify-between gap-3 shadow-2xs"
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                          <div className="text-xs leading-relaxed">
+                            <span className="font-bold block">
+                              {isEn ? alert.titleEn : alert.titleHu}
+                            </span>
+                            <span className="text-red-900/90">
+                              {isEn ? alert.messageEn : alert.messageHu}
+                            </span>
+                          </div>
+                        </div>
+                        {alert.dismissible && !isEffectiveReadOnly && (
+                          <button
+                            type="button"
+                            onClick={() => handleDismissAlert(alert.id)}
+                            className="p-1 rounded-lg text-red-400 hover:text-red-700 hover:bg-red-100/80 transition-colors cursor-pointer flex-shrink-0"
+                            title={t.dismiss || (isEn ? "Dismiss notice" : "Értesítés bezárása")}
+                            aria-label={t.dismiss || (isEn ? "Dismiss notice" : "Értesítés bezárása")}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Section A: Building Master Info (Read-only until Pencil icon is clicked) */}
                 {!isAccountsOnly && (
                   <div className="bg-gray-50/80 p-4 rounded-xl border border-gray-200/80 space-y-3">
@@ -976,37 +1057,6 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                         )
                       )}
                     </div>
-
-                    {/* Non-blocking 25+ albetét statutory rule warning (Tht. 51. §) */}
-                    {szvbCompliance.showWarning && (
-                      <div className="p-3 rounded-xl bg-amber-50 border border-amber-300/90 text-amber-950 flex items-start gap-2.5">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                        <div className="text-[11px] leading-relaxed">
-                          <span className="font-bold block">
-                            {t.szvb_statutory_warning_title || (isEn
-                              ? "Statutory SZVB requirement (over 25 distinct units)"
-                              : "Törvényi előírás 25 külön albetét felett (Tht. 51. §)")}
-                          </span>
-                          <span>
-                            {isEn
-                              ? `This condominium has ${szvbCompliance.albetetCount} distinct units (separate HRSZ). Under the Condominium Act, an Accounting Committee of at least 3 members (1 Chairperson + at least 2 Members) is required. Currently assigned: ${szvbCompliance.hasChairperson ? '1 chairperson' : '0 chairpersons'} and ${szvbCompliance.membersCount} member(s).`
-                              : `A társasházban ${szvbCompliance.albetetCount} külön helyrajzi számú albetét szerepel (25 felett). A társasházi törvény szerint legalább 3 fős Számvizsgáló Bizottság (1 elnök + legalább 2 tag) kijelölése szükséges. Jelenleg: ${szvbCompliance.hasChairperson ? '1 elnök' : '0 elnök'} és ${szvbCompliance.membersCount} tag van kijelölve.`}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Statutory compliance confirmation when >25 units and compliant */}
-                    {szvbCompliance.requiresStatutorySzvb && szvbCompliance.isCompliant && (
-                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2 text-[11px] font-semibold">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                        <span>
-                          {isEn
-                            ? `Statutory SZVB requirement met (${szvbCompliance.totalSzvbCount} members for ${szvbCompliance.albetetCount} units).`
-                            : `Az SZVB létszám megfelel a 25 albetét feletti törvényi előírásnak (1 elnök + ${szvbCompliance.membersCount} tag).`}
-                        </span>
-                      </div>
-                    )}
 
                     <p className="text-[11px] text-gray-600">
                       {t.szvb_readonly_desc || (isEn

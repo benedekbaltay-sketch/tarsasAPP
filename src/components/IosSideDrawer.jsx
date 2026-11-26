@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { canUserManageTeam, resolveUserDisplayName, isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
 import { getUserSzvbRolesAcrossBuildings, getUserBuildingSzvbRole } from '../utils/szvb';
+import { getBuildingAlerts } from '../utils/buildingAlerts';
 
 export function IosSideDrawer({ 
   isOpen, 
@@ -43,6 +44,10 @@ export function IosSideDrawer({
     isUserBuildingViewer(currentUser, currentBuilding, organizations, buildings) ||
     !canUserManageBuilding(currentUser, currentBuilding, organizations, buildings)
   );
+  const activeBuildingAlerts = (isAdmin && !isPortfolioMode && currentBuilding)
+    ? getBuildingAlerts(currentBuilding, { user: currentUser, organizations, buildings })
+    : [];
+  const hasBuildingSettingsAlert = activeBuildingAlerts.some((a) => a.targetMenu === 'building-settings');
 
   const myFlats = getUserFlats ? getUserFlats(currentUser, buildings) : [];
   const szvbRoles = !isAdmin ? getUserSzvbRolesAcrossBuildings(currentUser, buildings || []) : [];
@@ -340,13 +345,19 @@ export function IosSideDrawer({
                     onClick={() => handleAction('building-settings')}
                     className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-700 text-white flex items-center justify-center shadow-xs">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-slate-700 text-white flex items-center justify-center shadow-xs shrink-0">
                         <Settings className="w-4 h-4" />
                       </div>
-                      <span className="text-sm font-semibold text-gray-800">
+                      <span className="text-sm font-semibold text-gray-800 truncate">
                         {t.bld_settings_btn || (isHu ? "Ház adatai & Bank" : "Building Details & Bank")}
                       </span>
+                      {hasBuildingSettingsAlert && (
+                        <span
+                          className="w-2.5 h-2.5 rounded-full bg-red-600 shrink-0"
+                          aria-hidden="true"
+                        />
+                      )}
                     </div>
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>

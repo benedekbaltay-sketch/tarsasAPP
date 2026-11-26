@@ -22,8 +22,7 @@ import {
   Shield,
   Filter,
   Minus,
-  Calendar,
-  AlertTriangle
+  Calendar
 } from 'lucide-react';
 import { 
   formatCurrency, 
@@ -40,7 +39,7 @@ import { TransactionFilterBar } from '../components/TransactionFilterBar';
 import { initialFilterState, applyTransactionFilters, getActiveFilterCount } from '../utils/filterUtils';
 import { StickyMonthSection } from '../components/StickyMonthGroup';
 import { groupItemsByMonth } from '../utils/dateGrouping';
-import { evaluateSzvbCompliance, getUserBuildingSzvbRole } from '../utils/szvb';
+import { getUserBuildingSzvbRole } from '../utils/szvb';
 
 export function AdminView({
   onBackToPortfolio,
@@ -49,7 +48,6 @@ export function AdminView({
   onOpenAddTransaction,
   onOpenAddFlat,
   onOpenGlobalBalances,
-  onOpenBuildingSettings,
   onOpenGlobalAddTx,
   onOpenEditFlatMaster,
   onOpenEditTx,
@@ -70,10 +68,6 @@ export function AdminView({
   const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
   const isSzvbMode = state.currentUser?.role === 'szvb';
   const szvbRole = isSzvbMode ? (state.currentUser?.szvbRole || getUserBuildingSzvbRole(state.currentUser, currentBuilding)) : null;
-  const szvbCompliance = useMemo(
-    () => (currentBuilding ? evaluateSzvbCompliance({ ...currentBuilding, flats: flats || currentBuilding.flats || [] }) : null),
-    [currentBuilding, flats]
-  );
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     isSzvbMode ||
@@ -311,37 +305,6 @@ export function AdminView({
               </p>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Non-blocking 25+ albetét Statutory SZVB Warning for KK Admins */}
-      {!isEffectiveReadOnly && !isSzvbMode && szvbCompliance?.showWarning && (
-        <div className="bg-amber-50 border border-amber-300/90 rounded-2xl p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-start gap-2.5 min-w-0 flex-1">
-            <AlertTriangle className="w-4.5 h-4.5 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-amber-950 leading-relaxed">
-              <span className="font-bold">
-                {t.szvb_statutory_warning_title || (isEn
-                  ? "Statutory SZVB requirement (over 25 distinct units):"
-                  : "Törvényi előírás 25 külön albetét felett (Tht. 51. §):")}
-              </span>{' '}
-              <span>
-                {isEn
-                  ? `This building has ${szvbCompliance.albetetCount} distinct units (separate HRSZ), requiring at least 3 SZVB members (1 Chairperson + 2 Members). Currently assigned: ${szvbCompliance.totalSzvbCount}.`
-                  : `A házban ${szvbCompliance.albetetCount} külön helyrajzi számú albetét található, ezért legalább 3 fős SZVB (1 elnök + 2 tag) kijelölése szükséges. Jelenleg ${szvbCompliance.totalSzvbCount} fő van kijelölve.`}
-              </span>
-            </div>
-          </div>
-          {onOpenBuildingSettings && (
-            <button
-              type="button"
-              onClick={onOpenBuildingSettings}
-              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 flex-shrink-0 shadow-2xs"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>{t.szvb_configure_btn || (isEn ? "Assign SZVB" : "SZVB beállítása")}</span>
-            </button>
-          )}
         </div>
       )}
 

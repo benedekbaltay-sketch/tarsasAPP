@@ -780,11 +780,6 @@ function MainLayout() {
                 setGlobalBalancesMode('accounts');
                 setIsGlobalBalancesOpen(true);
               } : undefined}
-              onOpenBuildingSettings={isManagingCurrentBuilding ? () => {
-                setBuildingSettingsTargetId(state.currentBuildingId);
-                setGlobalBalancesMode('full');
-                setIsGlobalBalancesOpen(true);
-              } : undefined}
               onOpenGlobalAddTx={isManagingCurrentBuilding ? () => handleOpenUniversalTx({ scope: 'global' }) : undefined}
               onOpenEditFlatMaster={(bId, fNum) => setEditFlatMasterData({ buildingId: bId, flatNum: fNum })}
               onOpenEditTx={(id, type, initialEditMode = false) => setEditTxData({ id, type, initialEditMode: isManagingCurrentBuilding ? initialEditMode : false })}
@@ -812,7 +807,6 @@ function MainLayout() {
             onOpenAddTransaction={undefined}
             onOpenAddFlat={undefined}
             onOpenGlobalBalances={undefined}
-            onOpenBuildingSettings={undefined}
             onOpenGlobalAddTx={undefined}
             onOpenEditFlatMaster={(bId, fNum) => setEditFlatMasterData({ buildingId: bId, flatNum: fNum })}
             onOpenEditTx={(id, type) => setEditTxData({ id, type, initialEditMode: false })}

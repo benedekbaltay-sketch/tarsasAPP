@@ -330,6 +330,7 @@ export function firestoreBuildingToUiBuilding(buildingDoc, extras = {}) {
     aggregates: buildingDoc.aggregates || null,
     hrsz: buildingDoc.hrsz || '',
     szvb: buildingDoc.szvb || null,
+    dismissedAlerts: Array.isArray(buildingDoc.dismissedAlerts) ? buildingDoc.dismissedAlerts : [],
     firestoreMonthlySummaries: monthlyMap,
     categories: Array.isArray(extras.categories) ? extras.categories : [],
     docFolders: Array.isArray(buildingDoc.docFolders) ? buildingDoc.docFolders : [],

@@ -8,6 +8,7 @@ import { FlagIcon } from './FlagIcon';
 import { NotificationBell } from './NotificationBell';
 import { getAccessibleBuildings, isUserBuildingViewer, canUserManageBuilding, resolveUserDisplayName } from '../utils/teamPermissions';
 import { getUserBuildingSzvbRole } from '../utils/szvb';
+import { getBuildingAlerts } from '../utils/buildingAlerts';
 
 export function Header({ 
   onOpenDrawer, 
@@ -82,6 +83,9 @@ export function Header({
     isUserBuildingViewer(currentUser, currentBuilding, organizations, buildings) ||
     !canUserManageBuilding(currentUser, currentBuilding, organizations, buildings)
   );
+  const activeBuildingAlerts = (isCurrentlyAdminMode && isInBuilding && !isPortfolioView && currentBuilding)
+    ? getBuildingAlerts(currentBuilding, { user: currentUser, organizations, buildings })
+    : [];
 
   const userDisplayName = resolveUserDisplayName(currentUser, state);
 
@@ -115,11 +119,17 @@ export function Header({
           <button
             type="button"
             onClick={onOpenDrawer}
-            className="w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-700 shadow-2xs transition-all cursor-pointer flex-shrink-0 hover:border-gray-300"
+            className="relative w-8 h-8 sm:w-9 sm:h-8.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 flex items-center justify-center text-gray-700 shadow-2xs transition-all cursor-pointer flex-shrink-0 hover:border-gray-300"
             title={isHu ? "Menü megnyitása" : "Open Menu"}
             aria-label={isHu ? "Menü megnyitása" : "Open Menu"}
           >
             <Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-gray-700" />
+            {activeBuildingAlerts.length > 0 && (
+              <span
+                className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-600 ring-2 ring-white"
+                aria-hidden="true"
+              />
+            )}
           </button>
 
           <div 

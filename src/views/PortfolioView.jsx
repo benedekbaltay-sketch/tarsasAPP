@@ -35,6 +35,7 @@ import {
   resolveUserOrgContext,
   canUserDeleteBuilding,
 } from '../utils/teamPermissions';
+import { getBuildingAlerts } from '../utils/buildingAlerts';
 
 export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalendar, onOpenBuildingSettings, onOpenTeamManagement }) {
   const { state, t, deleteBuilding } = useApp();
@@ -319,6 +320,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                   });
 
                   const isSelected = selectedBuildingId === b.id;
+                  const buildingAlerts = getBuildingAlerts(b, { user: currentUser, organizations, buildings });
 
                   return (
                     <tr
@@ -358,8 +360,16 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                       {/* 1. Address (Primary) & Official Name (Sub) */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold flex-shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
+                          <div className="relative w-8 h-8 rounded-lg bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold flex-shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
                             <Building2 className="w-4 h-4" />
+                            {buildingAlerts.length > 0 && (
+                              <span
+                                className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center leading-none ring-2 ring-white shadow-xs"
+                                title={isEn ? `${buildingAlerts.length} active alert(s)` : `${buildingAlerts.length} aktív figyelmeztetés`}
+                              >
+                                {buildingAlerts.length}
+                              </span>
+                            )}
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -466,6 +476,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
             const bCommon = getBuildingReserve({ ...b, buildingInitialReserveCommon: b.buildingInitialReserveCommon || 0 });
             const bRenov = getBuildingRenovationFund({ ...b, buildingInitialReserveRenovation: b.buildingInitialReserveRenovation || 0 });
             const totalReserves = bCommon + bRenov;
+            const buildingAlerts = getBuildingAlerts(b, { user: currentUser, organizations, buildings });
 
             let buildingArrears = 0;
             let flatsInArrearsCount = 0;
@@ -499,8 +510,16 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                   
                   {/* Card Header: Icon & Badges */}
                   <div className="flex items-start justify-between gap-3 mb-3.5">
-                    <div className="w-11 h-11 rounded-2xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold flex-shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                    <div className="relative w-11 h-11 rounded-2xl bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold flex-shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
                       <Building2 className="w-5 h-5" />
+                      {buildingAlerts.length > 0 && (
+                        <span
+                          className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center leading-none ring-2 ring-white shadow-xs"
+                          title={isEn ? `${buildingAlerts.length} active alert(s)` : `${buildingAlerts.length} aktív figyelmeztetés`}
+                        >
+                          {buildingAlerts.length}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center justify-end gap-1.5">

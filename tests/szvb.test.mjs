@@ -12,6 +12,12 @@ import {
   getUserSzvbRolesAcrossBuildings,
   syncSzvbToBuildingFlats,
 } from '../src/utils/szvb.js';
+import {
+  ALERT_ID_SZVB_STATUTORY_25,
+  getBuildingAlerts,
+  dismissBuildingAlertInList,
+  isBuildingAlertDismissed,
+} from '../src/utils/buildingAlerts.js';
 
 function makeFlats(count, hrszPrefix = '12345/0/A/') {
   return Array.from({ length: count }, (_, i) => ({
@@ -200,4 +206,34 @@ test('7. syncSzvbToBuildingFlats keeps flat owner isBoardMember and boardRole fl
   assert.equal(synced[2].owners[0].boardRole ?? null, null);
   assert.equal(synced[3].owners[0].isBoardMember, false);
   assert.equal(synced[3].owners[0].boardRole, null);
+});
+
+test('8. getBuildingAlerts counts mixed unit types (flats, garages, offices), gates to managing KK, and supports X-dismissal', () => {
+  const mixedUnits = [
+    ...makeFlats(15, '100/0/A/').map((f) => ({ ...f, unitType: 'flat' })),
+    ...makeFlats(6, '100/0/G/').map((f, i) => ({ ...f, id: `g-${i}`, flatNum: `G${i + 1}`, unitType: 'garage' })),
+    ...makeFlats(5, '100/0/I/').map((f, i) => ({ ...f, id: `c-${i}`, flatNum: `I${i + 1}`, unitType: 'commercial' })),
+  ]; // 15 + 6 + 5 = 26 distinct HRSZ units regardless of type!
+
+  const building = { id: 'b-mixed', name: 'Vegyes Ház', flats: mixedUnits };
+  const adminUser = { email: 'kk@example.com', role: 'admin' };
+  const residentUser = { email: 'owner1@example.com', role: 'Owner' };
+  const szvbUser = { email: 'owner1@example.com', role: 'szvb' };
+
+  // Managing KK sees 1 alert routed to building-settings -> general tab
+  const kkAlerts = getBuildingAlerts(building, { user: adminUser, buildings: [building] });
+  assert.equal(kkAlerts.length, 1);
+  assert.equal(kkAlerts[0].id, ALERT_ID_SZVB_STATUTORY_25);
+  assert.equal(kkAlerts[0].targetMenu, 'building-settings');
+  assert.equal(kkAlerts[0].targetTab, 'general');
+  assert.equal(kkAlerts[0].dismissible, true);
+
+  // Residents and SZVB users NEVER see KK management alerts
+  assert.equal(getBuildingAlerts(building, { user: residentUser, buildings: [building] }).length, 0);
+  assert.equal(getBuildingAlerts(building, { user: szvbUser, buildings: [building] }).length, 0);
+
+  // Clicking X dismisses the alert cleanly and clears red dot count to 0
+  const updatedBuildings = dismissBuildingAlertInList([building], 'b-mixed', ALERT_ID_SZVB_STATUTORY_25);
+  assert.equal(isBuildingAlertDismissed(updatedBuildings[0], ALERT_ID_SZVB_STATUTORY_25), true);
+  assert.equal(getBuildingAlerts(updatedBuildings[0], { user: adminUser, buildings: updatedBuildings }).length, 0);
 });
