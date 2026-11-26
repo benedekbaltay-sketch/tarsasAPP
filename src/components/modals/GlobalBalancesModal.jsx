@@ -78,6 +78,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
   const [activeTab, setActiveTab] = useState('general');
   const [isEditingMasterData, setIsEditingMasterData] = useState(false);
   const [isEditingSzvb, setIsEditingSzvb] = useState(false);
+  const [isEditingApi, setIsEditingApi] = useState(false);
 
   // 1. Building Master Data
   const [buildingName, setBuildingName] = useState('');
@@ -209,6 +210,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
       setExpandedAccountIds({});
       setIsEditingMasterData(false);
       setIsEditingSzvb(false);
+      setIsEditingApi(false);
       resetNewAccountForm();
     }
   }, [isOpen, targetBuildingId]);
@@ -379,8 +381,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
     );
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSaveSection = async (section = 'all') => {
     if (!isAdmin || isSaving) return;
     if (isEffectiveReadOnly) {
       showToast(
@@ -391,6 +392,21 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
       );
       return;
     }
+
+    const saveMaster = section === 'master' || (section === 'all' && isEditingMasterData);
+    const saveSzvb = section === 'szvb' || (section === 'all' && isEditingSzvb);
+    const saveApi = section === 'api' || (section === 'all' && isEditingApi);
+
+    if (saveMaster) {
+      if (!buildingName.trim() || !buildingAddress.trim()) {
+        showToast(
+          isEn ? "Building name and address are required." : "A társasház elnevezése és címe kötelező!",
+          "error"
+        );
+        return;
+      }
+    }
+
     setIsSaving(true);
     setSaveError(null);
 
@@ -429,7 +445,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
         : { ...(targetBuilding?.bankFA || {}) };
 
       // Detect any bank account number changes and emit pale-red critical alert to Owner if edited by staff!
-      const bankAccountChanges = canEditBankAcc && targetBuilding
+      const bankAccountChanges = isAccountsOnly && canEditBankAcc && targetBuilding
         ? detectBankAccountChanges(targetBuilding, nextBankKK, nextBankFA, updatedCustomAccounts)
         : [];
 
@@ -447,15 +463,8 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
         }
       }
 
-      const nextManagerContact = {
-        name: managerName.trim(),
-        phone: formatPhoneNumber(managerPhone),
-        email: managerEmail.trim(),
-        officeHours: managerOfficeHours.trim(),
-      };
-
       // Prepare SZVB update & notifications if edited
-      const nextSzvbPayload = isEditingSzvb
+      const nextSzvbPayload = saveSzvb
         ? {
             chairperson: draftSzvb.chairperson || null,
             members: draftSzvb.members || [],
@@ -465,7 +474,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
         : null;
 
       const szvbNotifications = [];
-      if (isEditingSzvb && targetBuilding && nextSzvbPayload) {
+      if (saveSzvb && targetBuilding && nextSzvbPayload) {
         const prevRoleByEmail = new Map();
         if (existingSzvb.chairperson?.email) {
           prevRoleByEmail.set(normalizeEmail(existingSzvb.chairperson.email), 'chairperson');
@@ -551,26 +560,35 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
 
             return {
               ...b,
-              name: isEditingMasterData ? (buildingName.trim() || b.name) : b.name,
-              officialName: isEditingMasterData ? buildingOfficialName.trim() : b.officialName,
-              address: isEditingMasterData ? (buildingAddress.trim() || b.address) : b.address,
-              taxNumber: isEditingMasterData ? formatTaxNumber(buildingTaxNumber).trim() : b.taxNumber,
-              hrsz: isEditingMasterData ? buildingHrsz.trim() : (b.hrsz || ''),
-              totalOwnershipShare: isEditingMasterData
+              name: saveMaster ? (buildingName.trim() || b.name) : b.name,
+              officialName: saveMaster ? buildingOfficialName.trim() : b.officialName,
+              address: saveMaster ? (buildingAddress.trim() || b.address) : b.address,
+              taxNumber: saveMaster ? formatTaxNumber(buildingTaxNumber).trim() : b.taxNumber,
+              hrsz: saveMaster ? buildingHrsz.trim() : (b.hrsz || ''),
+              totalOwnershipShare: saveMaster
                 ? (parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000)
                 : (b.totalOwnershipShare || 10000),
               ...(nextSzvbPayload ? { szvb: nextSzvbPayload, flats: syncedFlats } : {}),
               contactDisplayMode: b.contactDisplayMode || 'company',
               managerContact: b.managerContact || null,
               showCentralContactToResidents: b.showCentralContactToResidents !== undefined ? b.showCentralContactToResidents : false,
-              bankApi: {
-                provider: apiProvider,
-                environment: apiEnv,
-                clientId: apiClientId.trim(),
-                autoSync: Boolean(apiAutoSync),
-                syncInterval: 'daily',
-                secretManagedServerSide: true
-              }
+              bankApi: saveApi
+                ? {
+                    provider: apiProvider,
+                    environment: apiEnv,
+                    clientId: apiClientId.trim(),
+                    autoSync: Boolean(apiAutoSync),
+                    syncInterval: 'daily',
+                    secretManagedServerSide: true
+                  }
+                : (b.bankApi || {
+                    provider: 'OTP CorpAPI',
+                    environment: 'sandbox',
+                    clientId: '',
+                    autoSync: true,
+                    syncInterval: 'daily',
+                    secretManagedServerSide: true
+                  })
             };
           }
           return b;
@@ -591,20 +609,35 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
         };
       });
 
-      setIsEditingMasterData(false);
-      setIsEditingSzvb(false);
+      if (saveMaster) setIsEditingMasterData(false);
+      if (saveSzvb) setIsEditingSzvb(false);
+      if (saveApi) setIsEditingApi(false);
 
       showToast(
         isAccountsOnly
           ? (t.bank_accounts_saved_toast || (isEn ? "Bank accounts & reserves saved!" : "A bankszámlák és tartalékok adatai sikeresen elmentve!"))
-          : (isEn ? "Building settings & bank data saved!" : "A társasház adatai és banki beállításai sikeresen elmentve!")
+          : section === 'szvb'
+            ? (isEn ? "Accounting Committee (SZVB) settings saved!" : "A Számvizsgáló Bizottság (SZVB) beállításai elmentve!")
+            : section === 'api'
+              ? (isEn ? "Banking API settings saved!" : "A banki API beállítások sikeresen elmentve!")
+              : (isEn ? "Condominium master data saved!" : "A társasház alapadatai sikeresen elmentve!")
       );
-      onClose();
     } catch (err) {
       console.error("Save building settings error:", err);
       setSaveError(err.message || (isEn ? "Failed to save building data to cloud." : "Hiba történt az adatok felhőbe mentésekor."));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (activeTab === 'api' && isEditingApi) {
+      handleSaveSection('api');
+    } else if (isEditingMasterData) {
+      handleSaveSection('master');
+    } else if (isEditingSzvb) {
+      handleSaveSection('szvb');
     }
   };
 
@@ -660,46 +693,61 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
             </button>
           </div>
         </div>
-
-        {/* Tab Switcher: Only in full Building Settings mode (never in Folyószámlák & Tartalékok mode) */}
-        {!isAccountsOnly && (
-          <div className="mt-3 pt-2.5 border-t border-gray-100 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('general')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'general'
-                  ? 'bg-[#1E3A8A] text-white shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>{t.bld_settings_tab_general || (isEn ? "Building Details" : "Épület adatai")}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('api')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'api'
-                  ? 'bg-[#1E3A8A] text-white shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              <Network className="w-3.5 h-3.5" />
-              <span>{t.bld_settings_tab_api || (isEn ? "Banking API Integration" : "Banki API Integráció")}</span>
-              <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${apiEnv === 'sandbox' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                {apiEnv === 'sandbox' ? 'Test' : 'Live'}
-              </span>
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Fullpage Form Body */}
       <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
-        <div className="flex-1 overflow-y-auto w-full overscroll-contain p-4 md:p-8">
+        <div
+          className="flex-1 overflow-y-auto w-full overscroll-contain p-4 md:p-8"
+          style={{ scrollbarGutter: 'stable' }}
+        >
           <div className="max-w-4xl mx-auto space-y-6">
+            {/* Segmented Tab Bar matching Finances (Pénzügyek) design */}
+            {!isAccountsOnly && (
+              <div
+                role="tablist"
+                aria-label={t.bld_settings_title || (isEn ? "Building Settings & Banking" : "Társasház Beállításai & Bank")}
+                className="bg-white rounded-2xl border border-gray-200 p-1.5 shadow-xs flex items-center gap-1.5 overflow-x-auto"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'general'}
+                  onClick={() => setActiveTab('general')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                    activeTab === 'general'
+                      ? 'bg-[#1E3A8A] text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
+                  }`}
+                >
+                  <Building2 className={`w-4 h-4 shrink-0 ${activeTab === 'general' ? 'text-white' : 'text-gray-500'}`} />
+                  <span>{t.bld_settings_tab_general || (isEn ? "Building Details" : "Épület adatai")}</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'api'}
+                  onClick={() => setActiveTab('api')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                    activeTab === 'api'
+                      ? 'bg-[#1E3A8A] text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/80'
+                  }`}
+                >
+                  <Network className={`w-4 h-4 shrink-0 ${activeTab === 'api' ? 'text-white' : 'text-gray-500'}`} />
+                  <span>{t.bld_settings_tab_api || (isEn ? "Banking API Integration" : "Banki API Integráció")}</span>
+                  <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                    activeTab === 'api'
+                      ? 'bg-white/20 text-white'
+                      : (apiEnv === 'sandbox' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800')
+                  }`}>
+                    {apiEnv === 'sandbox' ? 'Test' : 'Live'}
+                  </span>
+                </button>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border border-gray-200 shadow-xs p-5 md:p-6 space-y-6 text-xs">
             {/* ============================================================== */}
             {/* TAB 1: ÉPÜLET ADATAI & FOLYÓSZÁMLÁK (vagy csak Bankszámlák)    */}
@@ -727,22 +775,34 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                             <span>{t.edit || (isEn ? "Edit" : "Szerkesztés")}</span>
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setBuildingName(targetBuilding?.name || '');
-                              setBuildingOfficialName(targetBuilding?.officialName || '');
-                              setBuildingAddress(targetBuilding?.address || '');
-                              setBuildingTaxNumber(formatTaxNumber(targetBuilding?.taxNumber || ''));
-                              setBuildingHrsz(targetBuilding?.hrsz || '');
-                              setTotalOwnershipShare(targetBuilding?.totalOwnershipShare !== undefined ? String(targetBuilding.totalOwnershipShare) : '10000');
-                              setIsEditingMasterData(false);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 text-[11px] font-semibold transition-colors cursor-pointer"
-                          >
-                            <X className="w-3 h-3" />
-                            <span>{t.cancel || (isEn ? "Cancel" : "Mégse")}</span>
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={() => {
+                                setBuildingName(targetBuilding?.name || '');
+                                setBuildingOfficialName(targetBuilding?.officialName || '');
+                                setBuildingAddress(targetBuilding?.address || '');
+                                setBuildingTaxNumber(formatTaxNumber(targetBuilding?.taxNumber || ''));
+                                setBuildingHrsz(targetBuilding?.hrsz || '');
+                                setTotalOwnershipShare(targetBuilding?.totalOwnershipShare !== undefined ? String(targetBuilding.totalOwnershipShare) : '10000');
+                                setIsEditingMasterData(false);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 text-[11px] font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              <X className="w-3 h-3" />
+                              <span>{t.cancel || (isEn ? "Cancel" : "Mégse")}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={() => handleSaveSection('master')}
+                              className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-[11px] font-bold transition-colors cursor-pointer shadow-2xs disabled:opacity-60"
+                            >
+                              {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                              <span>{t.save || (isEn ? "Save" : "Mentés")}</span>
+                            </button>
+                          </div>
                         )
                       )}
                     </div>
@@ -888,19 +948,31 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                             <span>{t.edit || (isEn ? "Edit" : "Szerkesztés")}</span>
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSzvbChairpersonKey(existingSzvb.chairperson?.key || '');
-                              setSzvbMemberKeys((existingSzvb.members || []).map((m) => m.key).filter(Boolean));
-                              setSzvbAddMemberKey('');
-                              setIsEditingSzvb(false);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 text-[11px] font-semibold transition-colors cursor-pointer"
-                          >
-                            <X className="w-3 h-3" />
-                            <span>{t.cancel || (isEn ? "Cancel" : "Mégse")}</span>
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={() => {
+                                setSzvbChairpersonKey(existingSzvb.chairperson?.key || '');
+                                setSzvbMemberKeys((existingSzvb.members || []).map((m) => m.key).filter(Boolean));
+                                setSzvbAddMemberKey('');
+                                setIsEditingSzvb(false);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 text-[11px] font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              <X className="w-3 h-3" />
+                              <span>{t.cancel || (isEn ? "Cancel" : "Mégse")}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={() => handleSaveSection('szvb')}
+                              className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-[11px] font-bold transition-colors cursor-pointer shadow-2xs disabled:opacity-60"
+                            >
+                              {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                              <span>{t.save || (isEn ? "Save" : "Mentés")}</span>
+                            </button>
+                          </div>
                         )
                       )}
                     </div>
@@ -1204,7 +1276,55 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+                <div className="bg-gray-50/80 rounded-xl border border-gray-200/80 p-4 space-y-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="font-bold text-[#1E3A8A] text-xs uppercase tracking-wider flex items-center gap-1.5">
+                      <SlidersHorizontal className="w-4 h-4" />
+                      <span>{t.bld_settings_tab_api || (isEn ? "Banking API Integration" : "Banki API Integráció")}</span>
+                    </h4>
+                    {!isEffectiveReadOnly && (
+                      !isEditingApi ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingApi(true)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 hover:text-[#1E3A8A] hover:border-blue-200 text-gray-600 text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                          title={t.edit || (isEn ? "Edit API settings" : "API beállítások szerkesztése")}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>{t.edit || (isEn ? "Edit" : "Szerkesztés")}</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            onClick={() => {
+                              const bApi = targetBuilding?.bankApi || {};
+                              setApiProvider(bApi.provider || 'OTP CorpAPI');
+                              setApiEnv(bApi.environment || 'sandbox');
+                              setApiClientId(bApi.clientId || '');
+                              setApiAutoSync(bApi.autoSync !== undefined ? bApi.autoSync : true);
+                              setIsEditingApi(false);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 text-[11px] font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            <X className="w-3 h-3" />
+                            <span>{t.cancel || (isEn ? "Cancel" : "Mégse")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            onClick={() => handleSaveSection('api')}
+                            className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-[11px] font-bold transition-colors cursor-pointer shadow-2xs disabled:opacity-60"
+                          >
+                            {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                            <span>{t.save || (isEn ? "Save" : "Mentés")}</span>
+                          </button>
+                        </div>
+                      )
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block font-bold text-gray-700 mb-1">
@@ -1212,10 +1332,10 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                       </label>
                       <select
                         value={apiProvider}
-                        disabled={isEffectiveReadOnly}
+                        disabled={isEffectiveReadOnly || !isEditingApi}
                         onChange={(e) => setApiProvider(e.target.value)}
-                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A] ${
-                          isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-gray-50 text-gray-800'
+                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                          isEffectiveReadOnly || !isEditingApi ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
                         }`}
                       >
                         <option value="OTP CorpAPI">OTP Bank CorpAPI</option>
@@ -1231,10 +1351,10 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                       </label>
                       <select
                         value={apiEnv}
-                        disabled={isEffectiveReadOnly}
+                        disabled={isEffectiveReadOnly || !isEditingApi}
                         onChange={(e) => setApiEnv(e.target.value)}
-                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A] ${
-                          isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-gray-50 text-gray-800'
+                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] ${
+                          isEffectiveReadOnly || !isEditingApi ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
                         }`}
                       >
                         <option value="sandbox">{t.settings_api_env_sandbox || "Sandbox (Teszt üzemmód)"}</option>
@@ -1249,11 +1369,11 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                       <input
                         type="text"
                         value={apiClientId}
-                        disabled={isEffectiveReadOnly}
+                        disabled={isEffectiveReadOnly || !isEditingApi}
                         onChange={(e) => setApiClientId(e.target.value)}
                         placeholder={isEn ? "e.g. corp-building-001" : "pl. corp-tarsashaz-001"}
-                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A] ${
-                          isEffectiveReadOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-gray-50 text-gray-800'
+                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
+                          isEffectiveReadOnly || !isEditingApi ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
                         }`}
                       />
                     </div>
@@ -1275,12 +1395,12 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
-                    <label className={`flex items-center gap-2 ${isEffectiveReadOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                  <div className="pt-2 border-t border-gray-200/70 flex flex-wrap items-center justify-between gap-3">
+                    <label className={`flex items-center gap-2 ${isEffectiveReadOnly || !isEditingApi ? 'cursor-default opacity-75' : 'cursor-pointer'}`}>
                       <input
                         type="checkbox"
                         checked={apiAutoSync}
-                        disabled={isEffectiveReadOnly}
+                        disabled={isEffectiveReadOnly || !isEditingApi}
                         onChange={(e) => setApiAutoSync(e.target.checked)}
                         className="w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
                       />
@@ -1323,49 +1443,6 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
             )}
           </div>
         </div>
-
-        {/* Fixed Bottom Footer Bar */}
-        {!isAccountsOnly && (
-          <div className="bg-white border-t border-gray-200 px-4 sm:px-8 py-3 flex items-center justify-end gap-2.5 shadow-md flex-shrink-0">
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 cursor-pointer transition-colors disabled:opacity-40"
-            >
-              {isEffectiveReadOnly || (activeTab === 'general' && !isEditingMasterData && !isEditingSzvb) ? (t.close || (isEn ? "Close" : "Bezárás")) : (t.cancel || "Mégse")}
-            </button>
-            {!isEffectiveReadOnly && (activeTab === 'api' || isEditingMasterData || isEditingSzvb) ? (
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-60"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{t.saving || (isEn ? "Saving..." : "Mentés...")}</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>{t.save || "Mentés"}</span>
-                  </>
-                )}
-              </button>
-            ) : isEffectiveReadOnly ? (
-              <button
-                type="button"
-                disabled
-                className="px-4 py-2 bg-gray-100 border border-gray-200 text-gray-400 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-not-allowed"
-                title={t.team_viewer_readonly_error || (isEn ? "Read-only access" : "Csak megtekintési jogosultság")}
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>{t.view_only || (isEn ? "Read-Only" : "Csak megtekintés")}</span>
-              </button>
-            ) : null}
-          </div>
-        )}
       </form>
     </div>
   );
