@@ -56,6 +56,7 @@ import {
   normalizeBuildingSzvb,
   evaluateSzvbCompliance,
   syncSzvbToBuildingFlats,
+  buildSzvbUpdateNotifications,
 } from '../../utils/szvb';
 import {
   getBuildingAlerts,
@@ -503,61 +504,14 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
           }
         : null;
 
-      const szvbNotifications = [];
-      if (saveSzvb && targetBuilding && nextSzvbPayload) {
-        const prevRoleByEmail = new Map();
-        if (existingSzvb.chairperson?.email) {
-          prevRoleByEmail.set(normalizeEmail(existingSzvb.chairperson.email), 'chairperson');
-        }
-        (existingSzvb.members || []).forEach((m) => {
-          const em = normalizeEmail(m?.email);
-          if (em) prevRoleByEmail.set(em, 'member');
-        });
-
-        const nextRoleByEmail = new Map();
-        if (nextSzvbPayload.chairperson?.email) {
-          nextRoleByEmail.set(normalizeEmail(nextSzvbPayload.chairperson.email), 'chairperson');
-        }
-        (nextSzvbPayload.members || []).forEach((m) => {
-          const em = normalizeEmail(m?.email);
-          if (em) nextRoleByEmail.set(em, 'member');
-        });
-
-        const allAffectedEmails = new Set([...prevRoleByEmail.keys(), ...nextRoleByEmail.keys()]);
-        allAffectedEmails.forEach((em) => {
-          const prevRole = prevRoleByEmail.get(em) || null;
-          const nextRole = nextRoleByEmail.get(em) || null;
-          if (prevRole === nextRole) return;
-
-          const bName = targetBuilding.name || '';
-          const roleLabelHu = nextRole === 'chairperson' ? 'SZVB Elnök' : 'SZVB Tag';
-          const roleLabelEn = nextRole === 'chairperson' ? 'SZVB Chairperson' : 'SZVB Member';
-
-          szvbNotifications.push(
-            buildNotification({
-              recipientEmail: em,
-              type: 'szvb_updated',
-              severity: 'info',
-              buildingId: targetBuilding.id,
-              buildingName: bName,
-              titleHu: nextRole
-                ? `SZVB jogosultság kiosztva — ${bName}`
-                : `SZVB jogosultság visszavonva — ${bName}`,
-              titleEn: nextRole
-                ? `SZVB audit role assigned — ${bName}`
-                : `SZVB audit role revoked — ${bName}`,
-              messageHu: nextRole
-                ? `A(z) ${bName} társasházban ${roleLabelHu} szerepkört kaptál (csak olvasási ellenőrzési jog). A fejlécben a Profilváltó gombbal válthatsz a saját lakásod és az SZVB ellenőrző nézet között.`
-                : `A(z) ${bName} társasházban megszűnt a Számvizsgáló Bizottsági (SZVB) megbízatásod. A saját lakásod nézete változatlanul elérhető.`,
-              messageEn: nextRole
-                ? `You have been assigned the ${roleLabelEn} role (read-only audit access) for ${bName}. Use the Switch Profile button in the header to toggle between your apartment and SZVB audit view.`
-                : `Your Accounting Committee (SZVB) role for ${bName} has been revoked. Your personal apartment view remains unchanged.`,
-              actorName: state.currentUser?.name || '',
-              actorEmail: state.currentUser?.email || '',
-            })
-          );
-        });
-      }
+      const szvbNotifications = saveSzvb && targetBuilding && nextSzvbPayload
+        ? buildSzvbUpdateNotifications({
+            prevSzvb: existingSzvb,
+            nextSzvb: nextSzvbPayload,
+            building: targetBuilding,
+            actorUser: state.currentUser,
+          })
+        : [];
 
       await persistState(s => {
         let nextCurrentFlats = s.flats;

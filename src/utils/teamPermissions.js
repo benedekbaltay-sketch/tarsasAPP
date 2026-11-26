@@ -672,6 +672,7 @@ export function buildNotification({
   messageHu = '',
   messageEn = '',
   changes = [],
+  meta = null,
 }) {
   return {
     id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -689,6 +690,7 @@ export function buildNotification({
     messageHu,
     messageEn,
     changes: Array.isArray(changes) ? changes : [],
+    ...(meta && typeof meta === 'object' ? { meta } : {}),
     read: false,
     dismissed: false,
     createdAt: new Date().toISOString(),

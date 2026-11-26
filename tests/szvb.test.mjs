@@ -11,6 +11,7 @@ import {
   isUserBuildingSzvb,
   getUserSzvbRolesAcrossBuildings,
   syncSzvbToBuildingFlats,
+  buildSzvbUpdateNotifications,
 } from '../src/utils/szvb.js';
 import {
   ALERT_ID_SZVB_STATUTORY_25,
@@ -236,4 +237,53 @@ test('8. getBuildingAlerts counts mixed unit types (flats, garages, offices), ga
   const updatedBuildings = dismissBuildingAlertInList([building], 'b-mixed', ALERT_ID_SZVB_STATUTORY_25);
   assert.equal(isBuildingAlertDismissed(updatedBuildings[0], ALERT_ID_SZVB_STATUTORY_25), true);
   assert.equal(getBuildingAlerts(updatedBuildings[0], { user: adminUser, buildings: updatedBuildings }).length, 0);
+});
+
+test('9. buildSzvbUpdateNotifications emits detailed HU/EN grant, role-change, and revoke messages', () => {
+  const building = { id: 'b1', name: 'Kossuth u. 4.' };
+  const actor = { name: 'Közös Képviselő', email: 'kk@example.com' };
+
+  const prevSzvb = {
+    chairperson: { name: 'Elnök Régi', email: 'oldchair@example.com', flatNum: '1' },
+    members: [
+      { name: 'Tag Marad', email: 'stay@example.com', flatNum: '2' },
+      { name: 'Tag Előlép', email: 'promote@example.com', flatNum: '3' },
+    ],
+  };
+
+  const nextSzvb = {
+    chairperson: { name: 'Tag Előlép', email: 'promote@example.com', flatNum: '3' },
+    members: [
+      { name: 'Tag Marad', email: 'stay@example.com', flatNum: '2' },
+      { name: 'Új Tag', email: 'newmember@example.com', flatNum: '4' },
+    ],
+  };
+
+  const notifs = buildSzvbUpdateNotifications({ prevSzvb, nextSzvb, building, actorUser: actor });
+  // stay@example.com unchanged -> no notification; 3 affected users -> 3 notifications
+  assert.equal(notifs.length, 3);
+
+  const granted = notifs.find((n) => n.recipientEmail === 'newmember@example.com');
+  assert.ok(granted);
+  assert.equal(granted.type, 'szvb_updated');
+  assert.equal(granted.meta.szvbAction, 'granted');
+  assert.match(granted.messageHu, /Lakás \/ SZVB/);
+  assert.match(granted.messageHu, /csak olvasás/i);
+  assert.match(granted.messageHu, /hátraléklistája/);
+  assert.match(granted.messageEn, /Flat \/ SZVB/);
+  assert.match(granted.messageEn, /Read-Only/i);
+  assert.equal(granted.changes.length, 3);
+
+  const promoted = notifs.find((n) => n.recipientEmail === 'promote@example.com');
+  assert.ok(promoted);
+  assert.equal(promoted.meta.szvbAction, 'modified');
+  assert.match(promoted.messageHu, /SZVB Tag → SZVB Elnök/);
+
+  const revoked = notifs.find((n) => n.recipientEmail === 'oldchair@example.com');
+  assert.ok(revoked);
+  assert.equal(revoked.meta.szvbAction, 'revoked');
+  assert.match(revoked.titleHu, /visszavonva/i);
+  assert.match(revoked.messageHu, /visszavonásra került/i);
+  assert.match(revoked.messageEn, /revoked/i);
+  assert.equal(revoked.changes[0].type, 'revoked');
 });

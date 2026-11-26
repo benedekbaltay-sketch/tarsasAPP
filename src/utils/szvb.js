@@ -1,4 +1,4 @@
-import { normalizeEmail } from './teamPermissions.js';
+import { normalizeEmail, buildNotification } from './teamPermissions.js';
 
 export const STATUTORY_SZVB_UNIT_THRESHOLD = 25;
 export const STATUTORY_SZVB_MIN_TOTAL = 3;
@@ -454,3 +454,179 @@ export function syncSzvbToBuildingFlats(flats = [], szvbData = null) {
     return changed ? { ...flat, owners: nextOwners } : flat;
   });
 }
+
+/**
+ * Build detailed, bilingual in-app notifications whenever SZVB membership is granted,
+ * changed (Member <-> Chairperson), or revoked on a condominium.
+ * Explains clearly how to switch between Resident and SZVB Audit view and what
+ * strictly read-only sections the SZVB member can inspect.
+ */
+export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null, building = null, actorUser = null } = {}) {
+  if (!building) return [];
+  const prevNorm = normalizeBuildingSzvb({ szvb: prevSzvb || { chairperson: null, members: [] } });
+  const nextNorm = normalizeBuildingSzvb({ szvb: nextSzvb || { chairperson: null, members: [] } });
+
+  const prevRoleByEmail = new Map();
+  if (prevNorm.chairperson?.email) {
+    prevRoleByEmail.set(normalizeEmail(prevNorm.chairperson.email), 'chairperson');
+  }
+  (prevNorm.members || []).forEach((m) => {
+    const em = normalizeEmail(m?.email);
+    if (em) prevRoleByEmail.set(em, 'member');
+  });
+
+  const nextRoleByEmail = new Map();
+  if (nextNorm.chairperson?.email) {
+    nextRoleByEmail.set(normalizeEmail(nextNorm.chairperson.email), 'chairperson');
+  }
+  (nextNorm.members || []).forEach((m) => {
+    const em = normalizeEmail(m?.email);
+    if (em) nextRoleByEmail.set(em, 'member');
+  });
+
+  const bName = building.name || 'Társasház';
+  const actorName = actorUser?.name || actorUser?.email || '';
+  const allEmails = new Set([...prevRoleByEmail.keys(), ...nextRoleByEmail.keys()]);
+  const notifications = [];
+
+  const roleHu = (r) => (r === 'chairperson' ? 'SZVB Elnök' : 'SZVB Tag');
+  const roleEn = (r) => (r === 'chairperson' ? 'SZVB Chairperson' : 'SZVB Member');
+
+  allEmails.forEach((email) => {
+    if (!email) return;
+    const prevRole = prevRoleByEmail.get(email) || null;
+    const nextRole = nextRoleByEmail.get(email) || null;
+    if (prevRole === nextRole) return;
+
+    if (!prevRole && nextRole) {
+      // Newly granted SZVB membership
+      const rHu = roleHu(nextRole);
+      const rEn = roleEn(nextRole);
+      const messageHu = [
+        `A(z) ${bName} társasházban ${rHu} jogosultságot kaptál (szigorúan csak olvasási ellenőrzési jog).`,
+        `🔄 Hogyan tudsz átlépni az SZVB nézetbe és vissza?\n1. A felső fejléc jobb oldalán kattints a „Lakás / SZVB” (Profilváltás) gombra, vagy nyisd meg a bal felső ☰ menüt és válaszd az „SZVB Ellenőrző nézet” gombot.\n2. Bármikor ugyanígy visszaválthatsz a saját lakásod tulajdonosi nézetére („Váltás saját lakásomra”).`,
+        `👁️ Mikhez férsz hozzá SZVB-tagként?\n• Ügyintézés ellenőrzése (Dokumentumok): iratok, szerződések, bankkivonatok megtekintése és letöltése.\n• Havi pénzforgalom ellenőrzése (Főmenü & Pénzügyek): a ház összes bevétele, kiadása, bizonylatai, banki egyenlegei (Pénzügyek → Bank) és a lakók hátraléklistája.\n• Lakások adatai, hitelek és közgyűlési egyenlegkimutatások megtekintése.`,
+        `🔒 Fontos korlátozás (Csak olvasás):\nSZVB-tagként egyetlen adatot sem tudsz módosítani vagy törölni, és nem küldhetsz ki e-maileket vagy fizetési felszólításokat.`,
+      ].join('\n\n');
+
+      const messageEn = [
+        `You have been granted ${rEn} access (strictly read-only audit oversight) for ${bName}.`,
+        `🔄 How to switch between your apartment and SZVB view:\n1. Click the "Flat / SZVB" (Switch Profile) button in the top-right header, or open the top-left ☰ menu and select "SZVB Audit View".\n2. You can switch back to your personal apartment view anytime the same way ("Switch to My Apartment").`,
+        `👁️ What you can inspect as an SZVB member:\n• Administration oversight (Documents): view and download documents, contracts, and bank statements.\n• Monthly financial oversight (Dashboard & Finances): building income, expenses, receipts, bank balances (Finances → Bank), and the full resident arrears list.\n• Flats master data, loans, and general assembly balance statements.`,
+        `🔒 Read-Only Restriction:\nAs an SZVB member, you cannot edit or delete any data, and you cannot send emails or payment reminders.`,
+      ].join('\n\n');
+
+      notifications.push(
+        buildNotification({
+          recipientEmail: email,
+          type: 'szvb_updated',
+          severity: 'info',
+          buildingId: building.id,
+          buildingName: bName,
+          titleHu: `${rHu} jogosultságot kaptál — ${bName}`,
+          titleEn: `${rEn} access granted — ${bName}`,
+          messageHu,
+          messageEn,
+          actorUser,
+          changes: [
+            {
+              type: 'granted',
+              labelHu: `${rHu} szerepkör (${bName}) — Csak olvasás`,
+              labelEn: `${rEn} role (${bName}) — Read-Only`,
+            },
+            {
+              type: 'granted',
+              labelHu: 'Ügyintézés ellenőrzése: iratok, szerződések, bankkivonatok megtekintése és letöltése',
+              labelEn: 'Administration oversight: view/download documents, contracts, and bank statements',
+            },
+            {
+              type: 'granted',
+              labelHu: 'Havi pénzforgalom ellenőrzése: bevételek, kiadások, banki egyenlegek és hátraléklista',
+              labelEn: 'Financial oversight: income, expenses, bank balances, and resident arrears list',
+            },
+          ],
+          meta: { szvbAction: 'granted', prevRole: null, nextRole },
+        })
+      );
+    } else if (prevRole && nextRole) {
+      // Role changed between Chairperson and Member
+      const prevHu = roleHu(prevRole);
+      const nextHu = roleHu(nextRole);
+      const prevEn = roleEn(prevRole);
+      const nextEn = roleEn(nextRole);
+
+      const messageHu = [
+        `A(z) ${bName} társasházban az SZVB szerepköröd módosult: ${prevHu} → ${nextHu}.`,
+        `🔄 Használat:\nA felső fejléc „Lakás / SZVB” gombjával vagy a bal felső ☰ menüből továbbra is bármikor átléphetsz a csak olvasási SZVB ellenőrző nézetbe (pénzforgalom, banki egyenlegek, hátraléklista, hitelek és iratok megtekintése/letöltése).`,
+      ].join('\n\n');
+
+      const messageEn = [
+        `Your SZVB role for ${bName} has been updated: ${prevEn} → ${nextEn}.`,
+        `🔄 Usage:\nUse the "Flat / SZVB" switcher in the header or the top-left ☰ menu anytime to enter the read-only SZVB audit view (finances, bank balances, arrears list, loans, and documents).`,
+      ].join('\n\n');
+
+      notifications.push(
+        buildNotification({
+          recipientEmail: email,
+          type: 'szvb_updated',
+          severity: 'info',
+          buildingId: building.id,
+          buildingName: bName,
+          titleHu: `SZVB szerepköröd módosult (${nextHu}) — ${bName}`,
+          titleEn: `SZVB role updated (${nextEn}) — ${bName}`,
+          messageHu,
+          messageEn,
+          actorUser,
+          changes: [
+            {
+              type: 'modified',
+              labelHu: `SZVB szerepkör: ${prevHu} → ${nextHu}`,
+              labelEn: `SZVB role: ${prevEn} → ${nextEn}`,
+            },
+          ],
+          meta: { szvbAction: 'modified', prevRole, nextRole },
+        })
+      );
+    } else if (prevRole && !nextRole) {
+      // Revoked SZVB membership
+      const prevHu = roleHu(prevRole);
+      const prevEn = roleEn(prevRole);
+
+      const messageHu = [
+        `A(z) ${bName} társasházban a(z) ${prevHu} jogosultságod visszavonásra került.`,
+        `Az SZVB ellenőrző nézet (teljes ház pénzforgalma, hátraléklista, belső iratok) már nem érhető el a fiókodból. A saját lakásod tulajdonosi nézete és adatai változatlanul elérhetők.`,
+      ].join('\n\n');
+
+      const messageEn = [
+        `Your ${prevEn} audit access for ${bName} has been revoked.`,
+        `The SZVB audit view (full building cashflow, arrears list, and internal documents) is no longer accessible from your account. Your personal apartment owner view remains unchanged.`,
+      ].join('\n\n');
+
+      notifications.push(
+        buildNotification({
+          recipientEmail: email,
+          type: 'szvb_updated',
+          severity: 'info',
+          buildingId: building.id,
+          buildingName: bName,
+          titleHu: `${prevHu} jogosultságod visszavonva — ${bName}`,
+          titleEn: `${prevEn} access revoked — ${bName}`,
+          messageHu,
+          messageEn,
+          actorUser,
+          changes: [
+            {
+              type: 'revoked',
+              labelHu: `${prevHu} szerepkör visszavonva (${bName})`,
+              labelEn: `${prevEn} role revoked (${bName})`,
+            },
+          ],
+          meta: { szvbAction: 'revoked', prevRole, nextRole: null },
+        })
+      );
+    }
+  });
+
+  return notifications;
+}
+

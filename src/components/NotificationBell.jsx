@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { Mail, ShieldAlert, Info, CheckCheck, X, Clock, Maximize2 } from 'lucide-react';
+import { Mail, ShieldAlert, Shield, Info, CheckCheck, X, Clock, Maximize2 } from 'lucide-react';
 import { getNotificationsForUser } from '../utils/teamPermissions';
+import { isUserBuildingSzvb } from '../utils/szvb';
 
 function formatNotifTime(iso, isEn) {
   if (!iso) return '';
@@ -33,8 +34,9 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
     markNotificationRead,
     markAllNotificationsRead,
     dismissNotification,
+    switchToSzvbMode,
   } = useApp();
-  const { currentUser, currentLang, notifications } = state;
+  const { currentUser, currentLang, notifications, buildings } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin' || state.roleMode === 'admin';
   const canOpenCommCenter = isAdmin && Boolean(onOpenCommunicationCenter);
@@ -155,6 +157,8 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
             ) : (
               userNotifications.map((notif) => {
                 const isCritical = notif.severity === 'critical';
+                const isSzvbNotif = notif.type === 'szvb_updated';
+                const isSzvbRevoked = isSzvbNotif && notif.meta?.szvbAction === 'revoked';
                 const title = isEn ? (notif.titleEn || notif.titleHu) : (notif.titleHu || notif.titleEn);
                 const message = isEn ? (notif.messageEn || notif.messageHu) : (notif.messageHu || notif.messageEn);
 
@@ -170,6 +174,8 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                         ? notif.read
                           ? 'bg-red-50/55 hover:bg-red-50/80 border-l-red-400'
                           : 'bg-red-50/95 hover:bg-red-100/70 border-l-red-500'
+                        : isSzvbNotif && !notif.read
+                        ? 'bg-indigo-50/55 hover:bg-indigo-50/85 border-l-indigo-600'
                         : !notif.read
                         ? 'bg-blue-50/45 hover:bg-blue-50/75 border-l-[#1E3A8A]'
                         : 'bg-white hover:bg-gray-50 border-l-transparent'
@@ -180,11 +186,17 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                         className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
                           isCritical
                             ? 'bg-red-100 text-red-700'
+                            : isSzvbRevoked
+                            ? 'bg-rose-100 text-rose-700'
+                            : isSzvbNotif
+                            ? 'bg-indigo-100 text-indigo-700'
                             : 'bg-blue-100/80 text-[#1E3A8A]'
                         }`}
                       >
                         {isCritical ? (
                           <ShieldAlert className="w-4 h-4" />
+                        ) : isSzvbNotif ? (
+                          <Shield className="w-4 h-4" />
                         ) : (
                           <Info className="w-4 h-4" />
                         )}
@@ -222,7 +234,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                             isCritical ? 'text-red-900/90' : 'text-gray-600'
                           }`}
                         >
-                          {notif.type === 'team_updated' && Array.isArray(notif.changes) && notif.changes.length > 0 && typeof message === 'string'
+                          {(notif.type === 'team_updated' || notif.type === 'szvb_updated') && typeof message === 'string'
                             ? message.split('\n\n')[0]
                             : message}
                         </p>
@@ -319,9 +331,21 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
               <div className="flex items-center gap-2.5">
                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                  selectedNotification.severity === 'critical' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-[#1E3A8A]'
+                  selectedNotification.severity === 'critical'
+                    ? 'bg-red-100 text-red-700'
+                    : selectedNotification.type === 'szvb_updated' && selectedNotification.meta?.szvbAction === 'revoked'
+                    ? 'bg-rose-100 text-rose-700'
+                    : selectedNotification.type === 'szvb_updated'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-blue-100 text-[#1E3A8A]'
                 }`}>
-                  {selectedNotification.severity === 'critical' ? <ShieldAlert className="w-4 h-4" /> : <Info className="w-4 h-4" />}
+                  {selectedNotification.severity === 'critical' ? (
+                    <ShieldAlert className="w-4 h-4" />
+                  ) : selectedNotification.type === 'szvb_updated' ? (
+                    <Shield className="w-4 h-4" />
+                  ) : (
+                    <Info className="w-4 h-4" />
+                  )}
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-gray-900 font-display">
@@ -434,7 +458,38 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
               )}
             </div>
 
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-2">
+              {(() => {
+                if (
+                  selectedNotification.type === 'szvb_updated' &&
+                  selectedNotification.meta?.szvbAction !== 'revoked' &&
+                  selectedNotification.buildingId &&
+                  currentUser?.role !== 'szvb' &&
+                  currentUser?.role !== 'admin' &&
+                  currentUser?.role !== 'superadmin' &&
+                  typeof switchToSzvbMode === 'function'
+                ) {
+                  const targetBld = (buildings || []).find((b) => b.id === selectedNotification.buildingId);
+                  if (targetBld && isUserBuildingSzvb(currentUser, targetBld)) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const bId = selectedNotification.buildingId;
+                          setSelectedNotification(null);
+                          setIsOpen(false);
+                          switchToSzvbMode(bId);
+                        }}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors"
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                        <span>{isEn ? "Open SZVB Audit View" : "Belépés SZVB nézetbe"}</span>
+                      </button>
+                    );
+                  }
+                }
+                return null;
+              })()}
               <button
                 type="button"
                 onClick={() => setSelectedNotification(null)}
