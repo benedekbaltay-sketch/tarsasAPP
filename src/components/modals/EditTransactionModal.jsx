@@ -24,12 +24,17 @@ import {
 } from '../../utils/fileSecurity';
 
 export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClose, initialEditMode = false, isReadOnly = false }) {
-  const { state, t, editItem, showToast } = useApp();
+  const { state, t, editItem, showToast, canUserManageBuilding } = useApp();
   const { transactions, expenses, manualDebits, currentLang, buildings, currentBuildingId } = state;
   const isEn = currentLang === 'en';
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   const isSzvb = state.currentUser?.role === 'szvb';
-  const effectiveReadOnly = Boolean(isReadOnly || !isAdmin);
+  const effectiveReadOnly = Boolean(
+    isReadOnly ||
+    !isAdmin ||
+    isSzvb ||
+    (canUserManageBuilding && !canUserManageBuilding(currentBuildingId))
+  );
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const allAccounts = useMemo(() => getBuildingAccounts(currentBuilding), [currentBuilding]);
@@ -394,7 +399,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
             {!isEditMode && !effectiveReadOnly && (
               <button
                 type="button"
-                onClick={() => setIsEditMode(true)}
+                onClick={() => !effectiveReadOnly && setIsEditMode(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#1E3A8A] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all cursor-pointer shadow-2xs"
                 title={isEn ? "Edit all aspects" : "Tétel szerkesztése"}
               >
@@ -414,7 +419,7 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
         </div>
 
         {/* Mode 1: Read-Only Item Details View */}
-        {!isEditMode ? (
+        {!isEditMode || effectiveReadOnly ? (
           <>
             <div className="p-4 sm:p-5 space-y-4 overflow-y-auto max-h-[calc(90vh-130px)]">
               {/* Main Amount & Account Card */}
@@ -583,14 +588,16 @@ export function EditTransactionModal({ itemId, itemType, flatNum, isOpen, onClos
               >
                 {t.close || (isEn ? "Close" : "Bezárás")}
               </button>
-              <button
-                type="button"
-                onClick={() => setIsEditMode(true)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                <span>{t.edit || (isEn ? "Edit" : "Szerkesztés")}</span>
-              </button>
+              {!effectiveReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => !effectiveReadOnly && setIsEditMode(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>{t.edit || (isEn ? "Edit" : "Szerkesztés")}</span>
+                </button>
+              )}
             </div>
           </>
         ) : (

@@ -82,7 +82,7 @@ function getExpiryInfo(expiryDateStr) {
   return { status: 'valid', daysLeft };
 }
 
-export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
+export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isReadOnly: isReadOnlyProp = false }) {
   const { state, t, saveFlatMaster, showToast } = useApp();
   const { flats, currentLang } = state;
   const isEn = currentLang === 'en';
@@ -92,8 +92,10 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
   const targetBuildingId = buildingId || state.currentBuildingId;
   const targetBuilding = (state.buildings || []).find(b => b.id === targetBuildingId) || state.buildings?.[0];
   const buildingTotalShare = Number(targetBuilding?.totalOwnershipShare) || 10000;
-  const isManaging = canUserManageBuilding(state.currentUser, targetBuildingId, state.organizations, state.buildings);
-  const isReadOnly = !isManaging;
+  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
+  const isSzvb = state.currentUser?.role === 'szvb';
+  const isManaging = isAdmin && canUserManageBuilding(state.currentUser, targetBuildingId, state.organizations, state.buildings);
+  const isReadOnly = Boolean(isReadOnlyProp || !isManaging || isSzvb);
   const isEditMode = !isReadOnly;
   const [activeTab, setActiveTab] = useState('basic'); // 'basic' | 'owners' | 'meters' | 'annexes'
   const [occupantFilter, setOccupantFilter] = useState('all'); // 'all' | 'owners' | 'tenants'
@@ -350,8 +352,6 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose }) {
     }).length;
   }, [meters]);
 
-  const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
-  const isSzvb = state.currentUser?.role === 'szvb';
   if (!isOpen || !flat || !(isAdmin || isSzvb)) return null;
 
   // Unit Type helper config

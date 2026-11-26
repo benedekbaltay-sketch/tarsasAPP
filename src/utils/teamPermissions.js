@@ -96,6 +96,24 @@ export function resolveUserOrgContext(user, organizations = [], buildings = []) 
     };
   }
 
+  // Strictly isolate non-admin active profiles (SZVB, Resident/Owner):
+  // Even if the same email also owns/belongs to a KK organization, an active SZVB or Owner
+  // session MUST NEVER inherit KK/admin write permissions.
+  const normalizedRole = String(user.role || '').toLowerCase();
+  if (normalizedRole === 'szvb' || normalizedRole === 'owner' || normalizedRole === 'tenant' || normalizedRole === 'resident') {
+    return {
+      org: null,
+      member: null,
+      isSuperAdmin: false,
+      isOwner: false,
+      isStaff: false,
+      isSuspended: false,
+      isAdminRole: false,
+      ownerEmail: '',
+      permissions: { ...DEFAULT_STAFF_PERMISSIONS },
+    };
+  }
+
   // 1. Explicit organization owner match
   if (userEmail) {
     for (const org of orgList) {
@@ -310,7 +328,17 @@ export function canUserEditBankAccountNumbers(user, building, organizations = []
  */
 export function canUserManageBuilding(user, building, organizations = [], buildings = []) {
   if (!user) return false;
-  if (user.role === 'viewer' || user.isViewer === true) return false;
+  const normalizedRole = String(user.role || '').toLowerCase();
+  if (
+    normalizedRole === 'viewer' ||
+    normalizedRole === 'szvb' ||
+    normalizedRole === 'owner' ||
+    normalizedRole === 'tenant' ||
+    normalizedRole === 'resident' ||
+    user.isViewer === true
+  ) {
+    return false;
+  }
   const ctx = resolveUserOrgContext(user, organizations, buildings);
   if (ctx.isSuspended) return false;
   if (ctx.isSuperAdmin) return true;

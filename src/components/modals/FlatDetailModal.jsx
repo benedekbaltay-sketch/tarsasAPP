@@ -48,6 +48,7 @@ export function FlatDetailModal({
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     !isAdmin ||
+    isSzvb ||
     (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding))
   );
   const allAccounts = getBuildingAccounts(currentBuilding);
@@ -109,6 +110,7 @@ export function FlatDetailModal({
       const isCtrlOrCmd = e.ctrlKey || e.metaKey;
 
       if (isCtrlOrCmd && e.key.toLowerCase() === 'c') {
+        if (isEffectiveReadOnly) return;
         if (window.getSelection && window.getSelection().toString().trim().length > 0) {
           return;
         }
@@ -165,7 +167,7 @@ export function FlatDetailModal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, selectedTimelineId, flatNum, state, timelineFilters, copyTransaction, pasteTransaction, onOpenDeleteTx]);
+  }, [isOpen, isEffectiveReadOnly, selectedTimelineId, flatNum, state, timelineFilters, copyTransaction, pasteTransaction, onOpenDeleteTx]);
 
   // Deselect timeline item when clicking outside
   useEffect(() => {
@@ -724,7 +726,7 @@ export function FlatDetailModal({
                         <th className="py-2.5 px-3 min-w-0">{t.th_comment}</th>
                         <th className="py-2.5 px-3 text-right w-28">{t.th_amount}</th>
                         <th className="py-2.5 px-3 text-right w-28">{t.th_balance}</th>
-                        <th className="py-2.5 px-2 text-center w-20">Művelet</th>
+                        {!isEffectiveReadOnly && <th className="py-2.5 px-2 text-center w-20">Művelet</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -769,34 +771,36 @@ export function FlatDetailModal({
                             <td className="py-2.5 px-3 text-right font-medium text-gray-500 whitespace-nowrap text-[11px] select-text cursor-text">
                               {formatCurrency(item.runningBalance)}
                             </td>
-                            <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                              {isTimelineEditMode && !isEffectiveReadOnly ? (
-                                <div className="flex items-center justify-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onOpenEditTx && onOpenEditTx(item.id, itemType, true);
-                                    }}
-                                    className="p-1 rounded text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                    title="Szerkesztés"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onOpenDeleteTx && onOpenDeleteTx(item.id, itemType);
-                                    }}
-                                    className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                                    title="Törlés"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ) : null}
-                            </td>
+                            {!isEffectiveReadOnly && (
+                              <td className="py-2.5 px-2 text-center whitespace-nowrap">
+                                {isTimelineEditMode ? (
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenEditTx && onOpenEditTx(item.id, itemType, true);
+                                      }}
+                                      className="p-1 rounded text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                      title="Szerkesztés"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenDeleteTx && onOpenDeleteTx(item.id, itemType);
+                                      }}
+                                      className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                      title="Törlés"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}

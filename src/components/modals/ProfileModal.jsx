@@ -67,6 +67,7 @@ export function ProfileModal({
   const isEn = currentLang === 'en';
   const isHu = !isEn;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const isSzvb = currentUser?.role === 'szvb';
 
   // Navigation tab for Admin Settings view: Option A (personal, company, security, preferences)
   const [activeTab, setActiveTab] = useState('personal'); // 'personal' | 'company' | 'security' | 'preferences'
@@ -334,7 +335,7 @@ export function ProfileModal({
   // Tenant contact save
   const handleSaveTenantContact = (e) => {
     e.preventDefault();
-    if (!flat) return;
+    if (!flat || isSzvb) return;
     const formatted = tenantPhone ? formatPhoneNumber(tenantPhone.trim()) : '';
     setTenantPhone(formatted);
     saveFlatMaster(flat.flatNum, {
@@ -1407,7 +1408,7 @@ export function ProfileModal({
                     <h5 className="text-xs font-bold text-gray-700 uppercase tracking-wider">
                       {isEn ? "Contact Information" : "Elérhetőségek"}
                     </h5>
-                    {!isEditingTenantContact && (
+                    {!isEditingTenantContact && !isSzvb && (
                       <button
                         type="button"
                         onClick={() => setIsEditingTenantContact(true)}

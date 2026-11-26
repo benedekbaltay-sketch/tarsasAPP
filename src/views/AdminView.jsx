@@ -208,6 +208,7 @@ export function AdminView({
       const isCtrlOrCmd = e.ctrlKey || e.metaKey;
 
       if (isCtrlOrCmd && e.key.toLowerCase() === 'c') {
+        if (isEffectiveReadOnly) return;
         if (window.getSelection && window.getSelection().toString().trim().length > 0) {
           return;
         }
@@ -259,7 +260,7 @@ export function AdminView({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedTxId, displayTxList, copyTransaction, pasteTransaction, onOpenDeleteTxConfirm]);
+  }, [isEffectiveReadOnly, selectedTxId, displayTxList, copyTransaction, pasteTransaction, onOpenDeleteTxConfirm]);
 
   // Deselect transaction item when clicking outside
   useEffect(() => {

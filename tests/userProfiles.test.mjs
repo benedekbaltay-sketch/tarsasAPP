@@ -12,6 +12,12 @@ import {
   buildBankChangeNotification,
   buildTeamUpdateNotification,
   buildNotification,
+  resolveUserOrgContext,
+  canUserManageBuilding,
+  canUserEditBankAccountNumbers,
+  canUserCreateBuilding,
+  canUserDeleteBuilding,
+  canUserManageTeam,
 } from '../src/utils/teamPermissions.js';
 import { buildSzvbUpdateNotifications } from '../src/utils/szvb.js';
 
@@ -196,4 +202,57 @@ test('5. resolveInitialLoginProfile restores last valid profile or defaults to K
 
   // Saved stale/revoked profile -> safely falls back to KK
   assert.equal(resolveInitialLoginProfile(allProfiles, { id: 'owner:deleted:99' }).id, 'kk');
+});
+
+test('6. Multi-profile active-role isolation: same email in SZVB or Owner mode NEVER inherits KK write permissions', () => {
+  const ownerOrgs = [
+    {
+      id: 'org-owner-1',
+      name: 'Tulaj Kft.',
+      ownerEmail: 'janos@example.com',
+      members: [
+        {
+          id: 'm-owner',
+          name: 'Kovács János',
+          email: 'janos@example.com',
+          orgRole: 'owner',
+          active: true,
+          buildingScope: 'all',
+        },
+      ],
+    },
+  ];
+  const kkActiveUser = { email: 'janos@example.com', role: 'admin', buildingId: 'b1' };
+  const szvbActiveUser = { email: 'janos@example.com', role: 'szvb', buildingId: 'b1', flatNum: '14' };
+  const ownerActiveUser = { email: 'janos@example.com', role: 'Owner', buildingId: 'b1', flatNum: '14' };
+
+  // In KK profile (org owner & staff) -> has KK write permissions
+  assert.equal(resolveUserOrgContext(kkActiveUser, ownerOrgs, buildings).isOwner, true);
+  assert.equal(canUserManageBuilding(kkActiveUser, buildings[0], ownerOrgs, buildings), true);
+  assert.equal(canUserEditBankAccountNumbers(kkActiveUser, buildings[0], ownerOrgs, buildings), true);
+  assert.equal(canUserCreateBuilding(kkActiveUser, ownerOrgs, buildings), true);
+  assert.equal(canUserDeleteBuilding(kkActiveUser, buildings[0], ownerOrgs, buildings), true);
+  assert.equal(canUserManageTeam(kkActiveUser, ownerOrgs, buildings), true);
+  assert.equal(canUserManageBuilding(kkActiveUser, buildings[0], organizations, buildings), true);
+
+  // In SZVB profile -> strictly read-only (ZERO admin/KK write permissions even for org owner or staff email!)
+  for (const orgSet of [ownerOrgs, organizations]) {
+    const szvbCtx = resolveUserOrgContext(szvbActiveUser, orgSet, buildings);
+    assert.equal(szvbCtx.isOwner, false);
+    assert.equal(szvbCtx.isStaff, false);
+    assert.equal(szvbCtx.isAdminRole, false);
+    assert.equal(canUserManageBuilding(szvbActiveUser, buildings[0], orgSet, buildings), false);
+    assert.equal(canUserManageBuilding(szvbActiveUser, 'b1', orgSet, buildings), false);
+    assert.equal(canUserEditBankAccountNumbers(szvbActiveUser, buildings[0], orgSet, buildings), false);
+    assert.equal(canUserCreateBuilding(szvbActiveUser, orgSet, buildings), false);
+    assert.equal(canUserDeleteBuilding(szvbActiveUser, buildings[0], orgSet, buildings), false);
+    assert.equal(canUserManageTeam(szvbActiveUser, orgSet, buildings), false);
+  }
+
+  // In Owner profile -> strictly resident-only (ZERO admin/KK write permissions)
+  const ownerCtx = resolveUserOrgContext(ownerActiveUser, ownerOrgs, buildings);
+  assert.equal(ownerCtx.isOwner, false);
+  assert.equal(ownerCtx.isAdminRole, false);
+  assert.equal(canUserManageBuilding(ownerActiveUser, buildings[0], ownerOrgs, buildings), false);
+  assert.equal(canUserEditBankAccountNumbers(ownerActiveUser, buildings[0], ownerOrgs, buildings), false);
 });

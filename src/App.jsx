@@ -967,6 +967,7 @@ function MainLayout() {
         buildingId={editFlatMasterData?.buildingId}
         flatNum={editFlatMasterData?.flatNum}
         isOpen={Boolean(canAuditBuilding && editFlatMasterData)}
+        isReadOnly={!isManagingCurrentBuilding}
         onClose={() => setEditFlatMasterData(null)}
       />
 
