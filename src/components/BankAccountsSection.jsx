@@ -110,8 +110,17 @@ export function BankAccountsSection({ buildingId = null, isReadOnly = false }) {
     setBankFAAccount(targetBuilding.bankFA?.account || '');
     setBankFABank(targetBuilding.bankFA?.bank || 'OTP');
 
-    const curKK = getBuildingReserve({ ...state, currentBuildingId: targetBuilding.id });
-    const curFA = getBuildingRenovationFund({ ...state, currentBuildingId: targetBuilding.id });
+    const targetScopedState = {
+      ...state,
+      currentBuildingId: targetBuilding.id,
+      transactions: Array.isArray(targetBuilding.transactions) ? targetBuilding.transactions : (state.transactions || []),
+      expenses: Array.isArray(targetBuilding.expenses) ? targetBuilding.expenses : (state.expenses || []),
+      buildingInitialReserveCommon: Number(targetBuilding.buildingInitialReserveCommon) || 0,
+      buildingInitialReserveRenovation: Number(targetBuilding.buildingInitialReserveRenovation) || 0,
+    };
+
+    const curKK = getBuildingReserve(targetScopedState);
+    const curFA = getBuildingRenovationFund(targetScopedState);
     setCommonBalance(Math.round(curKK).toString());
     setRenovationBalance(Math.round(curFA).toString());
 
@@ -120,14 +129,21 @@ export function BankAccountsSection({ buildingId = null, isReadOnly = false }) {
 
     const initialCustomBalances = {};
     rawCustom.forEach((acc) => {
-      const curRes = getBuildingAccountReserve(acc.id, { ...state, currentBuildingId: targetBuilding.id });
+      const curRes = getBuildingAccountReserve(acc.id, targetScopedState);
       initialCustomBalances[acc.id] = Math.round(curRes).toString();
     });
     setCustomBalances(initialCustomBalances);
     setIsAddingNew(false);
     setIsDirty(false);
     resetNewAccountForm();
-  }, [targetBuildingId, targetBuilding?.bankKK?.account, targetBuilding?.bankFA?.account, targetBuilding?.customBankAccounts?.length]);
+  }, [
+    targetBuildingId,
+    targetBuilding?.bankKK?.account,
+    targetBuilding?.bankFA?.account,
+    targetBuilding?.customBankAccounts?.length,
+    targetBuilding?.buildingInitialReserveCommon,
+    targetBuilding?.buildingInitialReserveRenovation,
+  ]);
 
   if (!targetBuilding) return null;
 
@@ -137,8 +153,10 @@ export function BankAccountsSection({ buildingId = null, isReadOnly = false }) {
     tx.method !== 'Cash' &&
     tx.method !== 'Cash Offset';
 
-  const buildingTxs = (state.transactions || []).filter((tx) => !tx.buildingId || tx.buildingId === targetBuildingId);
-  const buildingExpenses = (state.expenses || []).filter((ex) => !ex.buildingId || ex.buildingId === targetBuildingId);
+  const sourceTxs = Array.isArray(targetBuilding.transactions) ? targetBuilding.transactions : (state.transactions || []);
+  const sourceExps = Array.isArray(targetBuilding.expenses) ? targetBuilding.expenses : (state.expenses || []);
+  const buildingTxs = sourceTxs.filter((tx) => !tx.buildingId || tx.buildingId === targetBuildingId);
+  const buildingExpenses = sourceExps.filter((ex) => !ex.buildingId || ex.buildingId === targetBuildingId);
 
   const totalPaymentsKK = buildingTxs
     .filter(
@@ -289,6 +307,7 @@ export function BankAccountsSection({ buildingId = null, isReadOnly = false }) {
         }
       }
 
+      const nowTs = Date.now();
       await persistState((s) => ({
         ...s,
         buildings: (s.buildings || []).map((b) =>
@@ -299,14 +318,22 @@ export function BankAccountsSection({ buildingId = null, isReadOnly = false }) {
                 bankFA: nextBankFA,
                 buildingInitialReserveCommon: calculatedInitKK,
                 buildingInitialReserveRenovation: calculatedInitFA,
+                reserveCalibratedAt: nowTs,
                 customBankAccounts: updatedCustomAccounts,
+                lastUpdated: nowTs,
               }
             : b
         ),
+        ...(s.currentBuildingId === targetBuildingId
+          ? {
+              buildingInitialReserveCommon: calculatedInitKK,
+              buildingInitialReserveRenovation: calculatedInitFA,
+            }
+          : {}),
         notifications: criticalOwnerNotification
           ? [criticalOwnerNotification, ...(s.notifications || [])].slice(0, 300)
           : s.notifications || [],
-      }));
+      }), { allowReserveChange: true });
 
       setIsDirty(false);
       showToast(

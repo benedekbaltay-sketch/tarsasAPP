@@ -797,19 +797,23 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
     }
 
     const updatedState = await persistState(s => {
+      const targetBuildingId = s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
+      const targetBuilding = (s.buildings || []).find(b => b.id === targetBuildingId);
+      const bTxs = (targetBuilding && Array.isArray(targetBuilding.transactions)) ? targetBuilding.transactions : (s.transactions || []);
+      const bExps = (targetBuilding && Array.isArray(targetBuilding.expenses)) ? targetBuilding.expenses : (s.expenses || []);
       const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
 
-      const totalPaymentsKK = (s.transactions || [])
+      const totalPaymentsKK = bTxs
         .filter(t => t.status === "Verified" && (t.targetAccount === "Közös Költség" || (!t.targetAccount && t.targetAccount !== "Felújítási Alap")) && t.includeInBalance !== false && t.type !== "Correction" && isBankTx(t))
         .reduce((acc, t) => acc + t.amount, 0);
-      const totalExpensesKK = (s.expenses || [])
+      const totalExpensesKK = bExps
         .filter(e => (e.targetAccount === "Közös Költség" || (!e.targetAccount && e.provider !== "Felújítási Alap")) && e.includeInBalance !== false && isBankTx(e))
         .reduce((acc, e) => acc + e.amount, 0);
 
-      const totalPaymentsFA = (s.transactions || [])
+      const totalPaymentsFA = bTxs
         .filter(t => t.status === "Verified" && t.targetAccount === "Felújítási Alap" && t.includeInBalance !== false && t.type !== "Correction" && isBankTx(t))
         .reduce((acc, t) => acc + t.amount, 0);
-      const totalExpensesFA = (s.expenses || [])
+      const totalExpensesFA = bExps
         .filter(e => (e.targetAccount === "Felújítási Alap" || (!e.targetAccount && e.provider === "Felújítási Alap")) && e.includeInBalance !== false && isBankTx(e))
         .reduce((acc, e) => acc + e.amount, 0);
 
@@ -820,7 +824,6 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
       const newInitFA = Math.round(numRenov - totalPaymentsFA + totalExpensesFA);
 
       const now = Date.now();
-      const targetBuildingId = s.currentBuildingId || (s.buildings && s.buildings[0] && s.buildings[0].id);
 
       const updatedBuildings = (s.buildings || []).map(b => {
         if (b.id === targetBuildingId) {
@@ -828,10 +831,10 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
           const updatedCustom = rawCustomList.map(acc => {
             if (customBalances && customBalances[acc.id] !== undefined) {
               const numVal = Number(customBalances[acc.id]) || 0;
-              const totalPaymentsAcc = (s.transactions || [])
+              const totalPaymentsAcc = bTxs
                 .filter(t => t.status === "Verified" && (t.targetAccount === acc.name || t.targetAccount === acc.id) && t.includeInBalance !== false && t.type !== "Correction" && isBankTx(t))
                 .reduce((accP, t) => accP + t.amount, 0);
-              const totalExpensesAcc = (s.expenses || [])
+              const totalExpensesAcc = bExps
                 .filter(e => (e.targetAccount === acc.name || e.targetAccount === acc.id) && e.includeInBalance !== false && isBankTx(e))
                 .reduce((accE, e) => accE + e.amount, 0);
               const newInit = Math.round(numVal - totalPaymentsAcc + totalExpensesAcc);
@@ -844,6 +847,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
             ...b,
             buildingInitialReserveCommon: newInitKK,
             buildingInitialReserveRenovation: newInitFA,
+            reserveCalibratedAt: now,
             customBankAccounts: updatedCustom,
             lastUpdated: now
           };
@@ -858,7 +862,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
         buildingInitialReserveRenovation: newInitFA,
         lastUpdated: now
       };
-    }, true);
+    }, { allowReserveChange: true });
     showToast(t.balances_updated || (state.currentLang === 'en' ? "Account balances successfully updated!" : "Számlafőösszegek sikeresen beállítva!"));
     return updatedState;
   };

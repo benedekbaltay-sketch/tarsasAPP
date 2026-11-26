@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { translations } from '../constants/translations';
 import { getFirebaseInstance, IS_FIRESTORE_MODE, isCurrentTabSessionOnly } from '../constants/firebaseConfig';
-import { ref, onValue, set, get } from 'firebase/database';
+import { ref, onValue, set, update, get } from 'firebase/database';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { recalculateFlatBalances } from '../utils/finances';
 import { formatTaxNumber } from '../utils/taxNumber';
@@ -17,6 +17,9 @@ import {
   stripLargeBinaries,
   stripSensitiveUserFields,
   stripSensitiveBuildingFields,
+  sanitizeForFirebase,
+  extractBuildingReservesMap,
+  protectBuildingReserves,
   createCloudPayload
 } from './syncEngine';
 
@@ -76,6 +79,7 @@ export function AppProvider({ children }) {
   const isCloudSyncingRef = useRef(false);
   const pendingCloudSyncFnRef = useRef(null);
   const txCursorRef = useRef(null);
+  const lastKnownCloudReservesRef = useRef(extractBuildingReservesMap(state.buildings || []));
   const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
 
   const t = translations[state.currentLang] || translations.hu;
@@ -459,11 +463,21 @@ export function AppProvider({ children }) {
   };
 
   // Sync state changes to LocalStorage and optionally Firebase RTDB
+  // Supports syncMode:
+  //   - 'localOnly' | false | null : local/session state only (zero cloud writes)
+  //   - 'notificationsOnly'        : surgical RTDB update(condo_state, { notifications, revision, lastUpdated })
+  //                                  (physically CANNOT touch buildings, flats, transactions, or reserves!)
+  //   - true                       : full RTDB sync WITH ironclad reserve circuit-breaker guard
+  //   - { allowReserveChange: true }: explicit admin balance calibration (updates reserve baseline)
   const persistState = (updaterFn, immediateCloud = true) => {
     return new Promise((resolve) => {
       setState(prevState => {
         const nextState = typeof updaterFn === 'function' ? updaterFn(prevState) : { ...prevState, ...updaterFn };
         const isLocalOnly = immediateCloud === 'localOnly' || immediateCloud === false || immediateCloud === null;
+        const isNotificationsOnly = immediateCloud === 'notificationsOnly';
+        const allowReserveChange = Boolean(
+          immediateCloud && typeof immediateCloud === 'object' && immediateCloud.allowReserveChange === true
+        );
 
         if (!isLocalOnly) {
           nextState.revision = (Number(nextState.revision) || 0) + 1;
@@ -474,9 +488,19 @@ export function AppProvider({ children }) {
           nextState.manualDebits = [];
         }
 
-        // Synchronize active building with building in buildings array
-        if (nextState.buildings && nextState.currentBuildingId) {
-          const b = nextState.buildings.find(x => x.id === nextState.currentBuildingId);
+        // Synchronize active building with building in buildings array ONLY when:
+        // 1. A specific building is active (`nextState.currentBuildingId` is non-null)
+        // 2. We did NOT switch buildings inside this updater (`prevState.currentBuildingId === nextState.currentBuildingId`)
+        // 3. For initial reserves, respect whichever side (building object vs top-level) actually changed!
+        //    NEVER let stale top-level values stomp a building's authoritative reserves.
+        const sameActiveBuilding = Boolean(
+          nextState.currentBuildingId &&
+          prevState.currentBuildingId === nextState.currentBuildingId
+        );
+
+        if (nextState.buildings && nextState.currentBuildingId && sameActiveBuilding && !isNotificationsOnly) {
+          const prevB = (prevState.buildings || []).find(x => x && x.id === prevState.currentBuildingId);
+          const b = nextState.buildings.find(x => x && x.id === nextState.currentBuildingId);
           if (b) {
             b.flats = Array.isArray(nextState.flats) ? nextState.flats : [];
             b.transactions = Array.isArray(nextState.transactions) ? nextState.transactions : [];
@@ -485,10 +509,63 @@ export function AppProvider({ children }) {
             b.documents = Array.isArray(nextState.documents) ? nextState.documents : [];
             b.loans = Array.isArray(nextState.loans) ? nextState.loans : (b.loans || []);
             b.infoSections = nextState.infoSections !== undefined ? nextState.infoSections : (b.infoSections || []);
-            b.buildingInitialReserveCommon = nextState.buildingInitialReserveCommon !== undefined ? nextState.buildingInitialReserveCommon : (b.buildingInitialReserveCommon || 0);
-            b.buildingInitialReserveRenovation = nextState.buildingInitialReserveRenovation !== undefined ? nextState.buildingInitialReserveRenovation : (b.buildingInitialReserveRenovation || 0);
+
+            const prevBCommon = prevB?.buildingInitialReserveCommon;
+            const prevTopCommon = prevState.buildingInitialReserveCommon;
+            const bCommonChanged = prevB && b.buildingInitialReserveCommon !== prevBCommon;
+            const topCommonChanged = nextState.buildingInitialReserveCommon !== prevTopCommon;
+
+            if (bCommonChanged) {
+              nextState.buildingInitialReserveCommon = Number(b.buildingInitialReserveCommon) || 0;
+            } else if (topCommonChanged && nextState.buildingInitialReserveCommon !== undefined) {
+              b.buildingInitialReserveCommon = Number(nextState.buildingInitialReserveCommon) || 0;
+            } else {
+              const authoritativeCommon = b.buildingInitialReserveCommon !== undefined
+                ? (Number(b.buildingInitialReserveCommon) || 0)
+                : (Number(nextState.buildingInitialReserveCommon) || 0);
+              b.buildingInitialReserveCommon = authoritativeCommon;
+              nextState.buildingInitialReserveCommon = authoritativeCommon;
+            }
+
+            const prevBRenov = prevB?.buildingInitialReserveRenovation;
+            const prevTopRenov = prevState.buildingInitialReserveRenovation;
+            const bRenovChanged = prevB && b.buildingInitialReserveRenovation !== prevBRenov;
+            const topRenovChanged = nextState.buildingInitialReserveRenovation !== prevTopRenov;
+
+            if (bRenovChanged) {
+              nextState.buildingInitialReserveRenovation = Number(b.buildingInitialReserveRenovation) || 0;
+            } else if (topRenovChanged && nextState.buildingInitialReserveRenovation !== undefined) {
+              b.buildingInitialReserveRenovation = Number(nextState.buildingInitialReserveRenovation) || 0;
+            } else {
+              const authoritativeRenov = b.buildingInitialReserveRenovation !== undefined
+                ? (Number(b.buildingInitialReserveRenovation) || 0)
+                : (Number(nextState.buildingInitialReserveRenovation) || 0);
+              b.buildingInitialReserveRenovation = authoritativeRenov;
+              nextState.buildingInitialReserveRenovation = authoritativeRenov;
+            }
+
             if (!isLocalOnly) {
               b.lastUpdated = Date.now();
+            }
+          }
+        }
+
+        // Ironclad reserve circuit-breaker on in-memory state as well (unless explicitly calibrating or adding a new building)
+        if (!isLocalOnly && !isNotificationsOnly && !allowReserveChange && Array.isArray(nextState.buildings)) {
+          const guarded = protectBuildingReserves(
+            nextState.buildings,
+            lastKnownCloudReservesRef.current,
+            { allowReserveChange: false }
+          );
+          if (guarded.blockedMutations.length > 0) {
+            console.error('[RESERVE_GUARD] Blocked unexpected in-memory reserve mutation:', guarded.blockedMutations);
+            nextState.buildings = guarded.buildings;
+            if (nextState.currentBuildingId) {
+              const restoredCurB = nextState.buildings.find(x => x && x.id === nextState.currentBuildingId);
+              if (restoredCurB) {
+                nextState.buildingInitialReserveCommon = Number(restoredCurB.buildingInitialReserveCommon) || 0;
+                nextState.buildingInitialReserveRenovation = Number(restoredCurB.buildingInitialReserveRenovation) || 0;
+              }
             }
           }
         }
@@ -577,13 +654,38 @@ export function AppProvider({ children }) {
             return;
           }
 
-          const payload = createCloudPayload(nextState);
-
           isCloudSyncingRef.current = true;
           setIsCloudSyncing(true);
           setCloudSyncStatus('syncing');
           try {
-            await set(ref(rtdb, "condo_state"), payload);
+            if (isNotificationsOnly) {
+              // Surgical RTDB update: ONLY updates notifications + revision + lastUpdated.
+              // Physically CANNOT touch buildings, flats, transactions, expenses, or initial reserves!
+              const notifPatch = sanitizeForFirebase({
+                notifications: (nextState.notifications || []).slice(0, 300),
+                revision: Number(nextState.revision) || 0,
+                lastUpdated: new Date().toISOString(),
+              });
+              await update(ref(rtdb, "condo_state"), notifPatch);
+            } else {
+              const payload = createCloudPayload(nextState, {
+                authoritativeReservesMap: lastKnownCloudReservesRef.current,
+                allowReserveChange,
+              });
+              await set(ref(rtdb, "condo_state"), payload);
+              if (allowReserveChange) {
+                lastKnownCloudReservesRef.current = extractBuildingReservesMap(payload.buildings || []);
+              } else {
+                // Register newly created buildings into baseline without altering existing buildings' baseline
+                const currentMap = lastKnownCloudReservesRef.current || {};
+                const nextMap = { ...currentMap };
+                const freshMap = extractBuildingReservesMap(payload.buildings || []);
+                for (const [bId, val] of Object.entries(freshMap)) {
+                  if (!nextMap[bId]) nextMap[bId] = val;
+                }
+                lastKnownCloudReservesRef.current = nextMap;
+              }
+            }
             setCloudSyncStatus('synced');
             setCloudSyncError(null);
             setLastSyncTime(new Date());
@@ -715,6 +817,7 @@ export function AppProvider({ children }) {
         if (isCloudSyncingRef.current) return;
         const cloudData = snapshot.val();
         if (cloudData && cloudData.buildings && cloudData.buildings.length > 0) {
+          lastKnownCloudReservesRef.current = extractBuildingReservesMap(cloudData.buildings);
           // Asynchronously archive any inline fileData to dedicated condo_files storage node
           setTimeout(() => {
             archiveFilesToStorage(cloudData.buildings);
@@ -754,7 +857,10 @@ export function AppProvider({ children }) {
                 if (curAuth && !curAuth.currentUser) await ensureFirebaseAuth();
                 if (curAuth && curAuth.currentUser) {
                   merged.revision = Math.max(localRevision, cloudRevision) + 1;
-                  const payload = createCloudPayload(merged);
+                  const payload = createCloudPayload(merged, {
+                    authoritativeReservesMap: lastKnownCloudReservesRef.current,
+                    allowReserveChange: false,
+                  });
                   set(ref(curRtdb, "condo_state"), payload)
                     .then(() => {
                       setCloudSyncStatus('synced');
@@ -878,6 +984,7 @@ export function AppProvider({ children }) {
       get(stateRef).then(snapshot => {
         const cloudData = snapshot.val();
         if (cloudData && cloudData.buildings) {
+          lastKnownCloudReservesRef.current = extractBuildingReservesMap(cloudData.buildings);
           setState(local => {
             const localRevision = Number(local.revision) || 0;
             const cloudRevision = Number(cloudData.revision) || 0;
@@ -905,7 +1012,10 @@ export function AppProvider({ children }) {
                 if (cAuth && !cAuth.currentUser) await ensureFirebaseAuth();
                 if (cAuth && cAuth.currentUser) {
                   merged.revision = Math.max(localRevision, cloudRevision) + 1;
-                  const payload = createCloudPayload(merged);
+                  const payload = createCloudPayload(merged, {
+                    authoritativeReservesMap: lastKnownCloudReservesRef.current,
+                    allowReserveChange: false,
+                  });
                   set(ref(cRtdb, "condo_state"), payload).catch(console.warn);
                 }
               }, 50);
@@ -1025,6 +1135,7 @@ export function AppProvider({ children }) {
       const snapshot = await get(stateRef);
       const cloudData = snapshot.val();
       if (cloudData && cloudData.buildings) {
+        lastKnownCloudReservesRef.current = extractBuildingReservesMap(cloudData.buildings);
         setState(local => {
           const merged = mergeStateWithCloud(local, cloudData);
           const curB = (merged.buildings || []).find(b => b.id === merged.currentBuildingId) || merged.buildings[0];
@@ -1108,7 +1219,10 @@ export function AppProvider({ children }) {
       const nextRev = Math.max(Number(targetState.revision) || 0, 1) + 1;
       targetState = { ...targetState, revision: nextRev, lastUpdated: Date.now() };
 
-      const payload = createCloudPayload(targetState);
+      const payload = createCloudPayload(targetState, {
+        authoritativeReservesMap: lastKnownCloudReservesRef.current,
+        allowReserveChange: false,
+      });
       await set(ref(rtdb, "condo_state"), payload);
 
       setState(targetState);
@@ -1308,8 +1422,8 @@ export function AppProvider({ children }) {
       docFolders: curB ? (curB.docFolders || []) : (s.docFolders || []),
       loans: curB ? (curB.loans || []) : (s.loans || []),
       infoSections: curB ? (curB.infoSections || []) : s.infoSections,
-      buildingInitialReserveCommon: curB ? (curB.buildingInitialReserveCommon || 0) : 0,
-      buildingInitialReserveRenovation: curB ? (curB.buildingInitialReserveRenovation || 0) : 0
+      buildingInitialReserveCommon: curB ? (Number(curB.buildingInitialReserveCommon) || 0) : undefined,
+      buildingInitialReserveRenovation: curB ? (Number(curB.buildingInitialReserveRenovation) || 0) : undefined
     }), 'localOnly');
 
     if (IS_FIRESTORE_MODE && targetBuildingId && !curB?.hydrated) {
@@ -1603,8 +1717,8 @@ export function AppProvider({ children }) {
               docFolders: Array.isArray(s.docFolders) ? s.docFolders : (b.docFolders || []),
               loans: Array.isArray(s.loans) ? s.loans : (b.loans || []),
               infoSections: s.infoSections !== undefined ? s.infoSections : (b.infoSections || []),
-              buildingInitialReserveCommon: s.buildingInitialReserveCommon !== undefined ? s.buildingInitialReserveCommon : (b.buildingInitialReserveCommon || 0),
-              buildingInitialReserveRenovation: s.buildingInitialReserveRenovation !== undefined ? s.buildingInitialReserveRenovation : (b.buildingInitialReserveRenovation || 0),
+              buildingInitialReserveCommon: b.buildingInitialReserveCommon !== undefined ? b.buildingInitialReserveCommon : (s.buildingInitialReserveCommon || 0),
+              buildingInitialReserveRenovation: b.buildingInitialReserveRenovation !== undefined ? b.buildingInitialReserveRenovation : (s.buildingInitialReserveRenovation || 0),
             };
           }
           return b;
@@ -1614,7 +1728,9 @@ export function AppProvider({ children }) {
         ...s,
         buildings: updatedBuildings,
         isPortfolioView: true,
-        currentBuildingId: null
+        currentBuildingId: null,
+        buildingInitialReserveCommon: undefined,
+        buildingInitialReserveRenovation: undefined
       };
     }, 'localOnly');
   };
@@ -1653,8 +1769,8 @@ export function AppProvider({ children }) {
               docFolders: Array.isArray(s.docFolders) ? s.docFolders : (b.docFolders || []),
               loans: Array.isArray(s.loans) ? s.loans : (b.loans || []),
               infoSections: s.infoSections !== undefined ? s.infoSections : (b.infoSections || []),
-              buildingInitialReserveCommon: s.buildingInitialReserveCommon !== undefined ? s.buildingInitialReserveCommon : (b.buildingInitialReserveCommon || 0),
-              buildingInitialReserveRenovation: s.buildingInitialReserveRenovation !== undefined ? s.buildingInitialReserveRenovation : (b.buildingInitialReserveRenovation || 0),
+              buildingInitialReserveCommon: b.buildingInitialReserveCommon !== undefined ? b.buildingInitialReserveCommon : (s.buildingInitialReserveCommon || 0),
+              buildingInitialReserveRenovation: b.buildingInitialReserveRenovation !== undefined ? b.buildingInitialReserveRenovation : (s.buildingInitialReserveRenovation || 0),
             };
           }
           return b;

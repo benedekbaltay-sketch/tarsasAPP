@@ -979,13 +979,15 @@ export function createTeamActions({ state, persistState, showToast, t }) {
   };
 
   // --- Universal Notification Center Actions (available to ALL users) ---
+  // Strictly uses 'notificationsOnly' surgical sync so reading/archiving/deleting messages
+  // can NEVER overwrite buildings, flats, transactions, or initial reserves in the database!
 
   const pushNotification = (notif) => {
     if (!notif || !notif.id) return;
     persistState((s) => ({
       ...s,
       notifications: [notif, ...(s.notifications || [])].slice(0, 300),
-    }), true);
+    }), 'notificationsOnly');
   };
 
   const markNotificationRead = (notifId) => {
@@ -997,7 +999,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       notifications: (s.notifications || []).map((n) =>
         n && n.id === notifId ? { ...n, read: true, readAt: new Date().toISOString() } : n
       ),
-    }), true);
+    }), 'notificationsOnly');
   };
 
   const markAllNotificationsRead = () => {
@@ -1020,7 +1022,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       notifications: (s.notifications || []).map((n) =>
         n && myUnreadIds.has(n.id) ? { ...n, read: true, readAt: nowIso } : n
       ),
-    }), true);
+    }), 'notificationsOnly');
   };
 
   const archiveNotification = (notifId) => {
@@ -1034,7 +1036,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
           ? { ...n, read: true, archived: true, dismissed: false, archivedAt: nowIso, archivedUpdatedAt: nowTs }
           : n
       ),
-    }), true);
+    }), 'notificationsOnly');
   };
 
   const unarchiveNotification = (notifId) => {
@@ -1047,7 +1049,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
           ? { ...n, archived: false, dismissed: false, archivedAt: null, archivedUpdatedAt: nowTs }
           : n
       ),
-    }), true);
+    }), 'notificationsOnly');
   };
 
   const deleteNotification = (notifId) => {
@@ -1060,7 +1062,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
           ? { ...n, read: true, deleted: true, deletedAt: nowIso }
           : n
       ),
-    }), true);
+    }), 'notificationsOnly');
   };
 
   const dismissNotification = (notifId) => {

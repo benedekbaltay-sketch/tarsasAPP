@@ -326,8 +326,8 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         docFolders: curB ? (curB.docFolders || []) : (baseState.docFolders || []),
         loans: curB ? (curB.loans || []) : (baseState.loans || []),
         infoSections: curB ? (curB.infoSections || []) : (baseState.infoSections || []),
-        buildingInitialReserveCommon: curB ? (curB.buildingInitialReserveCommon || 0) : 0,
-        buildingInitialReserveRenovation: curB ? (curB.buildingInitialReserveRenovation || 0) : 0
+        buildingInitialReserveCommon: !isKkAdmin && curB ? (Number(curB.buildingInitialReserveCommon) || 0) : undefined,
+        buildingInitialReserveRenovation: !isKkAdmin && curB ? (Number(curB.buildingInitialReserveRenovation) || 0) : undefined
       };
     }, 'localOnly');
 
@@ -391,8 +391,8 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         docFolders: curB ? (curB.docFolders || []) : (s.docFolders || []),
         loans: curB ? (curB.loans || []) : (s.loans || []),
         infoSections: curB ? (curB.infoSections || []) : (s.infoSections || []),
-        buildingInitialReserveCommon: curB ? (curB.buildingInitialReserveCommon || 0) : 0,
-        buildingInitialReserveRenovation: curB ? (curB.buildingInitialReserveRenovation || 0) : 0
+        buildingInitialReserveCommon: !isKkAdmin && curB ? (Number(curB.buildingInitialReserveCommon) || 0) : undefined,
+        buildingInitialReserveRenovation: !isKkAdmin && curB ? (Number(curB.buildingInitialReserveRenovation) || 0) : undefined
       };
     }, 'localOnly');
   };
@@ -490,8 +490,8 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         docFolders: curB ? (curB.docFolders || []) : (s.docFolders || []),
         loans: curB ? (curB.loans || []) : (s.loans || []),
         infoSections: curB ? (curB.infoSections || []) : (s.infoSections || []),
-        buildingInitialReserveCommon: curB ? (curB.buildingInitialReserveCommon || 0) : 0,
-        buildingInitialReserveRenovation: curB ? (curB.buildingInitialReserveRenovation || 0) : 0
+        buildingInitialReserveCommon: curB ? (Number(curB.buildingInitialReserveCommon) || 0) : undefined,
+        buildingInitialReserveRenovation: curB ? (Number(curB.buildingInitialReserveRenovation) || 0) : undefined
       };
     }, 'localOnly');
 

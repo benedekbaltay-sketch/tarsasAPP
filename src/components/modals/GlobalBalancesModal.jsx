@@ -721,6 +721,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                     bankFA: nextBankFA,
                     buildingInitialReserveCommon: calculatedInitKK,
                     buildingInitialReserveRenovation: calculatedInitFA,
+                    reserveCalibratedAt: Date.now(),
                     customBankAccounts: updatedCustomAccounts,
                   }
                 : {};
@@ -784,11 +785,17 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
           ...s,
           buildings: updatedBuildings,
           flats: nextCurrentFlats,
+          ...(isAccountsOnly && canEditBankAcc && s.currentBuildingId === targetBuildingId
+            ? {
+                buildingInitialReserveCommon: calculatedInitKK,
+                buildingInitialReserveRenovation: calculatedInitFA,
+              }
+            : {}),
           notifications: newNotifications.length > 0
             ? [...newNotifications, ...(s.notifications || [])].slice(0, 300)
             : (s.notifications || []),
         };
-      });
+      }, isAccountsOnly && canEditBankAcc ? { allowReserveChange: true } : true);
 
       // Persist Economic Auditor atomically alongside SZVB (external invite email is always automatic)
       let auditorInviteSent = false;

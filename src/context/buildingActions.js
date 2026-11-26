@@ -1252,13 +1252,29 @@ export function createBuildingActions({ state, setState, persistState, showToast
           buildingIds: Array.isArray(m.buildingIds) ? m.buildingIds.filter(id => id !== buildingId) : []
         }))
       }));
-      const nextActive = s.currentBuildingId === buildingId ? (remainingActive[0]?.id || null) : s.currentBuildingId;
+      const isDeletingCurrent = s.currentBuildingId === buildingId;
+      const nextActiveBuilding = isDeletingCurrent ? (remainingActive[0] || null) : null;
+      const nextActive = isDeletingCurrent ? (nextActiveBuilding?.id || null) : s.currentBuildingId;
       return {
         ...s,
         buildings: nextBuildings,
         organizations: nextOrgs,
         currentBuildingId: nextActive,
-        isPortfolioView: s.currentBuildingId === buildingId ? true : s.isPortfolioView,
+        isPortfolioView: isDeletingCurrent ? true : s.isPortfolioView,
+        ...(isDeletingCurrent
+          ? {
+              flats: nextActiveBuilding?.flats || [],
+              transactions: nextActiveBuilding?.transactions || [],
+              expenses: nextActiveBuilding?.expenses || [],
+              manualDebits: nextActiveBuilding?.manualDebits || [],
+              documents: nextActiveBuilding?.documents || [],
+              docFolders: nextActiveBuilding?.docFolders || [],
+              loans: nextActiveBuilding?.loans || [],
+              infoSections: nextActiveBuilding?.infoSections || [],
+              buildingInitialReserveCommon: Number(nextActiveBuilding?.buildingInitialReserveCommon) || 0,
+              buildingInitialReserveRenovation: Number(nextActiveBuilding?.buildingInitialReserveRenovation) || 0,
+            }
+          : {}),
       };
     }, true);
 

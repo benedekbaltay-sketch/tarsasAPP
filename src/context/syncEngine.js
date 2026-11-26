@@ -261,8 +261,12 @@ export function mergeStateWithCloud(local, cloud) {
             mb.buildingInitialReserveRenovation = cb.buildingInitialReserveRenovation;
           }
           if (cb.name !== undefined) mb.name = cb.name;
+          if (cb.officialName !== undefined) mb.officialName = cb.officialName;
           if (cb.address !== undefined) mb.address = cb.address;
           if (cb.taxNumber !== undefined) mb.taxNumber = cb.taxNumber;
+          if (cb.hrsz !== undefined) mb.hrsz = cb.hrsz;
+          if (cb.totalOwnershipShare !== undefined) mb.totalOwnershipShare = cb.totalOwnershipShare;
+          if (cb.defaultBank !== undefined) mb.defaultBank = cb.defaultBank;
           if (cb.repName !== undefined) mb.repName = cb.repName;
           if (cb.phone !== undefined) mb.phone = cb.phone;
           if (cb.email !== undefined) mb.email = cb.email;
@@ -271,19 +275,35 @@ export function mergeStateWithCloud(local, cloud) {
           if (cb.organizationId !== undefined) mb.organizationId = cb.organizationId;
           if (cb.contactDisplayMode !== undefined) mb.contactDisplayMode = cb.contactDisplayMode;
           if (cb.managerContact !== undefined) mb.managerContact = cb.managerContact;
+          if (cb.showCentralContactToResidents !== undefined) mb.showCentralContactToResidents = cb.showCentralContactToResidents;
           if (cb.bankKK !== undefined) mb.bankKK = cb.bankKK;
           if (cb.bankFA !== undefined) mb.bankFA = cb.bankFA;
           if (cb.customBankAccounts !== undefined) mb.customBankAccounts = cb.customBankAccounts;
           if (cb.bankApi !== undefined) mb.bankApi = cb.bankApi;
+          if (cb.emailSettings !== undefined) mb.emailSettings = cb.emailSettings;
           if (cb.infoSections !== undefined) mb.infoSections = cb.infoSections;
+          if (cb.szvb !== undefined) mb.szvb = cb.szvb;
+          if (cb.economicAuditor !== undefined) mb.economicAuditor = cb.economicAuditor;
+          if (cb.auditOpinions !== undefined) mb.auditOpinions = cb.auditOpinions;
+          if (cb.auditObservations !== undefined) mb.auditObservations = cb.auditObservations;
+          if (cb.dismissedAlerts !== undefined) mb.dismissedAlerts = cb.dismissedAlerts;
+          if (cb.archived !== undefined) mb.archived = cb.archived;
+          if (cb.archivedAt !== undefined) mb.archivedAt = cb.archivedAt;
+          if (cb.reserveCalibratedAt !== undefined) mb.reserveCalibratedAt = cb.reserveCalibratedAt;
           mb.lastUpdated = cb.lastUpdated || cloudTime;
         } else {
-          // Local is strictly newer (localRev > cloudRev): preserve local reserves!
-          if ((mb.buildingInitialReserveCommon === undefined || mb.buildingInitialReserveCommon === 0) && cb.buildingInitialReserveCommon) {
-            mb.buildingInitialReserveCommon = cb.buildingInitialReserveCommon;
-          }
-          if ((mb.buildingInitialReserveRenovation === undefined || mb.buildingInitialReserveRenovation === 0) && cb.buildingInitialReserveRenovation) {
-            mb.buildingInitialReserveRenovation = cb.buildingInitialReserveRenovation;
+          // Local is strictly newer (localRev > cloudRev): preserve local reserves ONLY if explicitly calibrated locally,
+          // otherwise NEVER let a stale/zero local value overwrite a non-zero cloud reserve!
+          const localCalTs = Number(mb.reserveCalibratedAt) || 0;
+          const cloudCalTs = Number(cb.reserveCalibratedAt) || 0;
+          const localExplicitlyCalibrated = localCalTs > 0 && localCalTs >= cloudCalTs;
+          if (!localExplicitlyCalibrated) {
+            if ((mb.buildingInitialReserveCommon === undefined || mb.buildingInitialReserveCommon === 0) && cb.buildingInitialReserveCommon) {
+              mb.buildingInitialReserveCommon = cb.buildingInitialReserveCommon;
+            }
+            if ((mb.buildingInitialReserveRenovation === undefined || mb.buildingInitialReserveRenovation === 0) && cb.buildingInitialReserveRenovation) {
+              mb.buildingInitialReserveRenovation = cb.buildingInitialReserveRenovation;
+            }
           }
         }
 
@@ -695,27 +715,134 @@ export function stripLargeBinaries(buildings, options = {}) {
   });
 }
 
-export function createCloudPayload(targetState) {
+/**
+ * Extracts a snapshot map of authoritative per-building initial reserves.
+ * Used as a circuit-breaker baseline so non-calibration writes can NEVER
+ * accidentally zero out or alter existing buildings' initial reserves.
+ */
+export function extractBuildingReservesMap(buildings = []) {
+  const map = {};
+  if (!Array.isArray(buildings)) return map;
+  for (const b of buildings) {
+    if (!b || !b.id) continue;
+    const customMap = {};
+    if (Array.isArray(b.customBankAccounts)) {
+      for (const acc of b.customBankAccounts) {
+        if (acc && acc.id) {
+          customMap[acc.id] = Number(acc.initialReserve) || 0;
+        }
+      }
+    }
+    map[b.id] = {
+      common: Number(b.buildingInitialReserveCommon) || 0,
+      renovation: Number(b.buildingInitialReserveRenovation) || 0,
+      custom: customMap,
+      reserveCalibratedAt: Number(b.reserveCalibratedAt) || 0,
+    };
+  }
+  return map;
+}
+
+/**
+ * Ironclad circuit-breaker guard for building initial reserves.
+ * Unless `allowReserveChange === true` (strictly passed ONLY by explicit admin
+ * balance calibration actions), any existing building present in `authoritativeMap`
+ * keeps its authoritative `buildingInitialReserveCommon`, `buildingInitialReserveRenovation`,
+ * and custom account `initialReserve` values intact — preventing ANY silent zeroing
+ * or cross-building corruption during cloud sync.
+ */
+export function protectBuildingReserves(buildings = [], authoritativeMap = {}, { allowReserveChange = false } = {}) {
+  if (!Array.isArray(buildings) || allowReserveChange || !authoritativeMap || typeof authoritativeMap !== 'object') {
+    return { buildings, blockedMutations: [] };
+  }
+
+  const blockedMutations = [];
+  const safeBuildings = buildings.map((b) => {
+    if (!b || !b.id) return b;
+    const auth = authoritativeMap[b.id];
+    if (!auth) return b;
+
+    const curCommon = Number(b.buildingInitialReserveCommon) || 0;
+    const curRenov = Number(b.buildingInitialReserveRenovation) || 0;
+    let changed = false;
+    const nextB = { ...b };
+
+    if (curCommon !== auth.common) {
+      blockedMutations.push({
+        buildingId: b.id,
+        field: 'buildingInitialReserveCommon',
+        attempted: curCommon,
+        preserved: auth.common,
+      });
+      nextB.buildingInitialReserveCommon = auth.common;
+      changed = true;
+    }
+
+    if (curRenov !== auth.renovation) {
+      blockedMutations.push({
+        buildingId: b.id,
+        field: 'buildingInitialReserveRenovation',
+        attempted: curRenov,
+        preserved: auth.renovation,
+      });
+      nextB.buildingInitialReserveRenovation = auth.renovation;
+      changed = true;
+    }
+
+    if (Array.isArray(b.customBankAccounts) && auth.custom) {
+      let customChanged = false;
+      const safeCustom = b.customBankAccounts.map((acc) => {
+        if (!acc || !acc.id || auth.custom[acc.id] === undefined) return acc;
+        const curInit = Number(acc.initialReserve) || 0;
+        if (curInit !== auth.custom[acc.id]) {
+          blockedMutations.push({
+            buildingId: b.id,
+            field: `customBankAccounts.${acc.id}.initialReserve`,
+            attempted: curInit,
+            preserved: auth.custom[acc.id],
+          });
+          customChanged = true;
+          return { ...acc, initialReserve: auth.custom[acc.id] };
+        }
+        return acc;
+      });
+      if (customChanged) {
+        nextB.customBankAccounts = safeCustom;
+        changed = true;
+      }
+    }
+
+    return changed ? nextB : b;
+  });
+
+  return { buildings: safeBuildings, blockedMutations };
+}
+
+export function createCloudPayload(targetState, options = {}) {
   if (!targetState) return null;
-  const activeB = (targetState.buildings || []).find(b => b.id === targetState.currentBuildingId) || (targetState.buildings && targetState.buildings[0]);
-  const cleanBuildings = stripSensitiveBuildingFields(stripLargeBinaries(targetState.buildings || []));
-  const safeUsers = (targetState.users || []).map(stripSensitiveUserFields);
+  const { authoritativeReservesMap = null, allowReserveChange = false } = options || {};
 
-  const reserveCommon = targetState.buildingInitialReserveCommon !== undefined 
-    ? targetState.buildingInitialReserveCommon 
-    : (activeB?.buildingInitialReserveCommon || 0);
-  const reserveRenov = targetState.buildingInitialReserveRenovation !== undefined 
-    ? targetState.buildingInitialReserveRenovation 
-    : (activeB?.buildingInitialReserveRenovation || 0);
-
-  if (cleanBuildings && cleanBuildings.length > 0) {
-    const cleanActiveB = cleanBuildings.find(b => b.id === (targetState.currentBuildingId || activeB?.id)) || cleanBuildings[0];
-    if (cleanActiveB) {
-      cleanActiveB.buildingInitialReserveCommon = reserveCommon;
-      cleanActiveB.buildingInitialReserveRenovation = reserveRenov;
-      cleanActiveB.lastUpdated = targetState.lastUpdated || Date.now();
+  let cleanBuildings = stripSensitiveBuildingFields(stripLargeBinaries(targetState.buildings || []));
+  if (authoritativeReservesMap && !allowReserveChange) {
+    const guarded = protectBuildingReserves(cleanBuildings, authoritativeReservesMap, { allowReserveChange: false });
+    cleanBuildings = guarded.buildings;
+    if (guarded.blockedMutations.length > 0) {
+      console.error('[RESERVE_GUARD] Blocked unintended reserve mutation before cloud write:', guarded.blockedMutations);
     }
   }
+
+  const safeUsers = (targetState.users || []).map(stripSensitiveUserFields);
+
+  // GOLDEN RULE: Each building object inside `cleanBuildings[]` is the SINGLE source of truth
+  // for its own `buildingInitialReserveCommon` and `buildingInitialReserveRenovation`.
+  // NEVER copy top-level `targetState.buildingInitialReserve*` onto `cleanBuildings[0]`!
+  // (Previously, when `currentBuildingId === null` in Portfolio View, stale top-level 0 values
+  // silently overwrote `buildings[0]`'s reserves in Firebase RTDB.)
+  const cleanActiveB = targetState.currentBuildingId
+    ? cleanBuildings.find(b => b && b.id === targetState.currentBuildingId)
+    : cleanBuildings[0];
+  const reserveCommon = Number(cleanActiveB?.buildingInitialReserveCommon) || 0;
+  const reserveRenov = Number(cleanActiveB?.buildingInitialReserveRenovation) || 0;
 
   return sanitizeForFirebase({
     buildings: cleanBuildings,
@@ -728,7 +855,7 @@ export function createCloudPayload(targetState) {
     repProfile: targetState.repProfile || DEFAULT_REP_PROFILE,
     globalSettings: targetState.globalSettings || DEFAULT_GLOBAL_SETTINGS,
     vault: getPermanentVault(),
-    currentBuildingId: targetState.currentBuildingId || (activeB ? activeB.id : null),
+    currentBuildingId: targetState.currentBuildingId || (cleanActiveB ? cleanActiveB.id : null),
     buildingInitialReserveCommon: reserveCommon,
     buildingInitialReserveRenovation: reserveRenov,
     revision: Number(targetState.revision) || 0,

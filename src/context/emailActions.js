@@ -1058,7 +1058,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     };
 
     if (typeof persistState === 'function') {
-      await persistState(updater, true);
+      await persistState(updater, payload.syncedAuditOpinion ? true : 'notificationsOnly');
     } else if (typeof setState === 'function') {
       setState(updater);
     }

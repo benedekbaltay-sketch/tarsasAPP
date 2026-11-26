@@ -593,21 +593,31 @@ export function recalculateFlatBalances(state) {
 
 export function getBuildingAccountReserve(accountNameOrId, state) {
   if (!state) return 0;
-  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
-  const acc = (currentBuilding?.customBankAccounts || []).find(a => a.name === accountNameOrId || a.id === accountNameOrId);
+  const currentBuilding = Array.isArray(state.buildings)
+    ? (state.buildings.find(b => b.id === state.currentBuildingId) || state.buildings[0])
+    : null;
+  const sourceAccounts = currentBuilding?.customBankAccounts || state.customBankAccounts || [];
+  const acc = sourceAccounts.find(a => a.name === accountNameOrId || a.id === accountNameOrId);
   if (!acc) return 0;
 
   if (currentBuilding?.firestoreBalances?.custom && typeof currentBuilding.firestoreBalances.custom[acc.id] === 'number') {
     return currentBuilding.firestoreBalances.custom[acc.id];
   }
 
+  const txs = (currentBuilding && Array.isArray(currentBuilding.transactions) && (currentBuilding.transactions.length > 0 || !Array.isArray(state.transactions)))
+    ? currentBuilding.transactions
+    : (state.transactions || []);
+  const exps = (currentBuilding && Array.isArray(currentBuilding.expenses) && (currentBuilding.expenses.length > 0 || !Array.isArray(state.expenses)))
+    ? currentBuilding.expenses
+    : (state.expenses || []);
+
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
 
-  const totalPayments = (state.transactions || [])
+  const totalPayments = txs
     .filter(tx => tx.status === "Verified" && (tx.targetAccount === acc.name || tx.targetAccount === acc.id) && tx.includeInBalance !== false && tx.type !== "Correction" && isBankTx(tx))
     .reduce((sum, tx) => sum + tx.amount, 0);
 
-  const totalExpenses = (state.expenses || [])
+  const totalExpenses = exps
     .filter(exp => (exp.targetAccount === acc.name || exp.targetAccount === acc.id) && exp.includeInBalance !== false && isBankTx(exp))
     .reduce((sum, exp) => sum + exp.amount, 0);
 
@@ -616,40 +626,64 @@ export function getBuildingAccountReserve(accountNameOrId, state) {
 
 export function getBuildingReserve(state) {
   if (!state) return 0;
-  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  const currentBuilding = Array.isArray(state.buildings)
+    ? (state.buildings.find(b => b.id === state.currentBuildingId) || state.buildings[0])
+    : null;
   if (currentBuilding?.firestoreBalances && typeof currentBuilding.firestoreBalances.KK === 'number') {
     return currentBuilding.firestoreBalances.KK;
   }
 
+  const initCommon = (currentBuilding && currentBuilding.buildingInitialReserveCommon !== undefined)
+    ? (Number(currentBuilding.buildingInitialReserveCommon) || 0)
+    : (Number(state.buildingInitialReserveCommon) || 0);
+  const txs = (currentBuilding && Array.isArray(currentBuilding.transactions) && (currentBuilding.transactions.length > 0 || !Array.isArray(state.transactions)))
+    ? currentBuilding.transactions
+    : (state.transactions || []);
+  const exps = (currentBuilding && Array.isArray(currentBuilding.expenses) && (currentBuilding.expenses.length > 0 || !Array.isArray(state.expenses)))
+    ? currentBuilding.expenses
+    : (state.expenses || []);
+
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
-  const totalPayments = (state.transactions || [])
+  const totalPayments = txs
     .filter(tx => tx.status === "Verified" && (tx.targetAccount === "Közös Költség" || (!tx.targetAccount && tx.targetAccount !== "Felújítási Alap")) && tx.includeInBalance !== false && tx.type !== "Correction" && isBankTx(tx))
     .reduce((sum, tx) => sum + tx.amount, 0);
   
-  const totalExpenses = (state.expenses || [])
+  const totalExpenses = exps
     .filter(exp => (exp.targetAccount === "Közös Költség" || (!exp.targetAccount && exp.provider !== "Felújítási Alap")) && exp.includeInBalance !== false && isBankTx(exp))
     .reduce((sum, exp) => sum + exp.amount, 0);
       
-  return (state.buildingInitialReserveCommon || 0) + totalPayments - totalExpenses;
+  return initCommon + totalPayments - totalExpenses;
 }
 
 export function getBuildingRenovationFund(state) {
   if (!state) return 0;
-  const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  const currentBuilding = Array.isArray(state.buildings)
+    ? (state.buildings.find(b => b.id === state.currentBuildingId) || state.buildings[0])
+    : null;
   if (currentBuilding?.firestoreBalances && typeof currentBuilding.firestoreBalances.FA === 'number') {
     return currentBuilding.firestoreBalances.FA;
   }
 
+  const initRenov = (currentBuilding && currentBuilding.buildingInitialReserveRenovation !== undefined)
+    ? (Number(currentBuilding.buildingInitialReserveRenovation) || 0)
+    : (Number(state.buildingInitialReserveRenovation) || 0);
+  const txs = (currentBuilding && Array.isArray(currentBuilding.transactions) && (currentBuilding.transactions.length > 0 || !Array.isArray(state.transactions)))
+    ? currentBuilding.transactions
+    : (state.transactions || []);
+  const exps = (currentBuilding && Array.isArray(currentBuilding.expenses) && (currentBuilding.expenses.length > 0 || !Array.isArray(state.expenses)))
+    ? currentBuilding.expenses
+    : (state.expenses || []);
+
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
-  const totalRenovationPayments = (state.transactions || [])
+  const totalRenovationPayments = txs
     .filter(tx => tx.status === "Verified" && tx.targetAccount === "Felújítási Alap" && tx.includeInBalance !== false && tx.type !== "Correction" && isBankTx(tx))
     .reduce((sum, tx) => sum + tx.amount, 0);
       
-  const totalRenovationExpenses = (state.expenses || [])
+  const totalRenovationExpenses = exps
     .filter(exp => (exp.targetAccount === "Felújítási Alap" || (!exp.targetAccount && exp.provider === "Felújítási Alap")) && exp.includeInBalance !== false && isBankTx(exp))
     .reduce((sum, exp) => sum + exp.amount, 0);
       
-  return (state.buildingInitialReserveRenovation || 0) + totalRenovationPayments - totalRenovationExpenses;
+  return initRenov + totalRenovationPayments - totalRenovationExpenses;
 }
 
 export function getBuildingReserveAsOf(cutoffDateStr, state) {
@@ -669,16 +703,25 @@ export function getBuildingReserveAsOf(cutoffDateStr, state) {
 
   const cleanDate = (d) => (d || '').replace(/\./g, '-').trim();
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
+  const initCommon = (currentBuilding && currentBuilding.buildingInitialReserveCommon !== undefined)
+    ? (Number(currentBuilding.buildingInitialReserveCommon) || 0)
+    : (Number(state.buildingInitialReserveCommon) || 0);
+  const txs = (currentBuilding && Array.isArray(currentBuilding.transactions) && (currentBuilding.transactions.length > 0 || !Array.isArray(state.transactions)))
+    ? currentBuilding.transactions
+    : (state.transactions || []);
+  const exps = (currentBuilding && Array.isArray(currentBuilding.expenses) && (currentBuilding.expenses.length > 0 || !Array.isArray(state.expenses)))
+    ? currentBuilding.expenses
+    : (state.expenses || []);
 
-  const totalPayments = (state.transactions || [])
+  const totalPayments = txs
     .filter(tx => tx.date && cleanDate(tx.date) <= cleanCutoff && tx.status === "Verified" && (tx.targetAccount === "Közös Költség" || (!tx.targetAccount && tx.targetAccount !== "Felújítási Alap")) && tx.includeInBalance !== false && tx.type !== "Correction" && isBankTx(tx))
     .reduce((sum, tx) => sum + tx.amount, 0);
   
-  const totalExpenses = (state.expenses || [])
+  const totalExpenses = exps
     .filter(exp => exp.date && cleanDate(exp.date) <= cleanCutoff && (exp.targetAccount === "Közös Költség" || (!exp.targetAccount && exp.provider !== "Felújítási Alap")) && exp.includeInBalance !== false && isBankTx(exp))
     .reduce((sum, exp) => sum + exp.amount, 0);
       
-  return (state.buildingInitialReserveCommon || 0) + totalPayments - totalExpenses;
+  return initCommon + totalPayments - totalExpenses;
 }
 
 export function getBuildingRenovationFundAsOf(cutoffDateStr, state) {
@@ -698,16 +741,25 @@ export function getBuildingRenovationFundAsOf(cutoffDateStr, state) {
 
   const cleanDate = (d) => (d || '').replace(/\./g, '-').trim();
   const isBankTx = tx => tx.affectsBankBalance !== false && tx.method !== "Készpénz" && tx.method !== "Cash" && tx.method !== "Cash Offset";
+  const initRenov = (currentBuilding && currentBuilding.buildingInitialReserveRenovation !== undefined)
+    ? (Number(currentBuilding.buildingInitialReserveRenovation) || 0)
+    : (Number(state.buildingInitialReserveRenovation) || 0);
+  const txs = (currentBuilding && Array.isArray(currentBuilding.transactions) && (currentBuilding.transactions.length > 0 || !Array.isArray(state.transactions)))
+    ? currentBuilding.transactions
+    : (state.transactions || []);
+  const exps = (currentBuilding && Array.isArray(currentBuilding.expenses) && (currentBuilding.expenses.length > 0 || !Array.isArray(state.expenses)))
+    ? currentBuilding.expenses
+    : (state.expenses || []);
 
-  const totalRenovationPayments = (state.transactions || [])
+  const totalRenovationPayments = txs
     .filter(tx => tx.date && cleanDate(tx.date) <= cleanCutoff && tx.status === "Verified" && tx.targetAccount === "Felújítási Alap" && tx.includeInBalance !== false && tx.type !== "Correction" && isBankTx(tx))
     .reduce((sum, tx) => sum + tx.amount, 0);
       
-  const totalRenovationExpenses = (state.expenses || [])
+  const totalRenovationExpenses = exps
     .filter(exp => exp.date && cleanDate(exp.date) <= cleanCutoff && (exp.targetAccount === "Felújítási Alap" || (!exp.targetAccount && exp.provider === "Felújítási Alap")) && exp.includeInBalance !== false && isBankTx(exp))
     .reduce((sum, exp) => sum + exp.amount, 0);
       
-  return (state.buildingInitialReserveRenovation || 0) + totalRenovationPayments - totalRenovationExpenses;
+  return initRenov + totalRenovationPayments - totalRenovationExpenses;
 }
 
 export function getMonthlyStats(year, month, state) {
