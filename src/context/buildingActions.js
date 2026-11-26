@@ -1949,8 +1949,14 @@ export function createBuildingActions({ state, setState, persistState, showToast
         const { db } = getFirebaseInstance();
         if (db) {
           const snap = await get(ref(db, `condo_doc_files/${targetId}/${opinionId}`));
-          if (snap.exists()) {
-            return snap.val()?.fileData || null;
+          if (snap.exists() && snap.val()?.fileData) {
+            return snap.val().fileData;
+          }
+          if (opinion.mailAttachmentStorageKey) {
+            const mailSnap = await get(ref(db, opinion.mailAttachmentStorageKey));
+            if (mailSnap.exists() && mailSnap.val()?.fileData) {
+              return mailSnap.val().fileData;
+            }
           }
         }
       } catch (err) {

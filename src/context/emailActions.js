@@ -13,7 +13,11 @@ import {
   shouldRuleAutoDispatchToday,
   evaluateRulesForAutoDispatch
 } from '../utils/dunningRules.js';
+import { ref, set, get } from 'firebase/database';
+import { getFirebaseInstance, IS_FIRESTORE_MODE } from '../constants/firebaseConfig.js';
+import { uploadBase64ToStorage, getSecureStorageDownloadUrl } from '../services/firestoreService.js';
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
+import { sanitizeMailAttachments, buildDirectMessagePayload } from '../utils/directMessaging.js';
 import { sendResidentCustomNoticeEmail, resolveEffectiveEmailSettings } from '../services/emailService.js';
 import { getPermanentVault, savePermanentVault } from './syncEngine.js';
 import { getServerNow, getServerIsoString } from '../utils/serverClock.js';
@@ -265,8 +269,79 @@ export function createEmailActions(optionsOrState, maybeSetState) {
   };
 
   /**
+   * Uploads mail attachments once to cloud storage (RTDB condo_doc_files/mail or Firebase Storage)
+   * and returns lightweight sanitized metadata objects safe to embed in notifications & outbox logs.
+   */
+  const uploadMailAttachments = async (buildingId, rawAttachments = []) => {
+    if (!Array.isArray(rawAttachments) || rawAttachments.length === 0) return [];
+    const safeList = sanitizeMailAttachments(rawAttachments);
+    const enriched = await Promise.all(
+      safeList.map(async (meta, idx) => {
+        const raw = rawAttachments[idx];
+        const fileData = typeof raw?.fileData === 'string' ? raw.fileData : (typeof raw?.inlineData === 'string' ? raw.inlineData : '');
+        if (!fileData) return meta;
+        if (IS_FIRESTORE_MODE) {
+          try {
+            const storagePath = `buildings/${buildingId || 'general'}/mail/${meta.id}/${meta.fileName}`;
+            await uploadBase64ToStorage(storagePath, fileData, meta.mimeType || 'application/octet-stream');
+            return { ...meta, storagePath, hasCloudFile: true };
+          } catch (err) {
+            console.warn('Firestore mail attachment upload warning:', err?.message);
+            return meta;
+          }
+        }
+        try {
+          const { db } = getFirebaseInstance();
+          if (db) {
+            await set(ref(db, meta.storageKey), {
+              fileName: meta.fileName,
+              fileType: meta.fileType,
+              mimeType: meta.mimeType,
+              fileData,
+              uploadedAt: new Date().toISOString(),
+            });
+          }
+        } catch (err) {
+          console.warn('RTDB mail attachment upload warning:', err?.message);
+        }
+        return { ...meta, hasCloudFile: true };
+      })
+    );
+    return enriched;
+  };
+
+  /**
+   * Fetches downloadable data URL or signed Storage URL for a mail attachment.
+   */
+  const fetchMailAttachment = async (attachment) => {
+    if (!attachment) return null;
+    if (attachment.inlineData) return attachment.inlineData;
+    if (IS_FIRESTORE_MODE && attachment.storagePath) {
+      try {
+        return await getSecureStorageDownloadUrl(attachment.storagePath);
+      } catch (err) {
+        console.warn('Could not fetch Firestore mail attachment:', err?.message);
+      }
+    }
+    if (!IS_FIRESTORE_MODE && attachment.storageKey) {
+      try {
+        const { db } = getFirebaseInstance();
+        if (db) {
+          const snap = await get(ref(db, attachment.storageKey));
+          if (snap.exists() && snap.val()?.fileData) {
+            return snap.val().fileData;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch RTDB mail attachment:', err?.message);
+      }
+    }
+    return null;
+  };
+
+  /**
    * Broadcasts / sends a direct resident notice letter to targeted recipients
-   * with delivery via transactional email and/or in-app notification bell.
+   * with delivery via transactional email and/or in-app notification bell, plus optional attachments.
    */
   const sendCustomResidentNotice = async ({
     buildingId,
@@ -276,6 +351,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     category = 'general',
     sendEmail = true,
     sendInAppNotification = true,
+    attachments = [],
   }) => {
     if (!buildingId || !checkManagePerm(buildingId)) {
       if (typeof showToast === 'function') {
@@ -298,6 +374,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       return { success: false, error: 'missing-content' };
     }
 
+    const uploadedAttachments = await uploadMailAttachments(buildingId, attachments);
     const defaultBld = buildingId !== 'all' ? ((state?.buildings || []).find((b) => b.id === buildingId) || null) : null;
 
     const newNotifications = [];
@@ -338,25 +415,33 @@ export function createEmailActions(optionsOrState, maybeSetState) {
 
       // 1. In-app notification
       if (sendInAppNotification) {
+        const targetProf = r.targetProfile || {
+          type: r.isAuditor ? 'auditor' : 'owner',
+          buildingId: bldId || null,
+          flatNum: r.flatNum || null,
+        };
         newNotifications.push(
           buildNotification({
             type: category || 'info',
             severity: category === 'urgent' ? 'critical' : category === 'finance' ? 'warning' : 'info',
             recipientEmail: r.email || '',
-            recipientScope: 'flat',
+            recipientScope: r.isAuditor ? 'auditor' : 'flat',
             buildingId: bldId,
             buildingName: bldName,
             flatNum: r.flatNum || null,
-            targetProfile: {
-              type: 'owner',
-              buildingId: bldId || null,
-              flatNum: r.flatNum || null,
-            },
+            targetProfile: targetProf,
             actorUser: state.currentUser,
             titleHu: subject,
             titleEn: subject,
             messageHu: personalizedBody,
             messageEn: personalizedBody,
+            attachments: uploadedAttachments,
+            meta: {
+              senderRole: state.currentUser?.role || 'admin',
+              senderProfile: { type: 'kk', buildingId: bldId || null },
+              senderRoleLabelHu: 'Közös Képviselet',
+              senderRoleLabelEn: 'Management (KK)',
+            },
           })
         );
       }
@@ -409,6 +494,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         subject,
         body: personalizedBody,
         category,
+        attachments: uploadedAttachments,
         debt: r.balance,
         status: emailStatus,
         errorMessage: emailErrorMessage,
@@ -789,6 +875,121 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     }
   };
 
+  /**
+   * Sends a role-validated direct message (with optional document attachments & optional Official Audit Opinion sync):
+   *  - Resident -> Managing KK of their building
+   *  - SZVB -> Managing KK and/or active Financial Auditor
+   *  - Financial Auditor -> Managing KK and/or SZVB (+ optional Official Written Opinion Tht. 51/A. § sync)
+   *  - Managing KK -> Reply to any Resident / SZVB / Financial Auditor letter
+   */
+  const sendDirectMessage = async ({
+    buildingId,
+    recipientMode = 'kk',
+    replyToNotif = null,
+    subject = '',
+    body = '',
+    category = 'general',
+    attachments = [],
+    auditOpinionMeta = null,
+  } = {}) => {
+    const cur = getState();
+    const actorUser = cur?.currentUser;
+    if (!actorUser) return { success: false, error: 'unauthenticated' };
+
+    const targetBId = buildingId || replyToNotif?.buildingId || cur.currentBuildingId || actorUser.buildingId || cur.buildings?.[0]?.id;
+    const building = (cur.buildings || []).find((b) => b.id === targetBId);
+    if (!building) {
+      if (typeof showToast === 'function') {
+        showToast(isEn() ? 'No condominium selected.' : 'Nincs kiválasztott társasház.', 'error');
+      }
+      return { success: false, error: 'missing-building' };
+    }
+
+    const uploadedAttachments = await uploadMailAttachments(building.id, attachments);
+
+    const payload = buildDirectMessagePayload({
+      actorUser,
+      building,
+      organizations: cur.organizations || [],
+      users: cur.users || [],
+      buildings: cur.buildings || [],
+      recipientMode,
+      replyToNotif,
+      subject,
+      body,
+      category,
+      attachments: uploadedAttachments,
+      auditOpinionMeta,
+    });
+
+    if (!payload.ok) {
+      if (typeof showToast === 'function') {
+        const msgMap = {
+          'permission-denied': isEn()
+            ? 'You do not have permission to send messages from this profile.'
+            : 'Nincs jogosultságod üzenetet küldeni ebből a profilból.',
+          'resident-kk-only': isEn()
+            ? 'Residents can only send direct messages to the Common Representative (Management).'
+            : 'Lakói profilból kizárólag a Közös Képviselet részére küldhető levél.',
+          'no-recipients': isEn()
+            ? 'No recipient with a valid email address was found for the selected target.'
+            : 'A kiválasztott címzetthez nem található érvényes e-mail cím a rendszerben.',
+          'missing-content': isEn()
+            ? 'Subject and message body are required.'
+            : 'A levél tárgya és szövege kötelező!',
+        };
+        showToast(msgMap[payload.error] || (isEn() ? 'Failed to send message.' : 'Nem sikerült elküldeni a levelet.'), 'error');
+      }
+      return { success: false, error: payload.error };
+    }
+
+    const allNewNotifs = [...payload.recipientNotifications, payload.senderCopyNotification];
+
+    const updater = (prev) => {
+      const curNotifs = Array.isArray(prev.notifications) ? prev.notifications : [];
+      const nextBuildings = payload.syncedAuditOpinion
+        ? (prev.buildings || []).map((b) =>
+            b.id === building.id
+              ? { ...b, auditOpinions: [payload.syncedAuditOpinion, ...(b.auditOpinions || [])] }
+              : b
+          )
+        : prev.buildings;
+
+      return {
+        ...prev,
+        buildings: nextBuildings,
+        notifications: [...allNewNotifs, ...curNotifs].slice(0, 400),
+        lastUpdated: Date.now(),
+        revision: (prev.revision || 0) + 1,
+      };
+    };
+
+    if (typeof persistState === 'function') {
+      await persistState(updater, true);
+    } else if (typeof setState === 'function') {
+      setState(updater);
+    }
+
+    if (typeof showToast === 'function') {
+      showToast(
+        payload.syncedAuditOpinion
+          ? (isEn()
+              ? 'Official written audit opinion sent and archived in Audit Opinions!'
+              : 'Hivatalos írásbeli szakmai vélemény elküldve és rögzítve az Ellenőri vélemények között!')
+          : (isEn()
+              ? 'Message sent successfully!'
+              : 'Levél sikeresen elküldve!'),
+        'success'
+      );
+    }
+
+    return {
+      success: true,
+      recipientCount: payload.recipients.length,
+      syncedAuditOpinion: payload.syncedAuditOpinion,
+    };
+  };
+
   return {
     saveEmailRule,
     deleteEmailRule,
@@ -796,6 +997,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     queueOutboxItems,
     clearOutboxItems,
     sendCustomResidentNotice,
+    sendDirectMessage,
+    fetchMailAttachment,
     executeAutomatedDunningDailyCheck,
   };
 }

@@ -327,7 +327,7 @@ export function mergeStateWithCloud(local, cloud) {
     ensureArray(cloud.organizations)
   );
 
-  // 7. Merge notifications (monotonic read/dismissed flags so read alerts never flicker back)
+  // 7. Merge notifications (monotonic read flag; latest-timestamp archive/unarchive; exempt manual/direct messages from dedupe)
   const rawMergedNotifs = mergeItemArray(
     ensureArray(local.notifications),
     ensureArray(cloud.notifications)
@@ -339,19 +339,55 @@ export function mergeStateWithCloud(local, cloud) {
     .map(n => {
       const ln = localNotifMap.get(String(n.id));
       const cn = cloudNotifMap.get(String(n.id));
+      const lArchTs = Number(ln?.archivedUpdatedAt) || 0;
+      const cArchTs = Number(cn?.archivedUpdatedAt) || 0;
+      let resolvedArchived = Boolean(n.archived);
+      let resolvedDismissed = Boolean(n.dismissed);
+      let resolvedArchivedAt = n.archivedAt || null;
+      let resolvedArchivedUpdatedAt = Number(n.archivedUpdatedAt) || 0;
+
+      if (lArchTs > 0 || cArchTs > 0) {
+        if (lArchTs >= cArchTs && ln) {
+          resolvedArchived = Boolean(ln.archived);
+          resolvedDismissed = Boolean(ln.dismissed);
+          resolvedArchivedAt = ln.archivedAt || null;
+          resolvedArchivedUpdatedAt = lArchTs;
+        } else if (cn) {
+          resolvedArchived = Boolean(cn.archived);
+          resolvedDismissed = Boolean(cn.dismissed);
+          resolvedArchivedAt = cn.archivedAt || null;
+          resolvedArchivedUpdatedAt = cArchTs;
+        }
+      } else {
+        resolvedArchived = Boolean(n.archived || ln?.archived || cn?.archived);
+        resolvedDismissed = Boolean(n.dismissed || ln?.dismissed || cn?.dismissed);
+      }
+
       return {
         ...n,
         read: Boolean(n.read || ln?.read || cn?.read),
-        dismissed: Boolean(n.dismissed || ln?.dismissed || cn?.dismissed),
+        dismissed: resolvedDismissed,
+        archived: resolvedArchived,
+        ...(resolvedArchivedAt ? { archivedAt: resolvedArchivedAt } : {}),
+        ...(resolvedArchivedUpdatedAt ? { archivedUpdatedAt: resolvedArchivedUpdatedAt } : {}),
       };
     })
     .filter(n => {
       if (!n) return false;
-      // Do NOT deduplicate manual team permission updates, SZVB updates, or bank changes across the day
-      if (n.type === 'team_updated' || n.type === 'szvb_updated' || n.type === 'bank_account_changed') {
+      // Do NOT deduplicate manual team permission updates, SZVB/auditor updates, direct messages, or bank changes across the day
+      if (
+        n.type === 'team_updated' ||
+        n.type === 'szvb_updated' ||
+        n.type === 'bank_account_changed' ||
+        n.type === 'direct_message' ||
+        n.type === 'audit_opinion' ||
+        n.type === 'audit_observation' ||
+        n.type === 'audit_comment' ||
+        n.type === 'auditor_updated'
+      ) {
         return true;
       }
-      // Deduplicate identical alerts for the same recipient, building, title and date
+      // Deduplicate identical automated alerts for the same recipient, building, title and date
       const dayStr = (n.createdAt || '').slice(0, 10);
       const key = `${n.type || 'info'}_${n.buildingId || ''}_${n.titleHu || n.titleEn || ''}_${n.recipientEmail || ''}_${dayStr}`;
       if (seenNotifDedupeKeys.has(key)) return false;

@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { Mail, ShieldAlert, Shield, Info, CheckCheck, X, Clock, Maximize2, ClipboardCheck } from 'lucide-react';
+import { Mail, ShieldAlert, Shield, Info, CheckCheck, X, Clock, Maximize2, ClipboardCheck, Archive, Paperclip, Download } from 'lucide-react';
 import { isUserBuildingSzvb } from '../utils/szvb';
 import { isUserBuildingEconomicAuditor } from '../utils/economicAuditor';
 import { resolveUserProfiles, getNotificationsForActiveProfile } from '../utils/userProfiles';
+import { isSafeDownloadUrl } from '../utils/fileSecurity';
 
 function formatNotifTime(iso, isEn) {
   if (!iso) return '';
@@ -34,18 +35,46 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
     t,
     markNotificationRead,
     markAllNotificationsRead,
+    archiveNotification,
     dismissNotification,
+    fetchMailAttachment,
     switchToSzvbMode,
     switchToAuditorMode,
+    showToast,
   } = useApp();
   const { currentUser, currentLang, notifications, buildings, organizations, users } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
-  const canOpenCommCenter = isAdmin && Boolean(onOpenCommunicationCenter);
+  const canOpenCommCenter = Boolean(onOpenCommunicationCenter);
 
   const [isOpen, setIsOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
+  const [downloadingAttId, setDownloadingAttId] = useState(null);
   const panelRef = useRef(null);
+
+  const handleDownloadAttachment = async (att) => {
+    if (!att || downloadingAttId) return;
+    setDownloadingAttId(att.id || att.fileName);
+    try {
+      const url = typeof fetchMailAttachment === 'function' ? await fetchMailAttachment(att) : att.inlineData;
+      if (!url || !isSafeDownloadUrl(url)) {
+        if (typeof showToast === 'function') {
+          showToast(isEn ? 'Attachment file is unavailable.' : 'A csatolmány nem tölthető le.', 'error');
+        }
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = att.fileName || 'document';
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } finally {
+      setDownloadingAttId(null);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -292,9 +321,17 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                           </div>
                         )}
 
-                        <div className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-400">
-                          <Clock className="w-3 h-3" />
-                          <span>{formatNotifTime(notif.createdAt, isEn)}</span>
+                        <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400 flex-wrap">
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            <span>{formatNotifTime(notif.createdAt, isEn)}</span>
+                          </span>
+                          {Array.isArray(notif.attachments) && notif.attachments.length > 0 && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-gray-100 text-gray-600 font-semibold">
+                              <Paperclip className="w-2.5 h-2.5" />
+                              <span>{notif.attachments.length}</span>
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -302,13 +339,17 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          dismissNotification(notif.id);
+                          if (typeof archiveNotification === 'function') {
+                            archiveNotification(notif.id);
+                          } else {
+                            dismissNotification(notif.id);
+                          }
                         }}
-                        className="absolute top-2.5 right-2.5 p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-black/5 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
-                        title={t.notif_dismiss || (isEn ? 'Dismiss' : 'Elrejtés')}
-                        aria-label={t.notif_dismiss || (isEn ? 'Dismiss' : 'Elrejtés')}
+                        className="absolute top-2.5 right-2.5 p-1 rounded-md text-gray-400 hover:text-[#1E3A8A] hover:bg-blue-50 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
+                        title={t.mail_archive_btn || (isEn ? 'Archive' : 'Archiválás')}
+                        aria-label={t.mail_archive_btn || (isEn ? 'Archive' : 'Archiválás')}
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <Archive className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -317,7 +358,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
             )}
           </div>
 
-          {/* Footer: Open Full Communication Center (Admin only) */}
+          {/* Footer: Open Full-Screen Mail Center (ALL profiles!) */}
           {canOpenCommCenter && (
             <div className="p-2.5 bg-gray-50/95 border-t border-gray-100 text-center">
               <button
@@ -329,7 +370,11 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                 className="w-full py-1.5 px-3 bg-white hover:bg-blue-50 hover:border-blue-200 border border-gray-200 rounded-xl text-xs font-bold text-[#1E3A8A] flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
-                <span>{t.open_communication_center || (isEn ? 'Open Communication & Email Center' : 'Kommunikációs & E-mail Központ')}</span>
+                <span>
+                  {isAdmin
+                    ? (t.open_communication_center || (isEn ? 'Open Mail & Communication Center' : 'Levelezés & Kommunikációs Központ'))
+                    : (t.open_mail_fullscreen || (isEn ? 'Open Mail Center (Full Screen)' : 'Levelezés megnyitása nagyban'))}
+                </span>
               </button>
             </div>
           )}
@@ -470,9 +515,65 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                   })}
                 </div>
               )}
+              {/* Attachments list if present */}
+              {Array.isArray(selectedNotification.attachments) && selectedNotification.attachments.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider">
+                    {isEn ? "Attachments" : "Csatolmányok"} ({selectedNotification.attachments.length})
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedNotification.attachments.map((att) => (
+                      <button
+                        key={att.id || att.fileName}
+                        type="button"
+                        disabled={downloadingAttId === (att.id || att.fileName)}
+                        onClick={() => handleDownloadAttachment(att)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50/80 hover:bg-blue-100 border border-blue-200 text-[#1E3A8A] text-xs font-bold transition-colors cursor-pointer disabled:opacity-60"
+                      >
+                        <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate max-w-[200px]">{att.fileName}</span>
+                        {att.fileSize && <span className="text-[10px] font-normal text-blue-700/80">({att.fileSize})</span>}
+                        <Download className="w-3.5 h-3.5 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof archiveNotification === 'function') {
+                      archiveNotification(selectedNotification.id);
+                    } else {
+                      dismissNotification(selectedNotification.id);
+                    }
+                    setSelectedNotification(null);
+                  }}
+                  className="px-3.5 py-2 bg-white hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 shadow-2xs transition-colors"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>{t.mail_archive_btn || (isEn ? "Archive" : "Archiválás")}</span>
+                </button>
+                {canOpenCommCenter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedNotification(null);
+                      setIsOpen(false);
+                      onOpenCommunicationCenter();
+                    }}
+                    className="px-3.5 py-2 bg-white hover:bg-blue-50 border border-blue-200 text-[#1E3A8A] rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 shadow-2xs transition-colors"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span>{isEn ? "Open in Mail" : "Levelezésben"}</span>
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
               {(() => {
                 if (
                   selectedNotification.type === 'szvb_updated' &&
@@ -537,6 +638,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
               >
                 {isEn ? "Close" : "Bezárás"}
               </button>
+              </div>
             </div>
           </div>
         </div>

@@ -362,6 +362,7 @@ function MainLayout() {
     isLoansOpen ||
     isAssemblyOpen ||
     isAuditReviewOpen ||
+    isCommunicationCenterOpen ||
     isCalendarOpen ||
     isProfileOpen ||
     deleteFlatNum ||
@@ -1054,8 +1055,8 @@ function MainLayout() {
       />
 
       <CommunicationCenterModal
-        isOpen={Boolean(isAdmin && isCommunicationCenterOpen)}
-        initialBuildingId={communicationBuildingId}
+        isOpen={Boolean(currentUser && isCommunicationCenterOpen)}
+        initialBuildingId={communicationBuildingId || state.currentBuildingId || 'all'}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onClose={() => setIsCommunicationCenterOpen(false)}
       />

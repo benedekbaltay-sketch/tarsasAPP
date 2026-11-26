@@ -339,8 +339,8 @@ export function Header({
             </button>
           )}
 
-          {/* Universal Notification Bell (visible to all users, but Communication Center is strictly admin-only) */}
-          <NotificationBell onOpenCommunicationCenter={isCurrentlyAdminMode ? onOpenCommunicationCenter : null} />
+          {/* Universal Notification Bell & Mail Hub trigger (available to ALL authenticated profiles) */}
+          <NotificationBell onOpenCommunicationCenter={onOpenCommunicationCenter} />
 
           {/* Unified Profile Switcher (visible across ALL modes whenever user holds >1 profile: KK / Owner / SZVB, with cross-profile unread red dot) */}
           <ProfileSwitcherButton onOpenProfileSelector={onOpenProfileSelector} />

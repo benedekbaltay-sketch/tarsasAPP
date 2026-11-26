@@ -1023,14 +1023,36 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     }), true);
   };
 
-  const dismissNotification = (notifId) => {
+  const archiveNotification = (notifId) => {
     if (!notifId || !state.currentUser) return;
+    const nowIso = new Date().toISOString();
+    const nowTs = Date.now();
     persistState((s) => ({
       ...s,
       notifications: (s.notifications || []).map((n) =>
-        n && n.id === notifId ? { ...n, read: true, dismissed: true } : n
+        n && n.id === notifId
+          ? { ...n, read: true, archived: true, dismissed: false, archivedAt: nowIso, archivedUpdatedAt: nowTs }
+          : n
       ),
     }), true);
+  };
+
+  const unarchiveNotification = (notifId) => {
+    if (!notifId || !state.currentUser) return;
+    const nowTs = Date.now();
+    persistState((s) => ({
+      ...s,
+      notifications: (s.notifications || []).map((n) =>
+        n && n.id === notifId
+          ? { ...n, archived: false, dismissed: false, archivedAt: null, archivedUpdatedAt: nowTs }
+          : n
+      ),
+    }), true);
+  };
+
+  const dismissNotification = (notifId) => {
+    // Preserve letter in user's Archive instead of permanently hiding it
+    archiveNotification(notifId);
   };
 
   // --- SuperAdmin Owner Management Actions (STRICTLY SUPERADMIN ONLY) ---
@@ -1364,6 +1386,8 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     pushNotification,
     markNotificationRead,
     markAllNotificationsRead,
+    archiveNotification,
+    unarchiveNotification,
     dismissNotification,
   };
 }

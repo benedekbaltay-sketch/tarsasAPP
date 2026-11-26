@@ -710,7 +710,9 @@ export function buildNotification({
   messageHu = '',
   messageEn = '',
   changes = [],
+  attachments = [],
   meta = null,
+  read = false,
 }) {
   return {
     id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -730,9 +732,11 @@ export function buildNotification({
     messageHu,
     messageEn,
     changes: Array.isArray(changes) ? changes : [],
+    ...(Array.isArray(attachments) && attachments.length > 0 ? { attachments } : {}),
     ...(meta && typeof meta === 'object' ? { meta } : {}),
-    read: false,
+    read: Boolean(read),
     dismissed: false,
+    archived: false,
     createdAt: new Date().toISOString(),
   };
 }
@@ -1125,7 +1129,7 @@ export function getNotificationsForUser(notifications = [], user) {
 
   return notifications
     .filter((n) => {
-      if (!n || n.dismissed) return false;
+      if (!n || n.dismissed || n.archived || n.meta?.isSenderCopy) return false;
       const rEmail = normalizeEmail(n.recipientEmail);
       if (rEmail && userEmail && rEmail === userEmail) {
         return true;

@@ -404,6 +404,78 @@ export function getNotificationsForActiveProfile(notifications = [], currentUser
 }
 
 /**
+ * Check if a direct-message sender copy belongs to the user's active profile.
+ */
+function doesSenderCopyMatchProfile(notif, userEmail, activeProfile) {
+  if (!notif || !notif.meta?.isSenderCopy) return false;
+  const senderEmail = normalizeEmail(notif.actorEmail || notif.recipientEmail || '');
+  if (!senderEmail || !userEmail || senderEmail !== userEmail) return false;
+  if (!activeProfile) return true;
+  const sp = notif.meta?.senderProfile || notif.targetProfile;
+  if (!sp || !sp.type) return true;
+  if (sp.type !== activeProfile.type) return false;
+  if (sp.type === 'kk') return true;
+  if (sp.buildingId && activeProfile.buildingId && String(sp.buildingId) !== String(activeProfile.buildingId)) {
+    return false;
+  }
+  if (sp.flatNum && activeProfile.flatNum && String(sp.flatNum) !== String(activeProfile.flatNum)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Filter sent direct messages strictly to the currently active profile (non-archived).
+ */
+export function getSentMessagesForActiveProfile(notifications = [], currentUser = null, allProfiles = []) {
+  if (!currentUser || !Array.isArray(notifications)) return [];
+  const userEmail = normalizeEmail(currentUser.email || currentUser.username || '');
+  if (!userEmail) return [];
+  const activeProfile = getActiveProfileDescriptor(currentUser, allProfiles);
+
+  return notifications
+    .filter((n) => {
+      if (!n || n.archived || n.dismissed) return false;
+      return doesSenderCopyMatchProfile(n, userEmail, activeProfile);
+    })
+    .sort((a, b) => (new Date(b.createdAt || 0).getTime() || 0) - (new Date(a.createdAt || 0).getTime() || 0));
+}
+
+/**
+ * Filter archived (and legacy dismissed) messages strictly to the currently active profile
+ * so users can always inspect or restore past correspondence.
+ */
+export function getArchivedNotificationsForActiveProfile(notifications = [], currentUser = null, allProfiles = []) {
+  if (!currentUser || !Array.isArray(notifications)) return [];
+  const userEmail = normalizeEmail(currentUser.email || currentUser.username || '');
+  const userUid = currentUser.uid || currentUser.id || null;
+  const userBuildingId = currentUser.buildingId || null;
+  const activeProfile = getActiveProfileDescriptor(currentUser, allProfiles);
+
+  return notifications
+    .filter((n) => {
+      if (!n || (!n.archived && !n.dismissed)) return false;
+      if (n.meta?.isSenderCopy) {
+        return doesSenderCopyMatchProfile(n, userEmail, activeProfile);
+      }
+      const rEmail = normalizeEmail(n.recipientEmail);
+      const belongsToUser =
+        (rEmail && userEmail && rEmail === userEmail) ||
+        (n.recipientUid && userUid && (String(n.recipientUid) === String(userUid) || String(n.recipientUid) === String(currentUser.uid) || String(n.recipientUid) === String(currentUser.id))) ||
+        n.recipientScope === 'all' ||
+        (n.recipientScope === 'building' && n.buildingId && userBuildingId && String(n.buildingId) === String(userBuildingId));
+      if (!belongsToUser) return false;
+      if (!activeProfile) return true;
+      return doesNotificationMatchProfile(n, activeProfile);
+    })
+    .sort((a, b) => {
+      const ta = new Date(a.archivedAt || a.createdAt || 0).getTime() || 0;
+      const tb = new Date(b.archivedAt || b.createdAt || 0).getTime() || 0;
+      return tb - ta;
+    });
+}
+
+/**
  * Compute per-profile unread notification counts and whether ANY OTHER (inactive) profile
  * has unread notifications — driving the red dot on the Profile Switcher button and next to each profile row!
  */
