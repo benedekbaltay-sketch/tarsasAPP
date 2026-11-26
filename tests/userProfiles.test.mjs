@@ -74,6 +74,7 @@ test('1. Single verified email resolves KK, SZVB, and multiple Owner profiles cl
   assert.equal(res.kkProfile.id, 'kk');
   assert.equal(res.szvbProfiles.length, 1);
   assert.equal(res.szvbProfiles[0].id, 'szvb:b1');
+  assert.equal(res.szvbProfiles[0].linkedOwnerProfileId, 'owner:b1:14');
   assert.equal(res.ownerProfiles.length, 2);
   assert.deepEqual(
     res.ownerProfiles.map((p) => p.id),

@@ -146,28 +146,36 @@ export function resolveUserProfiles(user, { buildings = [], organizations = [], 
     }
   }
 
-  // 3. SZVB Audit profiles (strictly verified per building)
+  // 3. SZVB Audit profiles (strictly verified per building & linked to user's apartment in that building)
   const szvbRaw = getUserSzvbRolesAcrossBuildings(user, activeBuildings);
-  const szvbProfiles = szvbRaw.map((r) => ({
-    id: `szvb:${r.buildingId}`,
-    type: 'szvb',
-    role: 'szvb',
-    szvbRole: r.szvbRole,
-    buildingId: r.buildingId,
-    buildingName: r.buildingName || '',
-    flatNum: r.flatNum || '',
-    name: r.name || user.name || userEmail,
-    email: userEmail,
-    labelHu: r.szvbRole === 'chairperson' ? 'SZVB Elnök' : 'SZVB Tag',
-    labelEn: r.szvbRole === 'chairperson' ? 'SZVB Chairperson' : 'SZVB Member',
-    sublabelHu: r.buildingName || '',
-    sublabelEn: r.buildingName || '',
-  }));
+  const szvbProfiles = szvbRaw.map((r) => {
+    const linkedOwnerFlat =
+      ownerProfiles.find((o) => o.buildingId === r.buildingId && r.flatNum && String(o.flatNum) === String(r.flatNum)) ||
+      ownerProfiles.find((o) => o.buildingId === r.buildingId) ||
+      null;
+    const resolvedFlatNum = r.flatNum || linkedOwnerFlat?.flatNum || '';
+    return {
+      id: `szvb:${r.buildingId}`,
+      type: 'szvb',
+      role: 'szvb',
+      szvbRole: r.szvbRole,
+      buildingId: r.buildingId,
+      buildingName: r.buildingName || '',
+      flatNum: resolvedFlatNum,
+      linkedOwnerProfileId: linkedOwnerFlat?.id || null,
+      name: r.name || user.name || userEmail,
+      email: userEmail,
+      labelHu: r.szvbRole === 'chairperson' ? 'SZVB Elnök' : 'SZVB Tag',
+      labelEn: r.szvbRole === 'chairperson' ? 'SZVB Chairperson' : 'SZVB Member',
+      sublabelHu: r.buildingName || '',
+      sublabelEn: r.buildingName || '',
+    };
+  });
 
   const allProfiles = [
     ...(kkProfile ? [kkProfile] : []),
-    ...szvbProfiles,
     ...ownerProfiles,
+    ...szvbProfiles,
   ];
 
   return {
