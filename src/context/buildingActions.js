@@ -36,6 +36,17 @@ import {
   findOrganizationForBuilding,
   normalizeEmail,
 } from '../utils/teamPermissions';
+import {
+  sanitizeEconomicAuditor,
+  isUserBuildingEconomicAuditor,
+  buildEconomicAuditorUpdateNotifications,
+  buildAuditActivityNotifications,
+  AUDIT_OPINION_VERDICTS,
+  AUDIT_OBSERVATION_SEVERITIES,
+  AUDIT_OBSERVATION_CATEGORIES,
+} from '../utils/economicAuditor';
+import { isUserBuildingSzvb } from '../utils/szvb';
+import { provisionAndSendColleagueInviteEmail } from '../services/inviteAuthService';
 
 export function createBuildingActions({ state, setState, persistState, showToast, t, reloadCurrentBuilding, hydrateAndSwitchBuilding }) {
   const isAdmin = () => Boolean(
@@ -78,7 +89,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
         return;
       }
     }
-    if (!isAdmin() && state.currentUser?.role !== 'szvb') {
+    if (!isAdmin() && state.currentUser?.role !== 'szvb' && state.currentUser?.role !== 'auditor') {
       const userEmail = (state.currentUser?.email || "").toLowerCase().trim();
       const ownsFlatInBuilding = (curB.flats || []).some(f => {
         if ((f.email || "").toLowerCase().trim() === userEmail && userEmail) return true;
@@ -1758,6 +1769,430 @@ export function createBuildingActions({ state, setState, persistState, showToast
     showToast(t.account_deleted_success || (state.currentLang === 'en' ? "Account deleted!" : "Számla törölve!"));
   };
 
+  // =========================================================================
+  // ECONOMIC AUDITOR (Tht. 51/A. §) — Appointment, Written Opinions & Observations
+  // =========================================================================
+
+  const updateBuildingEconomicAuditor = async (buildingId, rawAuditor, { sendInviteEmail = true } = {}) => {
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    if (!targetId || !requireAdmin(targetId)) return { success: false };
+
+    const curB = (state.buildings || []).find((b) => b.id === targetId);
+    if (!curB) return { success: false };
+
+    const prevAuditor = curB.economicAuditor || null;
+    const nextAuditor = sanitizeEconomicAuditor(rawAuditor, state.currentUser?.email || '');
+    const notifs = buildEconomicAuditorUpdateNotifications({
+      building: curB,
+      prevAuditor,
+      nextAuditor,
+      actorUser: state.currentUser,
+    });
+
+    await persistState((s) => ({
+      ...s,
+      buildings: (s.buildings || []).map((b) =>
+        b.id === targetId ? { ...b, economicAuditor: nextAuditor } : b
+      ),
+      notifications: notifs.length > 0
+        ? [...notifs, ...(s.notifications || [])].slice(0, 300)
+        : (s.notifications || []),
+    }), true);
+
+    let inviteSent = false;
+    const prevEmail = prevAuditor?.enabled ? normalizeEmail(prevAuditor.email) : '';
+    const nextEmail = nextAuditor.enabled ? normalizeEmail(nextAuditor.email) : '';
+    if (
+      sendInviteEmail &&
+      nextAuditor.enabled &&
+      nextAuditor.type === 'external' &&
+      nextEmail &&
+      nextEmail !== prevEmail
+    ) {
+      try {
+        const origin =
+          typeof window !== 'undefined' && window.location?.origin
+            ? window.location.origin
+            : 'https://tarsashaz-cfe5d.web.app';
+        const res = await provisionAndSendColleagueInviteEmail({
+          email: nextEmail,
+          token: `auditor-${targetId}`,
+          lang: state.currentLang || 'hu',
+          origin,
+          skipFirebaseResetEmail: false,
+        });
+        inviteSent = Boolean(res?.sent);
+      } catch (err) {
+        console.warn('External auditor auth invite warning:', err?.message);
+      }
+    }
+
+    const isEn = state.currentLang === 'en';
+    showToast(
+      inviteSent
+        ? (isEn
+            ? 'Financial Auditor saved & login invitation email sent!'
+            : 'Gazdasági ellenőr elmentve és belépési meghívó e-mail elküldve!')
+        : (isEn
+            ? 'Financial Auditor settings saved!'
+            : 'Gazdasági ellenőr beállításai sikeresen elmentve!')
+    );
+    return { success: true, inviteSent, auditor: nextAuditor };
+  };
+
+  const addAuditOpinion = async (buildingId, payload = {}) => {
+    const isEn = state.currentLang === 'en';
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    const curB = (state.buildings || []).find((b) => b.id === targetId);
+    if (
+      !curB ||
+      state.currentUser?.role !== 'auditor' ||
+      !isUserBuildingEconomicAuditor(state.currentUser, curB)
+    ) {
+      showToast(
+        isEn
+          ? 'Only the appointed Financial Auditor can submit written audit opinions.'
+          : 'Írásbeli szakmai véleményt kizárólag a kijelölt gazdasági ellenőr rögzíthet.',
+        'error'
+      );
+      return { success: false };
+    }
+
+    const title = String(payload.title || '').trim();
+    if (!title) {
+      showToast(isEn ? 'Please enter a title.' : 'Kérjük, add meg a vélemény címét!', 'error');
+      return { success: false };
+    }
+
+    const year = Number(payload.year) || new Date().getFullYear() - 1;
+    const verdict = AUDIT_OPINION_VERDICTS.includes(payload.verdict) ? payload.verdict : 'approved';
+    const opinionId = `aop-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const hasFile = Boolean(payload.fileData && payload.fileName);
+    const cleanFileName = hasFile ? sanitizeFileName(payload.fileName) : '';
+
+    // Store binary attachment separately in RTDB condo_doc_files so main state stays lightweight
+    if (hasFile && !IS_FIRESTORE_MODE) {
+      try {
+        const { db } = getFirebaseInstance();
+        if (db) {
+          await set(ref(db, `condo_doc_files/${targetId}/${opinionId}`), {
+            fileName: cleanFileName,
+            fileType: payload.fileType || 'pdf',
+            fileData: payload.fileData,
+            uploadedAt: new Date().toISOString(),
+          });
+        }
+      } catch (err) {
+        console.warn('Could not save audit opinion binary to condo_doc_files:', err?.message);
+      }
+    }
+
+    const newOpinion = {
+      id: opinionId,
+      year,
+      title,
+      summary: String(payload.summary || '').trim(),
+      verdict,
+      fileName: cleanFileName,
+      fileType: hasFile ? String(payload.fileType || 'pdf').toLowerCase() : '',
+      fileSize: hasFile ? String(payload.fileSize || '') : '',
+      hasCloudFile: hasFile,
+      // Keep inline preview only if small (< 150KB) or fallback in local memory; main cloud sync strips large data
+      fileData: hasFile && String(payload.fileData).length < 180000 ? payload.fileData : '',
+      authorName: state.currentUser?.name || curB.economicAuditor?.name || state.currentUser?.email || '',
+      authorEmail: normalizeEmail(state.currentUser?.email),
+      authorRole: 'auditor',
+      publishedToOwners: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    const notifs = buildAuditActivityNotifications({
+      kind: 'opinion',
+      building: curB,
+      actorUser: state.currentUser,
+      item: newOpinion,
+      organizations: state.organizations,
+      users: state.users,
+    });
+
+    await persistState((s) => ({
+      ...s,
+      buildings: (s.buildings || []).map((b) =>
+        b.id === targetId
+          ? { ...b, auditOpinions: [newOpinion, ...(b.auditOpinions || [])] }
+          : b
+      ),
+      notifications: notifs.length > 0
+        ? [...notifs, ...(s.notifications || [])].slice(0, 300)
+        : (s.notifications || []),
+    }), true);
+
+    showToast(
+      isEn
+        ? 'Written audit opinion submitted! SZVB and Management were notified.'
+        : 'Írásbeli szakmai vélemény feltöltve! Az SZVB és a Közös Képviselet értesítést kapott.'
+    );
+    return { success: true, opinion: newOpinion };
+  };
+
+  const fetchAuditOpinionFile = async (buildingId, opinionId) => {
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    const curB = (state.buildings || []).find((b) => b.id === targetId);
+    const opinion = (curB?.auditOpinions || []).find((o) => o.id === opinionId);
+    if (!opinion) return null;
+    if (opinion.fileData) return opinion.fileData;
+
+    if (!IS_FIRESTORE_MODE) {
+      try {
+        const { db } = getFirebaseInstance();
+        if (db) {
+          const snap = await get(ref(db, `condo_doc_files/${targetId}/${opinionId}`));
+          if (snap.exists()) {
+            return snap.val()?.fileData || null;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch audit opinion file:', err?.message);
+      }
+    }
+    return null;
+  };
+
+  const deleteAuditOpinion = async (buildingId, opinionId) => {
+    const isEn = state.currentLang === 'en';
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    const curB = (state.buildings || []).find((b) => b.id === targetId);
+    if (!curB) return;
+
+    const targetOp = (curB.auditOpinions || []).find((o) => o.id === opinionId);
+    if (!targetOp) return;
+
+    const isManaging = isAdmin() && canUserManageBuilding(state.currentUser, targetId, state.organizations, state.buildings);
+    const isAuthorAuditor =
+      state.currentUser?.role === 'auditor' &&
+      isUserBuildingEconomicAuditor(state.currentUser, curB) &&
+      normalizeEmail(targetOp.authorEmail) === normalizeEmail(state.currentUser?.email);
+
+    if (!isManaging && !isAuthorAuditor) {
+      showToast(isEn ? 'Unauthorized action.' : 'Nincs jogosultságod a törléshez.', 'error');
+      return;
+    }
+
+    await persistState((s) => ({
+      ...s,
+      buildings: (s.buildings || []).map((b) =>
+        b.id === targetId
+          ? { ...b, auditOpinions: (b.auditOpinions || []).filter((o) => o.id !== opinionId) }
+          : b
+      ),
+    }), true);
+
+    showToast(isEn ? 'Written opinion deleted.' : 'Szakmai vélemény törölve.');
+  };
+
+  const toggleAuditOpinionPublish = async (buildingId, opinionId) => {
+    const isEn = state.currentLang === 'en';
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    if (!targetId || !requireAdmin(targetId)) return;
+
+    let nextPublished = false;
+    await persistState((s) => ({
+      ...s,
+      buildings: (s.buildings || []).map((b) => {
+        if (b.id !== targetId) return b;
+        return {
+          ...b,
+          auditOpinions: (b.auditOpinions || []).map((o) => {
+            if (o.id !== opinionId) return o;
+            nextPublished = !o.publishedToOwners;
+            return { ...o, publishedToOwners: nextPublished };
+          }),
+        };
+      }),
+    }), true);
+
+    showToast(
+      nextPublished
+        ? (isEn ? 'Opinion published for all apartment owners.' : 'Szakmai vélemény közzétéve a tulajdonosok számára.')
+        : (isEn ? 'Opinion set back to internal (KK & SZVB only).' : 'Szakmai vélemény visszaállítva belső (KK és SZVB) nézetre.')
+    );
+  };
+
+  const addAuditObservation = async (buildingId, payload = {}) => {
+    const isEn = state.currentLang === 'en';
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    const curB = (state.buildings || []).find((b) => b.id === targetId);
+    if (
+      !curB ||
+      state.currentUser?.role !== 'auditor' ||
+      !isUserBuildingEconomicAuditor(state.currentUser, curB)
+    ) {
+      showToast(
+        isEn
+          ? 'Only the appointed Financial Auditor can log audit observations.'
+          : 'Szakmai észrevételt kizárólag a kijelölt gazdasági ellenőr rögzíthet.',
+        'error'
+      );
+      return { success: false };
+    }
+
+    const title = String(payload.title || '').trim();
+    const description = String(payload.description || '').trim();
+    if (!title || !description) {
+      showToast(
+        isEn ? 'Please enter both title and description.' : 'Kérjük, add meg az észrevétel címét és leírását!',
+        'error'
+      );
+      return { success: false };
+    }
+
+    const newObs = {
+      id: `aobs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title,
+      description,
+      severity: AUDIT_OBSERVATION_SEVERITIES.includes(payload.severity) ? payload.severity : 'warning',
+      category: AUDIT_OBSERVATION_CATEGORIES.includes(payload.category) ? payload.category : 'bookkeeping',
+      linkedTxId: payload.linkedTxId ? String(payload.linkedTxId) : null,
+      linkedTxLabel: String(payload.linkedTxLabel || '').trim(),
+      status: 'open',
+      authorName: state.currentUser?.name || curB.economicAuditor?.name || state.currentUser?.email || '',
+      authorEmail: normalizeEmail(state.currentUser?.email),
+      createdAt: new Date().toISOString(),
+      comments: [],
+      resolvedAt: null,
+      resolvedBy: null,
+    };
+
+    const notifs = buildAuditActivityNotifications({
+      kind: 'observation',
+      building: curB,
+      actorUser: state.currentUser,
+      item: newObs,
+      organizations: state.organizations,
+      users: state.users,
+    });
+
+    await persistState((s) => ({
+      ...s,
+      buildings: (s.buildings || []).map((b) =>
+        b.id === targetId
+          ? { ...b, auditObservations: [newObs, ...(b.auditObservations || [])] }
+          : b
+      ),
+      notifications: notifs.length > 0
+        ? [...notifs, ...(s.notifications || [])].slice(0, 300)
+        : (s.notifications || []),
+    }), true);
+
+    showToast(
+      isEn
+        ? 'Audit observation recorded & SZVB/Management notified.'
+        : 'Szakmai észrevétel rögzítve! Az SZVB és a Közös Képviselet értesítést kapott.'
+    );
+    return { success: true, observation: newObs };
+  };
+
+  const addAuditObservationComment = async (buildingId, obsId, text) => {
+    const isEn = state.currentLang === 'en';
+    const cleanText = String(text || '').trim();
+    if (!cleanText) return { success: false };
+
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    const curB = (state.buildings || []).find((b) => b.id === targetId);
+    if (!curB) return { success: false };
+
+    const isManaging = isAdmin() && canUserManageBuilding(state.currentUser, targetId, state.organizations, state.buildings);
+    const isActiveSzvb = state.currentUser?.role === 'szvb' && isUserBuildingSzvb(state.currentUser, curB);
+    const isActiveAuditor = state.currentUser?.role === 'auditor' && isUserBuildingEconomicAuditor(state.currentUser, curB);
+
+    if (!isManaging && !isActiveSzvb && !isActiveAuditor) {
+      showToast(isEn ? 'Unauthorized action.' : 'Nincs jogosultságod hozzászólni.', 'error');
+      return { success: false };
+    }
+
+    const targetObs = (curB.auditObservations || []).find((o) => o.id === obsId);
+    if (!targetObs) return { success: false };
+
+    const newComment = {
+      id: `acmt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      authorName: state.currentUser?.name || state.currentUser?.email || '',
+      authorEmail: normalizeEmail(state.currentUser?.email),
+      authorRole: isActiveAuditor ? 'auditor' : (isActiveSzvb ? 'szvb' : 'admin'),
+      text: cleanText,
+      createdAt: new Date().toISOString(),
+    };
+
+    const notifs = buildAuditActivityNotifications({
+      kind: 'comment',
+      building: curB,
+      actorUser: state.currentUser,
+      item: targetObs,
+      commentText: cleanText,
+      organizations: state.organizations,
+      users: state.users,
+    });
+
+    await persistState((s) => ({
+      ...s,
+      buildings: (s.buildings || []).map((b) => {
+        if (b.id !== targetId) return b;
+        return {
+          ...b,
+          auditObservations: (b.auditObservations || []).map((o) =>
+            o.id === obsId ? { ...o, comments: [...(o.comments || []), newComment] } : o
+          ),
+        };
+      }),
+      notifications: notifs.length > 0
+        ? [...notifs, ...(s.notifications || [])].slice(0, 300)
+        : (s.notifications || []),
+    }), true);
+
+    return { success: true, comment: newComment };
+  };
+
+  const toggleAuditObservationStatus = async (buildingId, obsId) => {
+    const isEn = state.currentLang === 'en';
+    const targetId = buildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    const curB = (state.buildings || []).find((b) => b.id === targetId);
+    if (!curB) return;
+
+    const isManaging = isAdmin() && canUserManageBuilding(state.currentUser, targetId, state.organizations, state.buildings);
+    const isActiveAuditor = state.currentUser?.role === 'auditor' && isUserBuildingEconomicAuditor(state.currentUser, curB);
+
+    if (!isManaging && !isActiveAuditor) {
+      showToast(isEn ? 'Unauthorized action.' : 'Nincs jogosultságod a státusz módosításához.', 'error');
+      return;
+    }
+
+    let nextStatus = 'open';
+    await persistState((s) => ({
+      ...s,
+      buildings: (s.buildings || []).map((b) => {
+        if (b.id !== targetId) return b;
+        return {
+          ...b,
+          auditObservations: (b.auditObservations || []).map((o) => {
+            if (o.id !== obsId) return o;
+            nextStatus = o.status === 'resolved' ? 'open' : 'resolved';
+            return {
+              ...o,
+              status: nextStatus,
+              resolvedAt: nextStatus === 'resolved' ? new Date().toISOString() : null,
+              resolvedBy: nextStatus === 'resolved' ? (state.currentUser?.name || state.currentUser?.email || '') : null,
+            };
+          }),
+        };
+      }),
+    }), true);
+
+    showToast(
+      nextStatus === 'resolved'
+        ? (isEn ? 'Observation marked as resolved.' : 'Észrevétel tisztázottnak jelölve.')
+        : (isEn ? 'Observation reopened.' : 'Észrevétel újranyitva.')
+    );
+  };
+
   return {
     switchBuilding,
     addFlat,
@@ -1784,6 +2219,14 @@ export function createBuildingActions({ state, setState, persistState, showToast
     saveInfoSections,
     updateBuildingBankAccounts,
     addCustomBankAccount,
-    deleteCustomBankAccount
+    deleteCustomBankAccount,
+    updateBuildingEconomicAuditor,
+    addAuditOpinion,
+    fetchAuditOpinionFile,
+    deleteAuditOpinion,
+    toggleAuditOpinionPublish,
+    addAuditObservation,
+    addAuditObservationComment,
+    toggleAuditObservationStatus
   };
 }

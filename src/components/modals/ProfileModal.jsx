@@ -67,7 +67,7 @@ export function ProfileModal({
   const isEn = currentLang === 'en';
   const isHu = !isEn;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
-  const isSzvb = currentUser?.role === 'szvb';
+  const isSzvb = currentUser?.role === 'szvb' || currentUser?.role === 'auditor';
 
   // Navigation tab for Admin Settings view: Option A (personal, company, security, preferences)
   const [activeTab, setActiveTab] = useState('personal'); // 'personal' | 'company' | 'security' | 'preferences'

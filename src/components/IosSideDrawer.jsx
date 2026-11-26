@@ -16,7 +16,8 @@ import {
   Settings,
   Users,
   Eye,
-  Shield
+  Shield,
+  ClipboardCheck
 } from 'lucide-react';
 import { canUserManageTeam, resolveUserDisplayName, isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
 import { getUserSzvbRolesAcrossBuildings, getUserBuildingSzvbRole } from '../utils/szvb';
@@ -33,6 +34,7 @@ export function IosSideDrawer({
   const isHu = currentLang === 'hu' || !currentLang;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const isSzvb = currentUser?.role === 'szvb';
+  const isAuditor = currentUser?.role === 'auditor';
   const canManageTeam = canUserManageTeam(currentUser, organizations, buildings);
   const userDisplayName = resolveUserDisplayName(currentUser, state);
 
@@ -52,6 +54,14 @@ export function IosSideDrawer({
   const myFlats = getUserFlats ? getUserFlats(currentUser, buildings) : [];
   const szvbRoles = !isAdmin ? getUserSzvbRolesAcrossBuildings(currentUser, buildings || []) : [];
   const activeSzvbRole = isSzvb ? (currentUser?.szvbRole || getUserBuildingSzvbRole(currentUser, currentBuilding)) : null;
+  const hasPublishedAuditOpinions = Boolean(
+    currentBuilding &&
+      Array.isArray(currentBuilding.auditOpinions) &&
+      currentBuilding.auditOpinions.some((o) => o && o.publishedToOwners === true)
+  );
+  const openAuditObsCount = currentBuilding && Array.isArray(currentBuilding.auditObservations)
+    ? currentBuilding.auditObservations.filter((o) => o && o.status !== 'resolved').length
+    : 0;
   const profileLabel = isAdmin 
     ? (t.menu_account_settings || "Fiók / Rendszerbeállítások") 
     : (myFlats.length > 1 ? (t.menu_my_flats || "Profilom / Lakásaim") : (t.menu_my_flat || "Profilom / Lakásom"));
@@ -127,11 +137,18 @@ export function IosSideDrawer({
                       <span>{isHu ? 'SZVB • Csak olvasás' : 'SZVB • Read-Only'}</span>
                     </span>
                   )}
+                  {isAuditor && currentBuilding && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200 flex-shrink-0">
+                      <ClipboardCheck className="w-2.5 h-2.5 text-teal-600" />
+                      <span>{isHu ? 'Gazdasági ellenőr • Csak olvasás' : 'Financial Auditor • Read-Only'}</span>
+                    </span>
+                  )}
                 </div>
                 <span className="text-xs text-gray-500 font-medium block truncate">
                   {currentUser ? (
                     isAdmin ? userDisplayName :
                     isSzvb ? `${activeSzvbRole === 'chairperson' ? (isHu ? 'SZVB Elnök' : 'SZVB Chairperson') : (isHu ? 'SZVB Tag' : 'SZVB Member')} • ${userDisplayName}` :
+                    isAuditor ? `${isHu ? 'Gazdasági ellenőr' : 'Financial Auditor'} • ${userDisplayName}` :
                     `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}`
                   ) : 'Menü'}
                 </span>
@@ -326,6 +343,27 @@ export function IosSideDrawer({
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
 
+                  {/* 📋 Ellenőri vélemények & Észrevételek */}
+                  <button
+                    onClick={() => handleAction('audit-review')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <ClipboardCheck className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800 truncate">
+                        {t.menu_audit_review || (isHu ? "Ellenőri vélemények" : "Audit Opinions")}
+                      </span>
+                      {openAuditObsCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0">
+                          {openAuditObsCount}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
                   {/* 📂 Dokumentumok */}
                   <button
                     onClick={() => handleAction('docs')}
@@ -423,6 +461,43 @@ export function IosSideDrawer({
                     <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
 
+                  {/* Közgyűlés (Elszámolások megtekintése/letöltése) */}
+                  <button
+                    onClick={() => handleAction('assembly')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                        <FileSpreadsheet className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">
+                        {t.menu_assembly || (isHu ? "Közgyűlés" : "General Assembly")}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Ellenőri vélemények & Észrevételek */}
+                  <button
+                    onClick={() => handleAction('audit-review')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <ClipboardCheck className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800 truncate">
+                        {t.menu_audit_review || (isHu ? "Ellenőri vélemények" : "Audit Opinions")}
+                      </span>
+                      {openAuditObsCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0">
+                          {openAuditObsCount}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
                   {/* Dokumentumok (Iratok, szerződések, bankkivonatok megtekintése/letöltése) */}
                   <button
                     onClick={() => handleAction('docs')}
@@ -440,8 +515,119 @@ export function IosSideDrawer({
               </div>
             )}
 
+            {/* C1B) ECONOMIC AUDITOR MODE (Tht. 51/A. § — Strictly Read-Only + Opinions/Observations) */}
+            {isAuditor && (
+              <div className="space-y-3">
+                <div className="bg-teal-50/70 rounded-2xl p-2 border border-teal-200/80 space-y-1">
+                  <div className="px-3 pt-1 pb-1.5 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-teal-800 uppercase tracking-wider flex items-center gap-1">
+                      <ClipboardCheck className="w-3 h-3" />
+                      <span>{isHu ? "Gazdasági ellenőrzés (Tht. 51/A. §)" : "Financial Audit (Tht. § 51/A)"}</span>
+                    </span>
+                  </div>
+
+                  {/* Főmenü */}
+                  <button
+                    onClick={() => handleAction('main')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs">
+                        <LayoutDashboard className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">
+                        {t.menu_main || (isHu ? "Főmenü" : "Main Menu")}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Pénzügyek */}
+                  <button
+                    onClick={() => handleAction('finance')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center shadow-xs">
+                        <LineChart className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">{t.menu_finance}</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Lakások adatai */}
+                  <button
+                    onClick={() => handleAction('flats-data')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-500 text-white flex items-center justify-center shadow-xs">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">
+                        {t.menu_flats_data || (isHu ? "Lakások adatai" : "Flats Data")}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Közgyűlés (Éves elszámolás ellenőrzése + Excel) */}
+                  <button
+                    onClick={() => handleAction('assembly')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                        <FileSpreadsheet className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">
+                        {t.menu_assembly || (isHu ? "Közgyűlés" : "General Assembly")}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Ellenőri vélemények & Észrevételek */}
+                  <button
+                    onClick={() => handleAction('audit-review')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl bg-white hover:bg-teal-50/70 border border-teal-200/80 transition-all text-left group cursor-pointer shadow-2xs"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-teal-700 text-white flex items-center justify-center shadow-xs shrink-0">
+                        <ClipboardCheck className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-bold text-teal-950 truncate">
+                        {t.menu_audit_review || (isHu ? "Ellenőri vélemények" : "Audit Opinions")}
+                      </span>
+                      {openAuditObsCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0">
+                          {openAuditObsCount}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-teal-600 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Dokumentumok */}
+                  <button
+                    onClick={() => handleAction('docs')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                        <FolderOpen className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">{t.menu_docs}</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* C2) RESIDENT / TENANT MODE */}
-            {!isAdmin && !isSzvb && (
+            {!isAdmin && !isSzvb && !isAuditor && (
               <div className="space-y-3">
                 {/* Quick switch to SZVB Audit Mode if this resident is an SZVB member */}
                 {szvbRoles.length > 0 && (
@@ -511,6 +697,24 @@ export function IosSideDrawer({
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                 </button>
+
+                {/* Közzétett ellenőri vélemények (csak ha van lakóknak publikált vélemény) */}
+                {hasPublishedAuditOpinions && (
+                  <button
+                    onClick={() => handleAction('audit-review')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs">
+                        <ClipboardCheck className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">
+                        {t.menu_audit_review || (isHu ? "Ellenőri vélemények" : "Audit Opinions")}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                )}
 
                 {/* Lakásom / Lakásaim */}
                 <button

@@ -66,9 +66,11 @@ export function AdminView({
   // Building and accounts
   const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
   const isSzvbMode = state.currentUser?.role === 'szvb';
+  const isAuditorMode = state.currentUser?.role === 'auditor';
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     isSzvbMode ||
+    isAuditorMode ||
     !onOpenAddTransaction ||
     (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuilding))
   );

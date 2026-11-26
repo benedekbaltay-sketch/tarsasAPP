@@ -41,9 +41,11 @@ export function FlatsDataModal({
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings[0];
   const isSzvb = state.currentUser?.role === 'szvb';
+  const isAuditor = state.currentUser?.role === 'auditor';
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     isSzvb ||
+    isAuditor ||
     (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuilding))
   );
 
@@ -63,7 +65,7 @@ export function FlatsDataModal({
   }, [isOpen]);
 
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
-  if (!isOpen || !(isAdmin || isSzvb)) return null;
+  if (!isOpen || !(isAdmin || isSzvb || isAuditor)) return null;
 
   const unitTypeConfig = {
     flat: { label: t.unit_type_flat || "Lakás", icon: Home, badgeClass: "bg-blue-50 text-blue-700 border-blue-200", dotClass: "bg-blue-600" },

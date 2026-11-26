@@ -100,7 +100,13 @@ export function resolveUserOrgContext(user, organizations = [], buildings = []) 
   // Even if the same email also owns/belongs to a KK organization, an active SZVB or Owner
   // session MUST NEVER inherit KK/admin write permissions.
   const normalizedRole = String(user.role || '').toLowerCase();
-  if (normalizedRole === 'szvb' || normalizedRole === 'owner' || normalizedRole === 'tenant' || normalizedRole === 'resident') {
+  if (
+    normalizedRole === 'szvb' ||
+    normalizedRole === 'auditor' ||
+    normalizedRole === 'owner' ||
+    normalizedRole === 'tenant' ||
+    normalizedRole === 'resident'
+  ) {
     return {
       org: null,
       member: null,
@@ -332,6 +338,7 @@ export function canUserManageBuilding(user, building, organizations = [], buildi
   if (
     normalizedRole === 'viewer' ||
     normalizedRole === 'szvb' ||
+    normalizedRole === 'auditor' ||
     normalizedRole === 'owner' ||
     normalizedRole === 'tenant' ||
     normalizedRole === 'resident' ||

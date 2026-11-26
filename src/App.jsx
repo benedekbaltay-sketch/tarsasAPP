@@ -24,6 +24,7 @@ import { FinancialSituationModal } from './components/modals/FinancialSituationM
 import { DocumentsModal } from './components/modals/DocumentsModal';
 import { LoansModal } from './components/modals/LoansModal';
 import { AssemblyModal } from './components/modals/AssemblyModal';
+import { AuditReviewModal } from './components/modals/AuditReviewModal';
 import { ProfileModal } from './components/modals/ProfileModal';
 import { BuildingSelectorModal } from './components/modals/BuildingSelectorModal';
 import { AddBuildingModal } from './components/modals/AddBuildingModal';
@@ -67,6 +68,7 @@ const parseNavFromHash = (hashStr) => {
         isDocumentsOpen: view === 'docs',
         isLoansOpen: view === 'loans',
         isAssemblyOpen: view === 'assembly',
+        isAuditReviewOpen: view === 'audit',
         isCalendarOpen: view === 'calendar',
         calendarBuildingId: null,
         isGlobalBalancesOpen: view === 'balances',
@@ -100,6 +102,7 @@ const getInitialNavState = () => {
         isDocumentsOpen: fromHash.isDocumentsOpen || Boolean(stateFromStorage?.isDocumentsOpen),
         isLoansOpen: fromHash.isLoansOpen || Boolean(stateFromStorage?.isLoansOpen),
         isAssemblyOpen: fromHash.isAssemblyOpen || Boolean(stateFromStorage?.isAssemblyOpen),
+        isAuditReviewOpen: fromHash.isAuditReviewOpen || Boolean(stateFromStorage?.isAuditReviewOpen),
         isCalendarOpen: fromHash.isCalendarOpen || Boolean(stateFromStorage?.isCalendarOpen),
         calendarBuildingId: stateFromStorage?.calendarBuildingId || null,
         isGlobalBalancesOpen: fromHash.isGlobalBalancesOpen || Boolean(stateFromStorage?.isGlobalBalancesOpen),
@@ -135,6 +138,7 @@ function MainLayout() {
     switchToKkMode,
     switchToTenantMode,
     switchToSzvbMode,
+    switchToAuditorMode,
     openPortfolio,
     openBuildingAdmin,
     acceptTeamInvite,
@@ -147,7 +151,8 @@ function MainLayout() {
   const isEn = state.currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const isSzvb = currentUser?.role === 'szvb';
-  const canAuditBuilding = isAdmin || isSzvb;
+  const isAuditor = currentUser?.role === 'auditor';
+  const canAuditBuilding = isAdmin || isSzvb || isAuditor;
   const isAdminUser = isCurrentUserAdmin(currentUser, state.users);
   const isManagingCurrentBuilding = isAdmin && canUserManageBuilding(state.currentBuildingId);
   const isCurrentBuildingViewer = isUserBuildingViewer(state.currentBuildingId);
@@ -201,6 +206,7 @@ function MainLayout() {
   const [isDocumentsOpen, setIsDocumentsOpen] = useState(() => Boolean(initialNavState?.isDocumentsOpen));
   const [isLoansOpen, setIsLoansOpen] = useState(false);
   const [isAssemblyOpen, setIsAssemblyOpen] = useState(() => Boolean(initialNavState?.isAssemblyOpen));
+  const [isAuditReviewOpen, setIsAuditReviewOpen] = useState(() => Boolean(initialNavState?.isAuditReviewOpen));
   const [isProfileOpen, setIsProfileOpen] = useState(() => Boolean(initialNavState?.isProfileOpen));
   const [isBuildingSelectorOpen, setIsBuildingSelectorOpen] = useState(false);
   const [isAddBuildingOpen, setIsAddBuildingOpen] = useState(false);
@@ -355,6 +361,7 @@ function MainLayout() {
     isDocumentsOpen ||
     isLoansOpen ||
     isAssemblyOpen ||
+    isAuditReviewOpen ||
     isCalendarOpen ||
     isProfileOpen ||
     deleteFlatNum ||
@@ -400,6 +407,7 @@ function MainLayout() {
     setIsDocumentsOpen(false);
     setIsLoansOpen(false);
     setIsAssemblyOpen(false);
+    setIsAuditReviewOpen(false);
     setIsCalendarOpen(false);
     setIsProfileOpen(false);
     setFullscreenTxData(null);
@@ -466,6 +474,7 @@ function MainLayout() {
       isDocumentsOpen,
       isLoansOpen,
       isAssemblyOpen,
+      isAuditReviewOpen,
       isCalendarOpen,
       calendarBuildingId,
       isGlobalBalancesOpen,
@@ -482,6 +491,7 @@ function MainLayout() {
       isDocumentsOpen ||
       isLoansOpen ||
       isAssemblyOpen ||
+      isAuditReviewOpen ||
       isCalendarOpen ||
       isGlobalBalancesOpen ||
       isProfileOpen ||
@@ -517,6 +527,8 @@ function MainLayout() {
         newHash = '#view=loans';
       } else if (isAssemblyOpen) {
         newHash = '#view=assembly';
+      } else if (isAuditReviewOpen) {
+        newHash = '#view=audit';
       } else if (isCalendarOpen) {
         newHash = '#view=calendar';
       } else if (isGlobalBalancesOpen) {
@@ -541,6 +553,7 @@ function MainLayout() {
     isDocumentsOpen,
     isLoansOpen,
     isAssemblyOpen,
+    isAuditReviewOpen,
     isCalendarOpen,
     calendarBuildingId,
     isGlobalBalancesOpen,
@@ -566,6 +579,7 @@ function MainLayout() {
       setIsDocumentsOpen(parsed.isDocumentsOpen);
       setIsLoansOpen(parsed.isLoansOpen);
       setIsAssemblyOpen(parsed.isAssemblyOpen);
+      setIsAuditReviewOpen(parsed.isAuditReviewOpen);
       setIsCalendarOpen(parsed.isCalendarOpen);
       setIsGlobalBalancesOpen(parsed.isGlobalBalancesOpen);
       setIsProfileOpen(parsed.isProfileOpen);
@@ -610,6 +624,9 @@ function MainLayout() {
       case 'switch-to-szvb':
         switchToSzvbMode();
         break;
+      case 'switch-to-auditor':
+        switchToAuditorMode();
+        break;
       case 'switch-to-kk':
         switchToKkMode();
         break;
@@ -621,7 +638,10 @@ function MainLayout() {
         if (canAuditBuilding) setIsFlatsDataOpen(true);
         break;
       case 'assembly':
-        if (isAdmin) setIsAssemblyOpen(true);
+        if (canAuditBuilding) setIsAssemblyOpen(true);
+        break;
+      case 'audit-review':
+        setIsAuditReviewOpen(true);
         break;
       case 'loans':
         setFinanceInitialTab('loans');
@@ -799,7 +819,7 @@ function MainLayout() {
               }}
             />
           )
-        ) : currentUser.role === 'szvb' ? (
+        ) : (currentUser.role === 'szvb' || currentUser.role === 'auditor') ? (
           <AdminView
             onBackToPortfolio={undefined}
             isReadOnly={true}
@@ -815,7 +835,7 @@ function MainLayout() {
             onOpenQuickPayConfirm={undefined}
             onOpenFullscreenTx={(type) => setFullscreenTxData({ type, fromFlatDetail: false })}
             onNavigateToCase={handleNavigateToCase}
-            onOpenAssembly={undefined}
+            onOpenAssembly={() => setIsAssemblyOpen(true)}
             onOpenLoans={() => {
               setFinanceInitialTab('loans');
               setIsFinancialSituationOpen(true);
@@ -898,8 +918,15 @@ function MainLayout() {
       />
 
       <AssemblyModal
-        isOpen={Boolean(isAdmin && isAssemblyOpen)}
+        isOpen={Boolean(canAuditBuilding && isAssemblyOpen)}
         onClose={() => setIsAssemblyOpen(false)}
+        onOpenDrawer={() => setIsDrawerOpen(true)}
+        onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}
+      />
+
+      <AuditReviewModal
+        isOpen={Boolean(currentUser && isAuditReviewOpen)}
+        onClose={() => setIsAuditReviewOpen(false)}
         onOpenDrawer={() => setIsDrawerOpen(true)}
         onOpenProfileSelector={() => setIsBuildingSelectorOpen(true)}
       />

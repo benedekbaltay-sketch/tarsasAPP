@@ -29,7 +29,11 @@ service firebase.storage {
 
     function isBuildingAdminOrSzvb(buildingId) {
       return isBuildingAdmin(buildingId)
-        || (hasActiveMembership(buildingId) && memberDoc(buildingId).data.role == 'szvb');
+        || (hasActiveMembership(buildingId) && (memberDoc(buildingId).data.role == 'szvb' || memberDoc(buildingId).data.role == 'auditor'));
+    }
+
+    function isBuildingAuditor(buildingId) {
+      return hasActiveMembership(buildingId) && memberDoc(buildingId).data.role == 'auditor';
     }
 
     // Strict MIME type allowlist (NEVER allow text/html, image/svg+xml, or executable scripts!)
@@ -79,6 +83,15 @@ service firebase.storage {
         && request.resource.size <= 5 * 1024 * 1024
         && isAllowedDocumentType();
       allow delete: if isBuildingAdmin(buildingId);
+    }
+
+    // Official Written Audit Opinions uploaded by appointed Economic Auditor (max 10 MB)
+    match /buildings/{buildingId}/auditOpinions/{opinionId}/{fileName} {
+      allow read: if isBuildingAdminOrSzvb(buildingId) || hasActiveMembership(buildingId);
+      allow write: if isBuildingAuditor(buildingId)
+        && request.resource.size <= 10 * 1024 * 1024
+        && isAllowedDocumentType();
+      allow delete: if isBuildingAdmin(buildingId) || isBuildingAuditor(buildingId);
     }
 
     // Default deny everything else

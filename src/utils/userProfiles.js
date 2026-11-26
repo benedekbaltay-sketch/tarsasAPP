@@ -1,5 +1,6 @@
 import { normalizeEmail, getNotificationsForUser } from './teamPermissions.js';
 import { getUserSzvbRolesAcrossBuildings } from './szvb.js';
+import { getUserEconomicAuditorRolesAcrossBuildings } from './economicAuditor.js';
 
 const LAST_PROFILE_KEY_PREFIX = 'tarsashaz_last_profile_';
 
@@ -16,6 +17,7 @@ export function resolveUserProfiles(user, { buildings = [], organizations = [], 
   const empty = {
     kkProfile: null,
     szvbProfiles: [],
+    auditorProfiles: [],
     ownerProfiles: [],
     allProfiles: [],
     isSuspendedStaff: false,
@@ -172,15 +174,49 @@ export function resolveUserProfiles(user, { buildings = [], organizations = [], 
     };
   });
 
+  // 4. Economic Auditor profiles (Tht. 51/A. § — internal owners OR external independent auditors)
+  const auditorRaw = getUserEconomicAuditorRolesAcrossBuildings(user, activeBuildings);
+  const auditorProfiles = auditorRaw.map((r) => {
+    const linkedOwnerFlat =
+      ownerProfiles.find((o) => o.buildingId === r.buildingId && r.flatNum && String(o.flatNum) === String(r.flatNum)) ||
+      ownerProfiles.find((o) => o.buildingId === r.buildingId) ||
+      null;
+    const resolvedFlatNum = r.flatNum || linkedOwnerFlat?.flatNum || '';
+    const isInternal = Boolean(linkedOwnerFlat);
+    return {
+      id: `auditor:${r.buildingId}`,
+      type: 'auditor',
+      role: 'auditor',
+      auditorType: isInternal ? 'internal' : 'external',
+      isInternal,
+      buildingId: r.buildingId,
+      buildingName: r.buildingName || '',
+      flatNum: resolvedFlatNum,
+      linkedOwnerProfileId: linkedOwnerFlat?.id || null,
+      companyName: r.companyName || '',
+      registrationNumber: r.registrationNumber || '',
+      validFrom: r.validFrom || '',
+      validTo: r.validTo || '',
+      name: r.name || user.name || userEmail,
+      email: userEmail,
+      labelHu: 'Gazdasági ellenőr',
+      labelEn: 'Financial Auditor',
+      sublabelHu: r.buildingName || '',
+      sublabelEn: r.buildingName || '',
+    };
+  });
+
   const allProfiles = [
     ...(kkProfile ? [kkProfile] : []),
     ...ownerProfiles,
     ...szvbProfiles,
+    ...auditorProfiles,
   ];
 
   return {
     kkProfile,
     szvbProfiles,
+    auditorProfiles,
     ownerProfiles,
     allProfiles,
     isSuspendedStaff,
@@ -197,6 +233,9 @@ export function getActiveProfileKey(currentUser) {
   }
   if (currentUser.role === 'szvb') {
     return `szvb:${currentUser.buildingId || ''}`;
+  }
+  if (currentUser.role === 'auditor') {
+    return `auditor:${currentUser.buildingId || ''}`;
   }
   return `owner:${currentUser.buildingId || ''}:${currentUser.flatNum || ''}`;
 }
@@ -224,6 +263,15 @@ export function getActiveProfileDescriptor(currentUser, allProfiles = []) {
       id: `szvb:${currentUser.buildingId || ''}`,
       type: 'szvb',
       role: 'szvb',
+      buildingId: currentUser.buildingId || null,
+      flatNum: currentUser.flatNum || '',
+    };
+  }
+  if (currentUser.role === 'auditor') {
+    return {
+      id: `auditor:${currentUser.buildingId || ''}`,
+      type: 'auditor',
+      role: 'auditor',
       buildingId: currentUser.buildingId || null,
       flatNum: currentUser.flatNum || '',
     };
@@ -273,6 +321,16 @@ export function inferNotificationTargetProfile(notif) {
       type: 'owner',
       buildingId: notif.buildingId || null,
       flatNum: notif.meta?.flatNum || notif.flatNum || null,
+    };
+  }
+
+  // Economic Auditor grant/revoke notifications belong to Owner (if internal) or Auditor (if external)
+  if (nType === 'auditor_updated') {
+    const flatNum = notif.meta?.flatNum || notif.flatNum || null;
+    return {
+      type: flatNum ? 'owner' : 'auditor',
+      buildingId: notif.buildingId || null,
+      flatNum,
     };
   }
 
@@ -441,6 +499,7 @@ export function resolveInitialLoginProfile(allProfiles = [], savedProfile = null
     allProfiles.find((p) => p.type === 'kk') ||
     allProfiles.find((p) => p.type === 'owner') ||
     allProfiles.find((p) => p.type === 'szvb') ||
+    allProfiles.find((p) => p.type === 'auditor') ||
     allProfiles[0]
   );
 }

@@ -1,7 +1,9 @@
 import { evaluateSzvbCompliance } from './szvb.js';
+import { evaluateEconomicAuditorCompliance } from './economicAuditor.js';
 import { canUserManageBuilding } from './teamPermissions.js';
 
 export const ALERT_ID_SZVB_STATUTORY_25 = 'szvb_statutory_25';
+export const ALERT_ID_AUDITOR_STATUTORY_50_10M = 'auditor_statutory_50_10m';
 
 /**
  * Check whether a specific alert ID has been dismissed on a building.
@@ -79,6 +81,26 @@ export function getBuildingAlerts(
       messageHu: `A társasházban jelenleg ${szvbCompliance.albetetCount} külön helyrajzi számú albetét szerepel (25 felett). A társasházi törvény (Tht. 51. §) alapján legalább 3 SZVB-tagot (1 elnök + 2 tag) szükséges választani. Jelenleg ${szvbCompliance.totalSzvbCount} fő van kijelölve.`,
       messageEn: `This condominium has ${szvbCompliance.albetetCount} distinct parcelled units (over 25). Under the Hungarian Condominium Act (Tht. § 51), at least 3 SZVB members (1 Chairperson + 2 Members) should be elected. Currently ${szvbCompliance.totalSzvbCount} assigned.`,
       meta: szvbCompliance,
+    });
+  }
+
+  // Alert 2: Statutory Economic Auditor requirement over 50 units OR >10M HUF annual turnover (Tht. 51/A. §)
+  const auditorCompliance = evaluateEconomicAuditorCompliance(building);
+  if (
+    auditorCompliance.showWarning &&
+    (includeDismissed || !isBuildingAlertDismissed(building, ALERT_ID_AUDITOR_STATUTORY_50_10M))
+  ) {
+    alerts.push({
+      id: ALERT_ID_AUDITOR_STATUTORY_50_10M,
+      targetMenu: 'building-settings',
+      targetTab: 'general',
+      severity: 'warning',
+      dismissible: true,
+      titleHu: 'Gazdasági ellenőrzést segítő személy kötelező (Tht. 51/A. §)',
+      titleEn: 'Financial Auditor Required (Tht. § 51/A)',
+      messageHu: `A Társasházi törvény (Tht. 51/A. §) alapján kötelező gazdasági ellenőrzést segítő személyt (regisztrált mérlegképes könyvelőt vagy okleveles könyvvizsgálót) igénybe venni, mert ${auditorCompliance.triggerReasonHu}. Kérjük, jelölj ki belsős vagy külsős szakembert alább — vagy ha az SZVB-ben már van képesített könyvelő/könyvvizsgáló tag, pipáld be a mentesítő opciót!`,
+      messageEn: `Under the Hungarian Condominium Act (Tht. § 51/A), appointing a Financial Auditor (registered accountant or certified auditor) is mandatory because ${auditorCompliance.triggerReasonEn}. Please appoint an internal or external auditor below — or check the qualified SZVB member exemption if applicable.`,
+      meta: auditorCompliance,
     });
   }
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Eye, Shield } from 'lucide-react';
+import { Eye, Shield, ClipboardCheck } from 'lucide-react';
 import { isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
 
 export function NavLogoButton({ onClick, title, hideViewerBadge = false, isReadOnly = false }) {
@@ -10,6 +10,7 @@ export function NavLogoButton({ onClick, title, hideViewerBadge = false, isReadO
   const currentBuilding = (state?.buildings || []).find(b => b.id === state?.currentBuildingId) || state?.buildings?.[0];
   const isCurrentlyAdminMode = state?.currentUser?.role === 'admin' || state?.currentUser?.role === 'superadmin';
   const isSzvbMode = state?.currentUser?.role === 'szvb';
+  const isAuditorMode = state?.currentUser?.role === 'auditor';
   const isInBuilding = Boolean(currentBuilding && (!isCurrentlyAdminMode || (!state?.isPortfolioView && state?.currentBuildingId)));
   
   const isViewer = isCurrentlyAdminMode && Boolean(
@@ -57,6 +58,12 @@ export function NavLogoButton({ onClick, title, hideViewerBadge = false, isReadO
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
               <Shield className="w-2.5 h-2.5 text-indigo-600" />
               <span>{isHu ? 'SZVB • Csak olvasás' : 'SZVB • Read-Only'}</span>
+            </span>
+          )}
+          {isAuditorMode && isInBuilding && !hideViewerBadge && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200 flex-shrink-0">
+              <ClipboardCheck className="w-2.5 h-2.5 text-teal-600" />
+              <span>{isHu ? 'Gazdasági ellenőr • Csak olvasás' : 'Financial Auditor • Read-Only'}</span>
             </span>
           )}
         </div>

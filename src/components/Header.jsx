@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Menu, Building2, Calendar, ChevronDown, Check, LayoutGrid, Eye, Shield } from 'lucide-react';
+import { Menu, Building2, Calendar, ChevronDown, Check, LayoutGrid, Eye, Shield, ClipboardCheck } from 'lucide-react';
 import { ProfileSwitcherButton } from './ProfileSwitcherButton';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { CloudSyncBadge } from './CloudSyncBadge';
@@ -98,6 +98,7 @@ export function Header({
 
   // Secondary subtitle under title: always display the profile user's name
   const isSzvbMode = currentUser.role === 'szvb';
+  const isAuditorMode = currentUser.role === 'auditor';
   const szvbRole = isSzvbMode ? (currentUser.szvbRole || getUserBuildingSzvbRole(currentUser, currentBuilding)) : null;
   const szvbRoleLabel = szvbRole === 'chairperson'
     ? (isHu ? 'SZVB Elnök' : 'SZVB Chairperson')
@@ -107,7 +108,9 @@ export function Header({
     ? userDisplayName
     : (isSzvbMode
         ? `${szvbRoleLabel} • ${userDisplayName}`
-        : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || '')));
+        : (isAuditorMode
+            ? `${isHu ? 'Gazdasági ellenőr' : 'Financial Auditor'} • ${userDisplayName}`
+            : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || ''))));
 
   return (
     <div ref={headerContainerRef} className="sticky top-0 z-30 w-full shadow-sm">
@@ -163,6 +166,12 @@ export function Header({
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
                     <Shield className="w-2.5 h-2.5 text-indigo-600" />
                     <span>{isHu ? 'SZVB • Csak olvasás' : 'SZVB • Read-Only'}</span>
+                  </span>
+                )}
+                {isAuditorMode && isInBuilding && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200 flex-shrink-0">
+                    <ClipboardCheck className="w-2.5 h-2.5 text-teal-600" />
+                    <span>{isHu ? 'Gazdasági ellenőr • Csak olvasás' : 'Financial Auditor • Read-Only'}</span>
                   </span>
                 )}
               </div>

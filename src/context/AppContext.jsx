@@ -52,6 +52,10 @@ import {
   isUserBuildingSzvb as checkUserBuildingSzvb,
 } from '../utils/szvb';
 import {
+  getUserEconomicAuditorRolesAcrossBuildings,
+  isUserBuildingEconomicAuditor as checkUserBuildingEconomicAuditor,
+} from '../utils/economicAuditor';
+import {
   resolveUserProfiles,
   saveLastActiveProfile,
 } from '../utils/userProfiles';
@@ -1485,6 +1489,98 @@ export function AppProvider({ children }) {
     showToast(isEn ? `Switched to ${roleLabel}` : `Átváltva: ${roleLabel}`);
   };
 
+  // Switch to Economic Auditor (Tht. 51/A. §) Read-Only & Advisory Mode (strictly verified per building)
+  const switchToAuditorMode = (buildingId = null) => {
+    const isEn = state.currentLang === 'en';
+    if (!state.currentUser) return;
+
+    const { kkProfile } = resolveUserProfiles(state.currentUser, {
+      buildings: state.buildings,
+      organizations: state.organizations,
+      users: state.users,
+    });
+
+    const auditorRoles = getUserEconomicAuditorRolesAcrossBuildings(state.currentUser, state.buildings);
+    const matchedRole = buildingId
+      ? auditorRoles.find((r) => r.buildingId === buildingId)
+      : auditorRoles[0];
+
+    const targetBuildingId = matchedRole?.buildingId || buildingId;
+    const curB = (state.buildings || []).find((b) => b.id === targetBuildingId);
+    const isVerified = curB ? checkUserBuildingEconomicAuditor(state.currentUser, curB) : false;
+
+    if (!curB || !isVerified) {
+      showToast(
+        isEn
+          ? "You do not have Financial Auditor access for this condominium."
+          : "Nincs gazdasági ellenőri jogosultságod ehhez a társasházhoz.",
+        "error"
+      );
+      return;
+    }
+
+    const aud = curB.economicAuditor || {};
+    const updatedUser = stripSensitiveUserFields({
+      id: `auditor-${curB.id}`,
+      uid: state.currentUser?.uid,
+      name: aud.name || state.currentUser?.name,
+      email: state.currentUser?.email || aud.email,
+      role: 'auditor',
+      auditorType: aud.type === 'internal' ? 'internal' : 'external',
+      flatNum: aud.type === 'internal' ? (aud.flatNum || state.currentUser?.flatNum || '0') : '0',
+      buildingId: curB.id,
+      isAdminUser: Boolean(kkProfile),
+      memberships: state.currentUser?.memberships,
+    });
+
+    setCopiedTx(null);
+    saveLastActiveProfile(updatedUser.email, {
+      id: `auditor:${curB.id}`,
+      type: 'auditor',
+      buildingId: curB.id,
+      flatNum: updatedUser.flatNum,
+    });
+
+    if (!IS_FIRESTORE_MODE) {
+      try {
+        if (!isCurrentTabSessionOnly() && localStorage.getItem("tarsashaz_remember_me") === "true") {
+          localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+        }
+        sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(updatedUser));
+        localStorage.setItem("tarsashaz_role_mode", "auditor");
+        localStorage.setItem("tarsashaz_is_portfolio", "false");
+      } catch (e) {}
+    }
+
+    persistState((s) => ({
+      ...s,
+      currentUser: updatedUser,
+      currentBuildingId: curB.id,
+      activeRoleMode: 'auditor',
+      isPortfolioView: false,
+      flats: curB.flats || s.flats || [],
+      transactions: curB.transactions || s.transactions || [],
+      expenses: curB.expenses || s.expenses || [],
+      manualDebits: Array.isArray(curB.manualDebits) ? curB.manualDebits : (s.manualDebits || []),
+      documents: curB.documents || [],
+      docFolders: curB.docFolders || [],
+      loans: curB.loans || [],
+      infoSections: curB.infoSections || [],
+      buildingInitialReserveCommon: curB.buildingInitialReserveCommon || 0,
+      buildingInitialReserveRenovation: curB.buildingInitialReserveRenovation || 0,
+    }), 'localOnly');
+
+    if (IS_FIRESTORE_MODE && curB.id) {
+      reloadCurrentBuilding(curB.id);
+    }
+
+    showToast(
+      isEn
+        ? "Switched to Financial Auditor (Read-Only)"
+        : "Átváltva: Gazdasági ellenőr (Csak olvasás)"
+    );
+  };
+
   // Open Portfolio view ("Társasházaim")
   const openPortfolio = () => {
     if (!IS_FIRESTORE_MODE) {
@@ -1609,6 +1705,7 @@ export function AppProvider({ children }) {
     switchToKkMode,
     switchToTenantMode,
     switchToSzvbMode,
+    switchToAuditorMode,
     openPortfolio,
     openBuildingAdmin,
     ...authActions,
@@ -1631,6 +1728,11 @@ export function AppProvider({ children }) {
     isUserBuildingSzvb: (b = state.currentBuildingId) => {
       const bObj = typeof b === 'string' ? (state.buildings || []).find((x) => x.id === b) : b;
       return checkUserBuildingSzvb(state.currentUser, bObj);
+    },
+    getUserAuditorRoles: (u = state.currentUser, b = state.buildings) => getUserEconomicAuditorRolesAcrossBuildings(u, b),
+    isUserBuildingAuditor: (b = state.currentBuildingId) => {
+      const bObj = typeof b === 'string' ? (state.buildings || []).find((x) => x.id === b) : b;
+      return checkUserBuildingEconomicAuditor(state.currentUser, bObj);
     }
   };
 

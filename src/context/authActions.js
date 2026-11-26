@@ -26,6 +26,7 @@ import {
 } from '../services/firestoreAdapter';
 import { normalizeEmail } from '../utils/teamPermissions';
 import { isUserBuildingSzvb } from '../utils/szvb';
+import { isUserBuildingEconomicAuditor } from '../utils/economicAuditor';
 import {
   resolveUserProfiles,
   loadLastActiveProfile,
@@ -221,6 +222,18 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
           buildingId: chosenProfile.buildingId,
           isAdminUser: Boolean(kkProfile),
         };
+      } else if (chosenProfile.type === 'auditor') {
+        foundUser = {
+          id: `auditor-${chosenProfile.buildingId}`,
+          uid: firebaseUser.uid,
+          name: chosenProfile.name || firebaseUser.displayName || verifiedEmail,
+          email: verifiedEmail,
+          role: 'auditor',
+          auditorType: chosenProfile.auditorType || 'external',
+          flatNum: chosenProfile.flatNum || '0',
+          buildingId: chosenProfile.buildingId,
+          isAdminUser: Boolean(kkProfile),
+        };
       } else {
         // Owner / Apartment profile
         foundUser = {
@@ -303,7 +316,7 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         buildings: safeBuildings,
         currentUser: userCopy,
         currentBuildingId: isKkAdmin ? null : (curB?.id || targetBuildingId),
-        activeRoleMode: isUserAdmin ? 'kk' : (userCopy.role === 'szvb' ? 'szvb' : 'tenant'),
+        activeRoleMode: isUserAdmin ? 'kk' : (userCopy.role === 'szvb' ? 'szvb' : (userCopy.role === 'auditor' ? 'auditor' : 'tenant')),
         isPortfolioView: isKkAdmin ? true : false,
         flats: (curB && curB.flats) || baseState.flats || [],
         transactions: (curB && curB.transactions) || baseState.transactions || [],
@@ -342,6 +355,13 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         return;
       }
     }
+    if (user.role === 'auditor' && !isCurrentPrivileged) {
+      const targetBuilding = (state.buildings || []).find((b) => b.id === targetBuildingId);
+      if (!isUserBuildingEconomicAuditor(state.currentUser, targetBuilding)) {
+        showToast(state.currentLang === 'en' ? "Unauthorized Financial Auditor role switch." : "Jogosulatlan gazdasági ellenőri szerepkörváltás.", "error");
+        return;
+      }
+    }
     const userCopy = stripSensitiveUserFields(JSON.parse(JSON.stringify(user)));
 
     if (!IS_FIRESTORE_MODE) {
@@ -361,7 +381,7 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         ...s,
         currentUser: userCopy,
         currentBuildingId: isKkAdmin ? null : (curB?.id || targetBuildingId),
-        activeRoleMode: isUserAdmin ? 'kk' : (userCopy.role === 'szvb' ? 'szvb' : 'tenant'),
+        activeRoleMode: isUserAdmin ? 'kk' : (userCopy.role === 'szvb' ? 'szvb' : (userCopy.role === 'auditor' ? 'auditor' : 'tenant')),
         isPortfolioView: isKkAdmin ? true : false,
         flats: (curB && curB.flats) || s.flats || [],
         transactions: (curB && curB.transactions) || s.transactions || [],

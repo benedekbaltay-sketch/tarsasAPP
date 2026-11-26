@@ -94,8 +94,9 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
   const buildingTotalShare = Number(targetBuilding?.totalOwnershipShare) || 10000;
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
   const isSzvb = state.currentUser?.role === 'szvb';
+  const isAuditor = state.currentUser?.role === 'auditor';
   const isManaging = isAdmin && canUserManageBuilding(state.currentUser, targetBuildingId, state.organizations, state.buildings);
-  const isReadOnly = Boolean(isReadOnlyProp || !isManaging || isSzvb);
+  const isReadOnly = Boolean(isReadOnlyProp || !isManaging || isSzvb || isAuditor);
   const isEditMode = !isReadOnly;
   const [activeTab, setActiveTab] = useState('basic'); // 'basic' | 'owners' | 'meters' | 'annexes'
   const [occupantFilter, setOccupantFilter] = useState('all'); // 'all' | 'owners' | 'tenants'
@@ -352,7 +353,7 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
     }).length;
   }, [meters]);
 
-  if (!isOpen || !flat || !(isAdmin || isSzvb)) return null;
+  if (!isOpen || !flat || !(isAdmin || isSzvb || isAuditor)) return null;
 
   // Unit Type helper config
   const unitTypeConfig = {

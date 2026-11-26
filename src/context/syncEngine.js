@@ -605,6 +605,16 @@ export function stripLargeBinaries(buildings, options = {}) {
         return d;
       });
     }
+    if (Array.isArray(cleanB.auditOpinions)) {
+      cleanB.auditOpinions = cleanB.auditOpinions.map(op => {
+        if (!op) return op;
+        if (op.fileData && String(op.fileData).length > 180000) {
+          const { fileData, ...rest } = op;
+          return { ...rest, hasCloudFile: true };
+        }
+        return op;
+      });
+    }
     if (Array.isArray(cleanB.infoSections)) {
       cleanB.infoSections = cleanB.infoSections.map(sec => {
         if (!sec) return sec;

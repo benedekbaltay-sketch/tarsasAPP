@@ -36,7 +36,7 @@ export function MonthlyDetailModal({
     !isAdmin ||
     (canUserManageBuilding && !canUserManageBuilding(currentBuildingId))
   );
-  const canViewAllUnits = isAdmin || currentUser?.role === 'szvb';
+  const canViewAllUnits = isAdmin || currentUser?.role === 'szvb' || currentUser?.role === 'auditor';
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const allAccounts = useMemo(() => getBuildingAccounts(currentBuilding), [currentBuilding]);

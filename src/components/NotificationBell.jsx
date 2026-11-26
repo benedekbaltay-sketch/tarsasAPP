@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { Mail, ShieldAlert, Shield, Info, CheckCheck, X, Clock, Maximize2 } from 'lucide-react';
+import { Mail, ShieldAlert, Shield, Info, CheckCheck, X, Clock, Maximize2, ClipboardCheck } from 'lucide-react';
 import { isUserBuildingSzvb } from '../utils/szvb';
+import { isUserBuildingEconomicAuditor } from '../utils/economicAuditor';
 import { resolveUserProfiles, getNotificationsForActiveProfile } from '../utils/userProfiles';
 
 function formatNotifTime(iso, isEn) {
@@ -35,6 +36,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
     markAllNotificationsRead,
     dismissNotification,
     switchToSzvbMode,
+    switchToAuditorMode,
   } = useApp();
   const { currentUser, currentLang, notifications, buildings, organizations, users } = state;
   const isEn = currentLang === 'en';
@@ -353,6 +355,8 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                     <ShieldAlert className="w-4 h-4" />
                   ) : selectedNotification.type === 'szvb_updated' ? (
                     <Shield className="w-4 h-4" />
+                  ) : (selectedNotification.type === 'auditor_updated' || selectedNotification.type === 'audit_opinion' || selectedNotification.type === 'audit_observation') ? (
+                    <ClipboardCheck className="w-4 h-4" />
                   ) : (
                     <Info className="w-4 h-4" />
                   )}
@@ -494,6 +498,32 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                       >
                         <Shield className="w-3.5 h-3.5" />
                         <span>{isEn ? "Open SZVB Audit View" : "Belépés SZVB nézetbe"}</span>
+                      </button>
+                    );
+                  }
+                }
+                if (
+                  selectedNotification.type === 'auditor_updated' &&
+                  selectedNotification.meta?.action !== 'revoked' &&
+                  selectedNotification.buildingId &&
+                  currentUser?.role !== 'auditor' &&
+                  typeof switchToAuditorMode === 'function'
+                ) {
+                  const targetBld = (buildings || []).find((b) => b.id === selectedNotification.buildingId);
+                  if (targetBld && isUserBuildingEconomicAuditor(currentUser, targetBld)) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const bId = selectedNotification.buildingId;
+                          setSelectedNotification(null);
+                          setIsOpen(false);
+                          switchToAuditorMode(bId);
+                        }}
+                        className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors"
+                      >
+                        <ClipboardCheck className="w-3.5 h-3.5" />
+                        <span>{isEn ? "Open Financial Auditor View" : "Belépés Ellenőri nézetbe"}</span>
                       </button>
                     );
                   }

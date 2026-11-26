@@ -40,13 +40,15 @@ export function FinancialSituationModal({
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const isSzvb = currentUser?.role === 'szvb';
-  const canViewUnitBreakdown = isAdmin || isSzvb;
-  const canViewLoans = isAdmin || isSzvb;
-  const canViewBankAccounts = isAdmin || isSzvb;
+  const isAuditor = currentUser?.role === 'auditor';
+  const canViewUnitBreakdown = isAdmin || isSzvb || isAuditor;
+  const canViewLoans = isAdmin || isSzvb || isAuditor;
+  const canViewBankAccounts = isAdmin || isSzvb || isAuditor;
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     isSzvb ||
+    isAuditor ||
     (canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuildingId))
   );
   const [selectedMonthData, setSelectedMonthData] = useState(null);

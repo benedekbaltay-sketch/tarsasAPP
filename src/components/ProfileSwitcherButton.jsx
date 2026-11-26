@@ -26,6 +26,7 @@ export function ProfileSwitcherButton({ onOpenProfileSelector, className = "", l
   const isHu = currentLang === 'hu' || !currentLang;
   const isAdmin = currentUser.role === 'admin' || currentUser.role === 'superadmin';
   const isSzvbMode = currentUser.role === 'szvb';
+  const isAuditorMode = currentUser.role === 'auditor';
 
   const buttonLabel =
     label || (t.profile_selector_btn || (isHu ? "Profilváltás" : "Switch Profile"));
@@ -41,7 +42,7 @@ export function ProfileSwitcherButton({ onOpenProfileSelector, className = "", l
       type="button"
       onClick={onOpenProfileSelector}
       className={`relative flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl border font-semibold text-xs shadow-2xs transition-all cursor-pointer flex-shrink-0 active:scale-95 ${
-        isAdmin || isSzvbMode
+        isAdmin || isSzvbMode || isAuditorMode
           ? 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-gray-800'
           : 'border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#1E3A8A] hover:border-blue-300'
       } ${className}`}

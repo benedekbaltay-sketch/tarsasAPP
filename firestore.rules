@@ -51,8 +51,12 @@ service cloud.firestore {
       return hasActiveMembership(buildingId) && memberRole(buildingId) == 'szvb';
     }
 
+    function isBuildingAuditor(buildingId) {
+      return hasActiveMembership(buildingId) && memberRole(buildingId) == 'auditor';
+    }
+
     function isBuildingAdminOrSzvb(buildingId) {
-      return isBuildingAdmin(buildingId) || isBuildingSzvb(buildingId);
+      return isBuildingAdmin(buildingId) || isBuildingSzvb(buildingId) || isBuildingAuditor(buildingId);
     }
 
     function isBuildingMember(buildingId) {

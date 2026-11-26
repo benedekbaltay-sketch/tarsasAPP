@@ -522,14 +522,14 @@ export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null,
       const messageHu = [
         `A(z) ${bName} társasházban ${rHu} jogosultságot kaptál (szigorúan csak olvasási ellenőrzési jog).`,
         `🔄 Hogyan tudsz átlépni az SZVB nézetbe és vissza?\n1. A felső fejléc jobb oldalán kattints a „Lakás / SZVB” (Profilváltás) gombra, vagy nyisd meg a bal felső ☰ menüt és válaszd az „SZVB Ellenőrző nézet” gombot.\n2. Bármikor ugyanígy visszaválthatsz a saját lakásod tulajdonosi nézetére („Váltás saját lakásomra”).`,
-        `👁️ Mikhez férsz hozzá SZVB-tagként?\n• Ügyintézés ellenőrzése (Dokumentumok): iratok, szerződések, bankkivonatok megtekintése és letöltése.\n• Havi pénzforgalom ellenőrzése (Főmenü & Pénzügyek): a ház összes bevétele, kiadása, bizonylatai, banki egyenlegei (Pénzügyek → Bank) és a lakók hátraléklistája.\n• Lakások adatai és hitelek megtekintése.`,
+        `👁️ Mikhez férsz hozzá SZVB-tagként?\n• Ügyintézés ellenőrzése (Dokumentumok): iratok, szerződések, bankkivonatok megtekintése és letöltése.\n• Havi pénzforgalom ellenőrzése (Főmenü & Pénzügyek): a ház összes bevétele, kiadása, bizonylatai, banki egyenlegei (Pénzügyek → Bank) és a lakók hátraléklistája.\n• Lakások adatai, hitelek, közgyűlési egyenlegkimutatások és ellenőri vélemények megtekintése.`,
         `🔒 Fontos korlátozás (Csak olvasás):\nSZVB-tagként egyetlen adatot sem tudsz módosítani vagy törölni, és nem küldhetsz ki e-maileket vagy fizetési felszólításokat.`,
       ].join('\n\n');
 
       const messageEn = [
         `You have been granted ${rEn} access (strictly read-only audit oversight) for ${bName}.`,
         `🔄 How to switch between your apartment and SZVB view:\n1. Click the "Flat / SZVB" (Switch Profile) button in the top-right header, or open the top-left ☰ menu and select "SZVB Audit View".\n2. You can switch back to your personal apartment view anytime the same way ("Switch to My Apartment").`,
-        `👁️ What you can inspect as an SZVB member:\n• Administration oversight (Documents): view and download documents, contracts, and bank statements.\n• Monthly financial oversight (Dashboard & Finances): building income, expenses, receipts, bank balances (Finances → Bank), and the full resident arrears list.\n• Flats master data and loans overview.`,
+        `👁️ What you can inspect as an SZVB member:\n• Administration oversight (Documents): view and download documents, contracts, and bank statements.\n• Monthly financial oversight (Dashboard & Finances): building income, expenses, receipts, bank balances (Finances → Bank), and the full resident arrears list.\n• Flats master data, loans, general assembly balance statements, and audit opinions.`,
         `🔒 Read-Only Restriction:\nAs an SZVB member, you cannot edit or delete any data, and you cannot send emails or payment reminders.`,
       ].join('\n\n');
 

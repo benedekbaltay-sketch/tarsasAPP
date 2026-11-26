@@ -43,12 +43,14 @@ export function FlatDetailModal({
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const isSzvb = currentUser?.role === 'szvb';
+  const isAuditor = currentUser?.role === 'auditor';
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     !isAdmin ||
     isSzvb ||
+    isAuditor ||
     (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding))
   );
   const allAccounts = getBuildingAccounts(currentBuilding);
@@ -185,7 +187,7 @@ export function FlatDetailModal({
     return () => window.removeEventListener('click', handleGlobalClick);
   }, [isOpen]);
 
-  if (!isOpen || !flatNum || !(isAdmin || isSzvb)) return null;
+  if (!isOpen || !flatNum || !(isAdmin || isSzvb || isAuditor)) return null;
 
   const flat = (flats || []).find(f => f.flatNum === flatNum) || {
     flatNum: flatNum,

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Users, Plus, Check, Building2, Shield, Home, LayoutGrid } from 'lucide-react';
+import { X, Users, Plus, Check, Building2, Shield, Home, LayoutGrid, ClipboardCheck } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 import { getAccessibleBuildings, canUserCreateBuilding } from '../../utils/teamPermissions';
 import {
@@ -17,13 +17,14 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
     switchToKkMode,
     switchToTenantMode,
     switchToSzvbMode,
+    switchToAuditorMode,
   } = useApp();
   const { buildings, currentBuildingId, users, currentUser, currentLang, isPortfolioView, organizations, notifications } = state;
   const isEn = currentLang === 'en';
 
   const backdropProps = useBackdropClose(onClose);
 
-  const { kkProfile, szvbProfiles, ownerProfiles, allProfiles } = useMemo(
+  const { kkProfile, szvbProfiles, auditorProfiles, ownerProfiles, allProfiles } = useMemo(
     () => resolveUserProfiles(currentUser, { buildings, organizations, users }),
     [currentUser, buildings, organizations, users]
   );
@@ -64,6 +65,11 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
 
   const handleSelectSzvbProfile = (profile) => {
     switchToSzvbMode(profile.buildingId);
+    finishSwitch();
+  };
+
+  const handleSelectAuditorProfile = (profile) => {
+    switchToAuditorMode(profile.buildingId);
     finishSwitch();
   };
 
@@ -155,11 +161,13 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
             </div>
           )}
 
-          {/* 2. Personal Apartments (Owner View) with attached Building SZVB Role directly underneath */}
-          {(ownerProfiles.length > 0 || szvbProfiles.length > 0) && (() => {
-            // Attach each SZVB profile once to its linked apartment in the same building
+          {/* 2. Personal Apartments (Owner View) with attached Building SZVB & Internal Auditor roles underneath */}
+          {(ownerProfiles.length > 0 || szvbProfiles.length > 0 || (auditorProfiles || []).length > 0) && (() => {
+            // Attach each SZVB & internal Auditor profile once to its linked apartment in the same building
             const attachedSzvbByOwnerId = new Map();
             const attachedSzvbIds = new Set();
+            const attachedAuditorByOwnerId = new Map();
+            const attachedAuditorIds = new Set();
 
             szvbProfiles.forEach((szvb) => {
               const targetOwner =
@@ -172,7 +180,19 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
               }
             });
 
+            (auditorProfiles || []).forEach((aud) => {
+              const targetOwner =
+                ownerProfiles.find((o) => o.id === aud.linkedOwnerProfileId) ||
+                ownerProfiles.find((o) => o.buildingId === aud.buildingId && aud.flatNum && String(o.flatNum) === String(aud.flatNum)) ||
+                ownerProfiles.find((o) => o.buildingId === aud.buildingId);
+              if (targetOwner && !attachedAuditorByOwnerId.has(targetOwner.id)) {
+                attachedAuditorByOwnerId.set(targetOwner.id, aud);
+                attachedAuditorIds.add(aud.id);
+              }
+            });
+
             const unattachedSzvbProfiles = szvbProfiles.filter((s) => !attachedSzvbIds.has(s.id));
+            const externalAuditorProfiles = (auditorProfiles || []).filter((a) => !attachedAuditorIds.has(a.id));
 
             return (
               <>
@@ -189,17 +209,21 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
                       const attachedSzvb = attachedSzvbByOwnerId.get(p.id) || null;
                       const isSzvbSelected = attachedSzvb ? activeProfileKey === attachedSzvb.id : false;
                       const szvbUnreadCount = attachedSzvb ? (unreadByProfile[attachedSzvb.id] || 0) : 0;
-                      const isCardActive = isOwnerSelected || isSzvbSelected;
+                      const attachedAuditor = attachedAuditorByOwnerId.get(p.id) || null;
+                      const isAuditorSelected = attachedAuditor ? activeProfileKey === attachedAuditor.id : false;
+                      const auditorUnreadCount = attachedAuditor ? (unreadByProfile[attachedAuditor.id] || 0) : 0;
 
                       return (
                         <div
                           key={p.id}
                           className={`rounded-xl border overflow-hidden transition-all ${
-                            isSzvbSelected
+                            isAuditorSelected
+                              ? 'border-teal-500 shadow-xs'
+                              : isSzvbSelected
                               ? 'border-indigo-500 shadow-xs'
                               : isOwnerSelected
                               ? 'border-[#1E3A8A] shadow-xs'
-                              : attachedSzvb
+                              : attachedSzvb || attachedAuditor
                               ? 'border-gray-200 hover:border-indigo-200'
                               : 'border-gray-200'
                           }`}
@@ -294,11 +318,104 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
                               {isSzvbSelected && <Check className="w-4 h-4 text-indigo-700 stroke-[2.5] flex-shrink-0" />}
                             </button>
                           )}
+
+                          {/* Attached Sub-Row: Internal Financial Auditor belonging to this building & apartment */}
+                          {attachedAuditor && (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectAuditorProfile(attachedAuditor)}
+                              className={`w-full flex items-center justify-between px-3 py-2.5 pl-5 border-t text-left transition-colors cursor-pointer ${
+                                isAuditorSelected
+                                  ? 'bg-teal-50/95 border-teal-200 text-teal-900'
+                                  : 'bg-teal-50/35 hover:bg-teal-50/75 border-teal-100/90 text-gray-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="text-teal-500 font-bold text-xs select-none flex-shrink-0">↳</span>
+                                <div className="relative w-7 h-7 rounded-lg flex items-center justify-center text-white bg-teal-700 flex-shrink-0 shadow-2xs">
+                                  <ClipboardCheck className="w-3.5 h-3.5" />
+                                  {auditorUnreadCount > 0 && !isAuditorSelected && (
+                                    <span
+                                      className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-600 ring-2 ring-white"
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                </div>
+                                <div className="text-xs min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold text-teal-950">
+                                      {isEn ? attachedAuditor.labelEn : attachedAuditor.labelHu}
+                                    </span>
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-100 text-teal-800">
+                                      {isEn ? "Read-Only" : "Csak olvasás"}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-teal-800/75 font-medium truncate">
+                                    {attachedAuditor.buildingName} &bull; {isEn ? "Tht. § 51/A Audit" : "Tht. 51/A. § ellenőrzés"}
+                                  </div>
+                                </div>
+                              </div>
+                              {isAuditorSelected && <Check className="w-4 h-4 text-teal-700 stroke-[2.5] flex-shrink-0" />}
+                            </button>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                 </div>
+                )}
+
+                {/* External Financial Auditor Assignments (Independent professionals overseeing 1..N buildings) */}
+                {externalAuditorProfiles.length > 0 && (
+                  <div>
+                    <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                      <ClipboardCheck className="w-3.5 h-3.5" />
+                      <span>{isEn ? "Financial Audit (External)" : "Gazdasági ellenőrzés (Külsős)"}</span>
+                    </span>
+                    <div className="space-y-2">
+                      {externalAuditorProfiles.map((p) => {
+                        const isSelected = activeProfileKey === p.id;
+                        const unreadCount = unreadByProfile[p.id] || 0;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => handleSelectAuditorProfile(p)}
+                            className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-teal-50/90 border-teal-500 text-teal-900 shadow-xs'
+                                : 'bg-white border-gray-200 hover:bg-teal-50/40 text-gray-800'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="relative w-8 h-8 rounded-lg flex items-center justify-center text-white bg-teal-700 flex-shrink-0">
+                                <ClipboardCheck className="w-4 h-4" />
+                                {unreadCount > 0 && !isSelected && (
+                                  <span
+                                    className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-600 ring-2 ring-white"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                              </div>
+                              <div className="text-xs min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-gray-900 truncate">{p.buildingName}</span>
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-teal-100 text-teal-800">
+                                    {isEn ? "Read-Only" : "Csak olvasás"}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-teal-800/80 font-medium truncate">
+                                  {isEn ? p.labelEn : p.labelHu}
+                                  {p.companyName ? ` • ${p.companyName}` : ''}
+                                </div>
+                              </div>
+                            </div>
+                            {isSelected && <Check className="w-4 h-4 text-teal-700 stroke-[2.5] flex-shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
 
                 {/* Rare fallback: SZVB profile without a linked flat record */}

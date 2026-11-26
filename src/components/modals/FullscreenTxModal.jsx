@@ -49,7 +49,7 @@ export function FullscreenTxModal({
     !isAdmin ||
     (canUserManageBuilding && !canUserManageBuilding(state.currentBuildingId))
   );
-  const canViewAllFlats = isAdmin || state.currentUser?.role === 'szvb';
+  const canViewAllFlats = isAdmin || state.currentUser?.role === 'szvb' || state.currentUser?.role === 'auditor';
   const effectiveFlatNum = canViewAllFlats ? flatNum : state.currentUser?.flatNum;
 
   const [query, setQuery] = useState('');
