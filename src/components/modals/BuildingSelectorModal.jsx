@@ -3,9 +3,10 @@ import { useApp } from '../../context/AppContext';
 import { X, Users, Plus, Check, Building2, Shield, Home, LayoutGrid } from 'lucide-react';
 import { useBackdropClose } from '../../utils/useBackdropClose';
 import { getAccessibleBuildings, canUserCreateBuilding } from '../../utils/teamPermissions';
+import { getUserSzvbRolesAcrossBuildings } from '../../utils/szvb';
 
 export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGoPortfolio, onProfileSwitched }) {
-  const { state, t, switchBuilding, openBuildingAdmin, quickLogin, switchActiveFlat, getUserFlats, showToast } = useApp();
+  const { state, t, switchBuilding, openBuildingAdmin, quickLogin, switchActiveFlat, switchToSzvbMode, getUserFlats, showToast } = useApp();
   const { buildings, currentBuildingId, users, currentUser, currentLang, isPortfolioView, organizations } = state;
   const isEn = currentLang === 'en';
 
@@ -15,6 +16,7 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
 
   const accessibleBuildings = getAccessibleBuildings(currentUser, buildings || [], organizations || []);
   const canCreateBuilding = canUserCreateBuilding(currentUser, organizations, buildings);
+  const szvbRoles = getUserSzvbRolesAcrossBuildings(currentUser, buildings || []);
 
   const userEmail = (currentUser.email || "").toLowerCase().trim();
   const isAdminAuthorized = (
@@ -191,11 +193,65 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
             </div>
           )}
 
+          {/* User's SZVB Audit Roles (Strictly Read-Only, verified per building) */}
+          {!isAdminAuthorized && szvbRoles.length > 0 && (
+            <div>
+              <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                <Shield className="w-3.5 h-3.5" />
+                <span>{t.szvb_switcher_section || (isEn ? "Accounting Committee (SZVB • Read-Only)" : "Számvizsgáló Bizottság (SZVB • Csak olvasás)")}</span>
+              </span>
+              <div className="space-y-2">
+                {szvbRoles.map((r) => {
+                  const isSelected = currentUser.role === 'szvb' && currentUser.buildingId === r.buildingId;
+                  const roleTitle = r.szvbRole === 'chairperson'
+                    ? (t.szvb_role_chairperson || (isEn ? "SZVB Chairperson" : "SZVB Elnök"))
+                    : (t.szvb_role_member || (isEn ? "SZVB Member" : "SZVB Tag"));
+                  return (
+                    <button
+                      key={`szvb-${r.buildingId}`}
+                      type="button"
+                      onClick={() => {
+                        if (typeof switchToSzvbMode === 'function') {
+                          switchToSzvbMode(r.buildingId);
+                        }
+                        if (onProfileSwitched) onProfileSwitched();
+                        onClose();
+                      }}
+                      className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-indigo-50/90 border-indigo-600 text-indigo-900 shadow-xs'
+                          : 'bg-white border-indigo-200/80 hover:bg-indigo-50/50 text-gray-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white bg-indigo-600 flex-shrink-0">
+                          <Shield className="w-4 h-4" />
+                        </div>
+                        <div className="text-xs min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-gray-900 truncate">{r.buildingName}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                              {roleTitle}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-gray-500 font-medium truncate">
+                            {isEn ? "Audit View • Read-Only" : "Ellenőrző nézet • Csak olvasás"}
+                          </div>
+                        </div>
+                      </div>
+                      {isSelected && <Check className="w-4 h-4 text-indigo-700 stroke-[2.5] flex-shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* User's Own Profiles (Only for Resident / Owner) */}
           {!isAdminAuthorized && (
             <div>
               <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
-                {isEn ? "Your Apartments" : "Saját lakásaid"}
+                {isEn ? "Your Apartments (Owner View)" : "Saját lakásaid (Lakó nézet)"}
               </span>
               
               {myProfiles.length === 0 ? (
@@ -205,7 +261,7 @@ export function BuildingSelectorModal({ isOpen, onClose, onOpenAddBuilding, onGo
               ) : (
                 <div className="space-y-2">
                   {myProfiles.map((p) => {
-                    const isSelected = currentUser.role !== 'admin' && currentUser.flatNum === p.flatNum && currentUser.buildingId === p.buildingId;
+                    const isSelected = currentUser.role !== 'admin' && currentUser.role !== 'szvb' && currentUser.flatNum === p.flatNum && currentUser.buildingId === p.buildingId;
 
                     return (
                       <button

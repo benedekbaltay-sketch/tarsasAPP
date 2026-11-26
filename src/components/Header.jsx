@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Menu, Building2, Calendar, ChevronDown, Check, LayoutGrid, Eye } from 'lucide-react';
+import { Menu, Building2, Calendar, ChevronDown, Check, LayoutGrid, Eye, Shield } from 'lucide-react';
 import { ProfileSwitcherButton } from './ProfileSwitcherButton';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { CloudSyncBadge } from './CloudSyncBadge';
 import { FlagIcon } from './FlagIcon';
 import { NotificationBell } from './NotificationBell';
 import { getAccessibleBuildings, isUserBuildingViewer, canUserManageBuilding, resolveUserDisplayName } from '../utils/teamPermissions';
+import { getUserBuildingSzvbRole } from '../utils/szvb';
 
 export function Header({ 
   onOpenDrawer, 
@@ -92,10 +93,16 @@ export function Header({
         : t.app_title);
 
   // Secondary subtitle under title: always display the profile user's name
+  const isSzvbMode = currentUser.role === 'szvb';
+  const szvbRole = isSzvbMode ? (currentUser.szvbRole || getUserBuildingSzvbRole(currentUser, currentBuilding)) : null;
+  const szvbRoleLabel = szvbRole === 'chairperson'
+    ? (isHu ? 'SZVB Elnök' : 'SZVB Chairperson')
+    : (isHu ? 'SZVB Tag' : 'SZVB Member');
+
   const headerSubtitle = isCurrentlyAdminMode
     ? userDisplayName
-    : (currentUser.role === 'szvb'
-        ? (isHu ? 'Számvizsgáló Bizottság (SZVB)' : 'Accounting Committee (SZVB)')
+    : (isSzvbMode
+        ? `${szvbRoleLabel} • ${userDisplayName}`
         : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || '')));
 
   return (
@@ -140,6 +147,12 @@ export function Header({
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex-shrink-0">
                     <Eye className="w-2.5 h-2.5 text-amber-600" />
                     <span>{isHu ? 'Csak megtekintő' : 'View only'}</span>
+                  </span>
+                )}
+                {isSzvbMode && isInBuilding && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
+                    <Shield className="w-2.5 h-2.5 text-indigo-600" />
+                    <span>{isHu ? 'SZVB • Csak olvasás' : 'SZVB • Read-Only'}</span>
                   </span>
                 )}
               </div>

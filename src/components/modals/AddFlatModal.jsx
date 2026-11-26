@@ -13,6 +13,7 @@ export function AddFlatModal({ isOpen, onClose }) {
   const buildingTotalShare = Number(targetBuilding?.totalOwnershipShare) || 10000;
 
   const [flatNum, setFlatNum] = useState('');
+  const [hrsz, setHrsz] = useState('');
   const [owners, setOwners] = useState([{ name: '', share: '', email: '', phone: '' }]);
   const [monthlyFee, setMonthlyFee] = useState('');
   const [renovationFee, setRenovationFee] = useState('');
@@ -134,6 +135,7 @@ export function AddFlatModal({ isOpen, onClose }) {
 
     addFlat({
       flatNum: flatNum.trim(),
+      hrsz: hrsz.trim(),
       owners: cleanOwners,
       ownerName: compositeOwnerName,
       email: primaryEmail,
@@ -180,16 +182,30 @@ export function AddFlatModal({ isOpen, onClose }) {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-5 space-y-3.5 overflow-y-auto">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">{t.flat_num}</label>
-            <input
-              type="text"
-              value={flatNum}
-              onChange={(e) => setFlatNum(e.target.value)}
-              placeholder="pl. III 12"
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs"
-              required
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">{t.flat_num} *</label>
+              <input
+                type="text"
+                value={flatNum}
+                onChange={(e) => setFlatNum(e.target.value)}
+                placeholder="pl. III 12"
+                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                {t.hrsz || (isEn ? "Land Registry No. (HRSZ)" : "Helyrajzi szám (hrsz.)")}
+              </label>
+              <input
+                type="text"
+                value={hrsz}
+                onChange={(e) => setHrsz(e.target.value)}
+                placeholder={isEn ? "e.g. 12345/0/A/1" : "pl. 12345/0/A/1"}
+                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono"
+              />
+            </div>
           </div>
 
           {/* Dynamic Owners Section */}

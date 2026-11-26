@@ -25,7 +25,9 @@ import {
   Clock,
   Eye,
   ChevronDown,
-  Pencil
+  Pencil,
+  Users,
+  Shield
 } from 'lucide-react';
 import { 
   getBuildingReserve, 
@@ -44,9 +46,17 @@ import {
   canUserEditBankAccountNumbers,
   detectBankAccountChanges,
   buildBankChangeNotification,
+  buildNotification,
   findOrganizationForBuilding,
   resolveBuildingResidentContact,
+  normalizeEmail,
 } from '../../utils/teamPermissions';
+import {
+  getBuildingOwnerCandidates,
+  normalizeBuildingSzvb,
+  evaluateSzvbCompliance,
+  syncSzvbToBuildingFlats,
+} from '../../utils/szvb';
 
 export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId = null, mode = 'full', isReadOnly = false }) {
   const { state, t, setGlobalBalances, persistState, showToast, canUserManageBuilding } = useApp();
@@ -67,13 +77,20 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
   // Active tab: 'general' (Building info) vs 'api' (Building-specific Banking API)
   const [activeTab, setActiveTab] = useState('general');
   const [isEditingMasterData, setIsEditingMasterData] = useState(false);
+  const [isEditingSzvb, setIsEditingSzvb] = useState(false);
 
   // 1. Building Master Data
   const [buildingName, setBuildingName] = useState('');
   const [buildingOfficialName, setBuildingOfficialName] = useState('');
   const [buildingAddress, setBuildingAddress] = useState('');
   const [buildingTaxNumber, setBuildingTaxNumber] = useState('');
+  const [buildingHrsz, setBuildingHrsz] = useState('');
   const [totalOwnershipShare, setTotalOwnershipShare] = useState('10000');
+
+  // 1a. SZVB (Accounting Committee) state
+  const [szvbChairpersonKey, setSzvbChairpersonKey] = useState('');
+  const [szvbMemberKeys, setSzvbMemberKeys] = useState([]);
+  const [szvbAddMemberKey, setSzvbAddMemberKey] = useState('');
 
   // 1b. Resident-Facing Contact Switcher ('company' | 'manager', editable by actual building manager)
   const [contactDisplayMode, setContactDisplayMode] = useState('company');
@@ -140,7 +157,13 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
       setBuildingOfficialName(targetBuilding.officialName || '');
       setBuildingAddress(targetBuilding.address || '');
       setBuildingTaxNumber(formatTaxNumber(targetBuilding.taxNumber || ''));
+      setBuildingHrsz(targetBuilding.hrsz || '');
       setTotalOwnershipShare(targetBuilding.totalOwnershipShare !== undefined ? String(targetBuilding.totalOwnershipShare) : '10000');
+
+      const currentSzvb = normalizeBuildingSzvb(targetBuilding);
+      setSzvbChairpersonKey(currentSzvb.chairperson?.key || '');
+      setSzvbMemberKeys((currentSzvb.members || []).map((m) => m.key).filter(Boolean));
+      setSzvbAddMemberKey('');
 
       setContactDisplayMode(targetBuilding.contactDisplayMode === 'manager' ? 'manager' : 'company');
       setManagerName(targetBuilding.managerContact?.name || '');
@@ -185,6 +208,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
       setIsAddingNew(false);
       setExpandedAccountIds({});
       setIsEditingMasterData(false);
+      setIsEditingSzvb(false);
       resetNewAccountForm();
     }
   }, [isOpen, targetBuildingId]);
@@ -199,6 +223,66 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
     state.organizations
   );
   const backdropProps = useBackdropClose(isSaving ? () => {} : onClose);
+
+  // Building owner candidates & SZVB draft computation (strictly from building's existing owners)
+  const ownerCandidates = targetBuilding ? getBuildingOwnerCandidates(targetBuilding) : [];
+  const candidateByKey = new Map(ownerCandidates.map((c) => [c.key, c]));
+  const existingSzvb = targetBuilding ? normalizeBuildingSzvb(targetBuilding) : { chairperson: null, members: [] };
+  const existingPersonByKey = new Map();
+  if (existingSzvb.chairperson?.key) existingPersonByKey.set(existingSzvb.chairperson.key, existingSzvb.chairperson);
+  (existingSzvb.members || []).forEach((m) => {
+    if (m?.key) existingPersonByKey.set(m.key, m);
+  });
+
+  const resolveCandidateToSzvbPerson = (key) => {
+    if (!key) return null;
+    const cand = candidateByKey.get(key);
+    if (cand) {
+      return {
+        key: cand.key,
+        name: cand.name,
+        email: cand.email || '',
+        flatNum: cand.primaryFlatNum || '',
+      };
+    }
+    const prev = existingPersonByKey.get(key);
+    return prev ? { ...prev } : null;
+  };
+
+  const draftSzvb = {
+    chairperson: resolveCandidateToSzvbPerson(szvbChairpersonKey),
+    members: szvbMemberKeys
+      .filter((k) => k && k !== szvbChairpersonKey)
+      .map(resolveCandidateToSzvbPerson)
+      .filter(Boolean),
+  };
+
+  const szvbCompliance = targetBuilding
+    ? evaluateSzvbCompliance({
+        ...targetBuilding,
+        szvb: isEditingSzvb ? draftSzvb : targetBuilding.szvb,
+      })
+    : null;
+
+  const handleSelectSzvbChairperson = (newKey) => {
+    setSzvbChairpersonKey(newKey);
+    if (newKey) {
+      // Prevent same owner being both Chairperson and regular Member
+      setSzvbMemberKeys((prev) => prev.filter((k) => k !== newKey));
+      if (szvbAddMemberKey === newKey) setSzvbAddMemberKey('');
+    }
+  };
+
+  const handleAddSzvbMember = () => {
+    if (!szvbAddMemberKey || szvbAddMemberKey === szvbChairpersonKey) return;
+    if (szvbMemberKeys.includes(szvbAddMemberKey)) return;
+    setSzvbMemberKeys((prev) => [...prev, szvbAddMemberKey]);
+    setSzvbAddMemberKey('');
+  };
+
+  const handleRemoveSzvbMember = (keyToRemove) => {
+    setSzvbMemberKeys((prev) => prev.filter((k) => k !== keyToRemove));
+  };
 
   if (!isOpen || !isAdmin) return null;
 
@@ -370,7 +454,74 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
         officeHours: managerOfficeHours.trim(),
       };
 
+      // Prepare SZVB update & notifications if edited
+      const nextSzvbPayload = isEditingSzvb
+        ? {
+            chairperson: draftSzvb.chairperson || null,
+            members: draftSzvb.members || [],
+            updatedAt: new Date().toISOString(),
+            updatedBy: normalizeEmail(state.currentUser?.email) || state.currentUser?.name || 'admin',
+          }
+        : null;
+
+      const szvbNotifications = [];
+      if (isEditingSzvb && targetBuilding && nextSzvbPayload) {
+        const prevRoleByEmail = new Map();
+        if (existingSzvb.chairperson?.email) {
+          prevRoleByEmail.set(normalizeEmail(existingSzvb.chairperson.email), 'chairperson');
+        }
+        (existingSzvb.members || []).forEach((m) => {
+          const em = normalizeEmail(m?.email);
+          if (em) prevRoleByEmail.set(em, 'member');
+        });
+
+        const nextRoleByEmail = new Map();
+        if (nextSzvbPayload.chairperson?.email) {
+          nextRoleByEmail.set(normalizeEmail(nextSzvbPayload.chairperson.email), 'chairperson');
+        }
+        (nextSzvbPayload.members || []).forEach((m) => {
+          const em = normalizeEmail(m?.email);
+          if (em) nextRoleByEmail.set(em, 'member');
+        });
+
+        const allAffectedEmails = new Set([...prevRoleByEmail.keys(), ...nextRoleByEmail.keys()]);
+        allAffectedEmails.forEach((em) => {
+          const prevRole = prevRoleByEmail.get(em) || null;
+          const nextRole = nextRoleByEmail.get(em) || null;
+          if (prevRole === nextRole) return;
+
+          const bName = targetBuilding.name || '';
+          const roleLabelHu = nextRole === 'chairperson' ? 'SZVB Elnök' : 'SZVB Tag';
+          const roleLabelEn = nextRole === 'chairperson' ? 'SZVB Chairperson' : 'SZVB Member';
+
+          szvbNotifications.push(
+            buildNotification({
+              recipientEmail: em,
+              type: 'szvb_updated',
+              severity: 'info',
+              buildingId: targetBuilding.id,
+              buildingName: bName,
+              titleHu: nextRole
+                ? `SZVB jogosultság kiosztva — ${bName}`
+                : `SZVB jogosultság visszavonva — ${bName}`,
+              titleEn: nextRole
+                ? `SZVB audit role assigned — ${bName}`
+                : `SZVB audit role revoked — ${bName}`,
+              messageHu: nextRole
+                ? `A(z) ${bName} társasházban ${roleLabelHu} szerepkört kaptál (csak olvasási ellenőrzési jog). A fejlécben a Profilváltó gombbal válthatsz a saját lakásod és az SZVB ellenőrző nézet között.`
+                : `A(z) ${bName} társasházban megszűnt a Számvizsgáló Bizottsági (SZVB) megbízatásod. A saját lakásod nézete változatlanul elérhető.`,
+              messageEn: nextRole
+                ? `You have been assigned the ${roleLabelEn} role (read-only audit access) for ${bName}. Use the Switch Profile button in the header to toggle between your apartment and SZVB audit view.`
+                : `Your Accounting Committee (SZVB) role for ${bName} has been revoked. Your personal apartment view remains unchanged.`,
+              actorName: state.currentUser?.name || '',
+              actorEmail: state.currentUser?.email || '',
+            })
+          );
+        });
+      }
+
       await persistState(s => {
+        let nextCurrentFlats = s.flats;
         const updatedBuildings = (s.buildings || []).map(b => {
           if (b.id === targetBuildingId) {
             if (isAccountsOnly) {
@@ -390,15 +541,25 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
               };
             }
 
+            const syncedFlats = nextSzvbPayload
+              ? syncSzvbToBuildingFlats(b.flats || [], nextSzvbPayload)
+              : b.flats;
+
+            if (nextSzvbPayload && b.id === s.currentBuildingId) {
+              nextCurrentFlats = syncedFlats;
+            }
+
             return {
               ...b,
               name: isEditingMasterData ? (buildingName.trim() || b.name) : b.name,
               officialName: isEditingMasterData ? buildingOfficialName.trim() : b.officialName,
               address: isEditingMasterData ? (buildingAddress.trim() || b.address) : b.address,
               taxNumber: isEditingMasterData ? formatTaxNumber(buildingTaxNumber).trim() : b.taxNumber,
+              hrsz: isEditingMasterData ? buildingHrsz.trim() : (b.hrsz || ''),
               totalOwnershipShare: isEditingMasterData
                 ? (parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000)
                 : (b.totalOwnershipShare || 10000),
+              ...(nextSzvbPayload ? { szvb: nextSzvbPayload, flats: syncedFlats } : {}),
               contactDisplayMode: b.contactDisplayMode || 'company',
               managerContact: b.managerContact || null,
               showCentralContactToResidents: b.showCentralContactToResidents !== undefined ? b.showCentralContactToResidents : false,
@@ -415,16 +576,23 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
           return b;
         });
 
+        const newNotifications = [
+          ...(criticalOwnerNotification ? [criticalOwnerNotification] : []),
+          ...szvbNotifications,
+        ];
+
         return {
           ...s,
           buildings: updatedBuildings,
-          notifications: criticalOwnerNotification
-            ? [criticalOwnerNotification, ...(s.notifications || [])].slice(0, 300)
+          flats: nextCurrentFlats,
+          notifications: newNotifications.length > 0
+            ? [...newNotifications, ...(s.notifications || [])].slice(0, 300)
             : (s.notifications || []),
         };
       });
 
       setIsEditingMasterData(false);
+      setIsEditingSzvb(false);
 
       showToast(
         isAccountsOnly
@@ -566,6 +734,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                               setBuildingOfficialName(targetBuilding?.officialName || '');
                               setBuildingAddress(targetBuilding?.address || '');
                               setBuildingTaxNumber(formatTaxNumber(targetBuilding?.taxNumber || ''));
+                              setBuildingHrsz(targetBuilding?.hrsz || '');
                               setTotalOwnershipShare(targetBuilding?.totalOwnershipShare !== undefined ? String(targetBuilding.totalOwnershipShare) : '10000');
                               setIsEditingMasterData(false);
                             }}
@@ -646,6 +815,22 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                       </div>
 
                       <div>
+                        <label className="block font-semibold text-gray-700 mb-1">
+                          {t.bld_settings_hrsz || (isEn ? "Land Registry No. (HRSZ)" : "Helyrajzi szám (hrsz.)")}
+                        </label>
+                        <input
+                          type="text"
+                          value={buildingHrsz}
+                          disabled={isEffectiveReadOnly || !isEditingMasterData}
+                          onChange={(e) => setBuildingHrsz(e.target.value)}
+                          placeholder={isEn ? "e.g. 12345/0" : "pl. 12345/0"}
+                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
+                            isEffectiveReadOnly || !isEditingMasterData ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
+                          }`}
+                        />
+                      </div>
+
+                      <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="block font-semibold text-gray-700">
                             {t.bld_settings_total_share || (isEn ? "Total Ownership Share (Basis)" : "Teljes tulajdoni hányad (Alap)")} *
@@ -674,6 +859,249 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                         </p>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Section A1b: Számvizsgáló Bizottság (SZVB) Management */}
+                {!isAccountsOnly && szvbCompliance && (
+                  <div className="bg-indigo-50/40 p-4 rounded-xl border border-indigo-200/80 space-y-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-bold text-indigo-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                          <Shield className="w-4 h-4 text-indigo-700" />
+                          <span>{t.szvb_section_title || (isEn ? "Accounting Committee (SZVB)" : "Számvizsgáló Bizottság (SZVB)")}</span>
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-bold">
+                          {szvbCompliance.totalSzvbCount} {isEn ? "assigned" : "fő"} &bull; {szvbCompliance.albetetCount} {isEn ? "units (HRSZ)" : "albetét"}
+                        </span>
+                      </div>
+
+                      {!isEffectiveReadOnly && (
+                        !isEditingSzvb ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingSzvb(true)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-indigo-200 bg-white hover:bg-indigo-50 hover:text-indigo-900 text-indigo-700 text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                            title={t.szvb_edit_btn || (isEn ? "Edit SZVB members" : "SZVB tagok szerkesztése")}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>{t.edit || (isEn ? "Edit" : "Szerkesztés")}</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSzvbChairpersonKey(existingSzvb.chairperson?.key || '');
+                              setSzvbMemberKeys((existingSzvb.members || []).map((m) => m.key).filter(Boolean));
+                              setSzvbAddMemberKey('');
+                              setIsEditingSzvb(false);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 text-[11px] font-semibold transition-colors cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                            <span>{t.cancel || (isEn ? "Cancel" : "Mégse")}</span>
+                          </button>
+                        )
+                      )}
+                    </div>
+
+                    {/* Non-blocking 25+ albetét statutory rule warning (Tht. 51. §) */}
+                    {szvbCompliance.showWarning && (
+                      <div className="p-3 rounded-xl bg-amber-50 border border-amber-300/90 text-amber-950 flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div className="text-[11px] leading-relaxed">
+                          <span className="font-bold block">
+                            {t.szvb_statutory_warning_title || (isEn
+                              ? "Statutory SZVB requirement (over 25 distinct units)"
+                              : "Törvényi előírás 25 külön albetét felett (Tht. 51. §)")}
+                          </span>
+                          <span>
+                            {isEn
+                              ? `This condominium has ${szvbCompliance.albetetCount} distinct units (separate HRSZ). Under the Condominium Act, an Accounting Committee of at least 3 members (1 Chairperson + at least 2 Members) is required. Currently assigned: ${szvbCompliance.hasChairperson ? '1 chairperson' : '0 chairpersons'} and ${szvbCompliance.membersCount} member(s).`
+                              : `A társasházban ${szvbCompliance.albetetCount} külön helyrajzi számú albetét szerepel (25 felett). A társasházi törvény szerint legalább 3 fős Számvizsgáló Bizottság (1 elnök + legalább 2 tag) kijelölése szükséges. Jelenleg: ${szvbCompliance.hasChairperson ? '1 elnök' : '0 elnök'} és ${szvbCompliance.membersCount} tag van kijelölve.`}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Statutory compliance confirmation when >25 units and compliant */}
+                    {szvbCompliance.requiresStatutorySzvb && szvbCompliance.isCompliant && (
+                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2 text-[11px] font-semibold">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <span>
+                          {isEn
+                            ? `Statutory SZVB requirement met (${szvbCompliance.totalSzvbCount} members for ${szvbCompliance.albetetCount} units).`
+                            : `Az SZVB létszám megfelel a 25 albetét feletti törvényi előírásnak (1 elnök + ${szvbCompliance.membersCount} tag).`}
+                        </span>
+                      </div>
+                    )}
+
+                    <p className="text-[11px] text-gray-600">
+                      {t.szvb_readonly_desc || (isEn
+                        ? "SZVB members are selected from existing condominium owners and receive strictly read-only audit access to building documents, contracts, bank balances, monthly cashflow, and arrears."
+                        : "Az SZVB tagok a ház meglévő tulajdonosai közül jelölhetők ki, és saját lakói nézetük mellett szigorúan csak olvasási jogosultságot kapnak a ház irataihoz, pénzforgalmához, banki egyenlegeihez és a hátraléklistához.")}
+                    </p>
+
+                    {ownerCandidates.length === 0 ? (
+                      <div className="p-3 rounded-xl bg-white border border-indigo-100 text-[11px] text-gray-500">
+                        {isEn
+                          ? "No registered owners found in this condominium yet. Add flats and owners first."
+                          : "Még nincs rögzített tulajdonos ebben a társasházban. Először vegyél fel lakásokat és tulajdonosokat."}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* 1. SZVB Chairperson (Elnök) */}
+                        <div className="p-3 rounded-xl bg-white border border-indigo-100 space-y-2">
+                          <label className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>{t.szvb_role_chairperson || (isEn ? "SZVB Chairperson" : "SZVB Elnök")}</span>
+                          </label>
+
+                          {isEditingSzvb && !isEffectiveReadOnly ? (
+                            <select
+                              value={szvbChairpersonKey}
+                              onChange={(e) => handleSelectSzvbChairperson(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 focus:bg-white focus:outline-none focus:border-indigo-500"
+                            >
+                              <option value="">
+                                {isEn ? "— Not assigned —" : "— Nincs kijelölve —"}
+                              </option>
+                              {ownerCandidates
+                                .filter((c) => !szvbMemberKeys.includes(c.key) || c.key === szvbChairpersonKey)
+                                .map((c) => (
+                                  <option key={c.key} value={c.key}>
+                                    {c.name}{c.flatNums.length > 0 ? ` (${c.flatNums.join(', ')}. ${isEn ? 'unit' : 'lakás'})` : ''}{c.email ? ` — ${c.email}` : ` (${isEn ? 'no email' : 'nincs e-mail'})`}
+                                  </option>
+                                ))}
+                            </select>
+                          ) : (
+                            <div className="text-xs">
+                              {szvbCompliance.szvb.chairperson ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="font-bold text-gray-900">
+                                    {szvbCompliance.szvb.chairperson.name}
+                                    {szvbCompliance.szvb.chairperson.flatNum && (
+                                      <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold">
+                                        {szvbCompliance.szvb.chairperson.flatNum}. {isEn ? "unit" : "lakás"}
+                                      </span>
+                                    )}
+                                  </span>
+                                  {szvbCompliance.szvb.chairperson.email ? (
+                                    <span className="text-[11px] text-gray-500 font-mono">
+                                      {szvbCompliance.szvb.chairperson.email}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-amber-700 font-semibold">
+                                      ⚠️ {isEn ? "No email set on flat — required for SZVB login" : "Nincs e-mail cím rögzítve — a belépéshez szükséges"}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 italic">
+                                  {isEn ? "Not assigned" : "Nincs kijelölve"}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {isEditingSzvb && draftSzvb.chairperson && !draftSzvb.chairperson.email && (
+                            <p className="text-[10px] text-amber-700 font-semibold">
+                              ⚠️ {isEn ? "This owner has no email address recorded yet — add one on the flat card so they can log in." : "Ennek a tulajdonosnak még nincs e-mail címe — add meg a lakás adatlapján, hogy be tudjon lépni."}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* 2. SZVB Members (Tagok) */}
+                        <div className="p-3 rounded-xl bg-white border border-indigo-100 space-y-2">
+                          <label className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>{t.szvb_role_members || (isEn ? "SZVB Members" : "SZVB Tagok")}</span>
+                          </label>
+
+                          {/* Assigned Members List */}
+                          {(() => {
+                            const activeMembers = isEditingSzvb ? draftSzvb.members : (szvbCompliance.szvb.members || []);
+                            return activeMembers.length > 0 ? (
+                              <div className="space-y-1.5">
+                                {activeMembers.map((m) => (
+                                  <div
+                                    key={m.key}
+                                    className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-indigo-50/60 border border-indigo-100"
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="text-xs font-bold text-gray-900 truncate">
+                                        {m.name}
+                                        {m.flatNum && (
+                                          <span className="ml-1.5 px-1.5 py-0.2 rounded bg-white text-indigo-700 text-[10px] font-semibold border border-indigo-100">
+                                            {m.flatNum}.
+                                          </span>
+                                        )}
+                                      </div>
+                                      {m.email ? (
+                                        <div className="text-[10px] text-gray-500 font-mono truncate">{m.email}</div>
+                                      ) : (
+                                        <div className="text-[10px] text-amber-700 font-semibold">
+                                          ⚠️ {isEn ? "No email set" : "Nincs e-mail"}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {isEditingSzvb && !isEffectiveReadOnly && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveSzvbMember(m.key)}
+                                        className="p-1 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer flex-shrink-0"
+                                        title={isEn ? "Remove member" : "Tag eltávolítása"}
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400 italic">
+                                {isEn ? "No SZVB members assigned" : "Nincs SZVB tag kijelölve"}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Add Member Selector (edit mode only) */}
+                          {isEditingSzvb && !isEffectiveReadOnly && (() => {
+                            const availableForMember = ownerCandidates.filter(
+                              (c) => c.key !== szvbChairpersonKey && !szvbMemberKeys.includes(c.key)
+                            );
+                            if (availableForMember.length === 0) return null;
+                            return (
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <select
+                                  value={szvbAddMemberKey}
+                                  onChange={(e) => setSzvbAddMemberKey(e.target.value)}
+                                  className="flex-1 min-w-0 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 focus:bg-white focus:outline-none focus:border-indigo-500"
+                                >
+                                  <option value="">
+                                    {isEn ? "+ Select owner to add..." : "+ Tulajdonos kiválasztása..."}
+                                  </option>
+                                  {availableForMember.map((c) => (
+                                    <option key={c.key} value={c.key}>
+                                      {c.name}{c.flatNums.length > 0 ? ` (${c.flatNums.join(', ')}.)` : ''}{c.email ? ` — ${c.email}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  disabled={!szvbAddMemberKey}
+                                  onClick={handleAddSzvbMember}
+                                  className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors flex-shrink-0"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>{isEn ? "Add" : "Hozzáad"}</span>
+                                </button>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -905,9 +1333,9 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
               onClick={onClose}
               className="px-4 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 cursor-pointer transition-colors disabled:opacity-40"
             >
-              {isEffectiveReadOnly || (activeTab === 'general' && !isEditingMasterData) ? (t.close || (isEn ? "Close" : "Bezárás")) : (t.cancel || "Mégse")}
+              {isEffectiveReadOnly || (activeTab === 'general' && !isEditingMasterData && !isEditingSzvb) ? (t.close || (isEn ? "Close" : "Bezárás")) : (t.cancel || "Mégse")}
             </button>
-            {!isEffectiveReadOnly && (activeTab === 'api' || isEditingMasterData) ? (
+            {!isEffectiveReadOnly && (activeTab === 'api' || isEditingMasterData || isEditingSzvb) ? (
               <button
                 type="submit"
                 disabled={isSaving}

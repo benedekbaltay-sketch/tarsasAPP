@@ -22,7 +22,8 @@ import {
   Shield,
   Filter,
   Minus,
-  Calendar
+  Calendar,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   formatCurrency, 
@@ -39,6 +40,7 @@ import { TransactionFilterBar } from '../components/TransactionFilterBar';
 import { initialFilterState, applyTransactionFilters, getActiveFilterCount } from '../utils/filterUtils';
 import { StickyMonthSection } from '../components/StickyMonthGroup';
 import { groupItemsByMonth } from '../utils/dateGrouping';
+import { evaluateSzvbCompliance, getUserBuildingSzvbRole } from '../utils/szvb';
 
 export function AdminView({
   onBackToPortfolio,
@@ -47,6 +49,7 @@ export function AdminView({
   onOpenAddTransaction,
   onOpenAddFlat,
   onOpenGlobalBalances,
+  onOpenBuildingSettings,
   onOpenGlobalAddTx,
   onOpenEditFlatMaster,
   onOpenEditTx,
@@ -65,8 +68,15 @@ export function AdminView({
 
   // Building and accounts
   const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
+  const isSzvbMode = state.currentUser?.role === 'szvb';
+  const szvbRole = isSzvbMode ? (state.currentUser?.szvbRole || getUserBuildingSzvbRole(state.currentUser, currentBuilding)) : null;
+  const szvbCompliance = useMemo(
+    () => (currentBuilding ? evaluateSzvbCompliance({ ...currentBuilding, flats: flats || currentBuilding.flats || [] }) : null),
+    [currentBuilding, flats]
+  );
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
+    isSzvbMode ||
     !onOpenAddTransaction ||
     (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuilding))
   );
@@ -274,6 +284,67 @@ export function AdminView({
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 md:py-8 space-y-6">
+      {/* SZVB Audit Read-Only Banner */}
+      {isSzvbMode && (
+        <div className="bg-indigo-50/90 border border-indigo-200 rounded-2xl p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+              <Shield className="w-4.5 h-4.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-xs sm:text-sm font-bold text-indigo-950">
+                  {t.szvb_audit_banner_title || (isEn
+                    ? "Accounting Committee (SZVB) Audit View"
+                    : "Számvizsgáló Bizottsági (SZVB) ellenőrző nézet")}
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-bold">
+                  {szvbRole === 'chairperson'
+                    ? (t.szvb_role_chairperson || (isEn ? "SZVB Chairperson" : "SZVB Elnök"))
+                    : (t.szvb_role_member || (isEn ? "SZVB Member" : "SZVB Tag"))} &bull; {isEn ? "Read-Only" : "Csak olvasás"}
+                </span>
+              </div>
+              <p className="text-[11px] text-indigo-900/80 mt-0.5 leading-relaxed">
+                {t.szvb_audit_banner_desc || (isEn
+                  ? "You have full read-only audit access to building income, expenses, bank balances, arrears, loans, and documents. Editing, deleting, and sending emails are disabled."
+                  : "Teljes, kizárólag olvasási ellenőrzési jogod van a ház bevételeihez, kiadásaihoz, banki egyenlegeihez, hátraléklistájához, hiteleihez és irataihoz. Módosítás, törlés és e-mail küldés nem engedélyezett.")}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Non-blocking 25+ albetét Statutory SZVB Warning for KK Admins */}
+      {!isEffectiveReadOnly && !isSzvbMode && szvbCompliance?.showWarning && (
+        <div className="bg-amber-50 border border-amber-300/90 rounded-2xl p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+            <AlertTriangle className="w-4.5 h-4.5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-950 leading-relaxed">
+              <span className="font-bold">
+                {t.szvb_statutory_warning_title || (isEn
+                  ? "Statutory SZVB requirement (over 25 distinct units):"
+                  : "Törvényi előírás 25 külön albetét felett (Tht. 51. §):")}
+              </span>{' '}
+              <span>
+                {isEn
+                  ? `This building has ${szvbCompliance.albetetCount} distinct units (separate HRSZ), requiring at least 3 SZVB members (1 Chairperson + 2 Members). Currently assigned: ${szvbCompliance.totalSzvbCount}.`
+                  : `A házban ${szvbCompliance.albetetCount} külön helyrajzi számú albetét található, ezért legalább 3 fős SZVB (1 elnök + 2 tag) kijelölése szükséges. Jelenleg ${szvbCompliance.totalSzvbCount} fő van kijelölve.`}
+              </span>
+            </div>
+          </div>
+          {onOpenBuildingSettings && (
+            <button
+              type="button"
+              onClick={onOpenBuildingSettings}
+              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 flex-shrink-0 shadow-2xs"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>{t.szvb_configure_btn || (isEn ? "Assign SZVB" : "SZVB beállítása")}</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 1. Top KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         

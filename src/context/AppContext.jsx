@@ -46,6 +46,11 @@ import {
   canUserManageBuilding,
   isUserBuildingViewer,
 } from '../utils/teamPermissions';
+import {
+  getUserBuildingSzvbInfo,
+  getUserSzvbRolesAcrossBuildings,
+  isUserBuildingSzvb as checkUserBuildingSzvb,
+} from '../utils/szvb';
 
 const AppContext = createContext(null);
 
@@ -1363,6 +1368,82 @@ export function AppProvider({ children }) {
     showToast(isEn ? `Switched to Flat ${chosenFlat.flatNum}` : `Átváltva: ${chosenFlat.flatNum}. lakás`);
   };
 
+  // Switch to SZVB (Accounting Committee) Read-Only Audit Mode (strictly verified per building)
+  const switchToSzvbMode = (buildingId = null) => {
+    const isEn = state.currentLang === 'en';
+    if (!state.currentUser) return;
+
+    const szvbRoles = getUserSzvbRolesAcrossBuildings(state.currentUser, state.buildings);
+    const matchedRole = buildingId
+      ? szvbRoles.find((r) => r.buildingId === buildingId)
+      : szvbRoles[0];
+
+    const targetBuildingId = matchedRole?.buildingId || buildingId;
+    const curB = (state.buildings || []).find((b) => b.id === targetBuildingId);
+    const verifiedInfo = curB ? getUserBuildingSzvbInfo(state.currentUser, curB) : null;
+
+    if (!curB || !verifiedInfo) {
+      showToast(
+        isEn
+          ? "You do not have Accounting Committee (SZVB) audit access for this condominium."
+          : "Nincs Számvizsgáló Bizottsági (SZVB) jogosultságod ehhez a társasházhoz.",
+        "error"
+      );
+      return;
+    }
+
+    const updatedUser = stripSensitiveUserFields({
+      id: `szvb-${curB.id}`,
+      uid: state.currentUser?.uid,
+      name: verifiedInfo.name || state.currentUser?.name,
+      email: state.currentUser?.email || verifiedInfo.email,
+      role: 'szvb',
+      szvbRole: verifiedInfo.role,
+      flatNum: verifiedInfo.flatNum || state.currentUser?.flatNum || '0',
+      buildingId: curB.id,
+      isAdminUser: state.currentUser?.isAdminUser === true,
+      memberships: state.currentUser?.memberships,
+    });
+
+    if (!IS_FIRESTORE_MODE) {
+      try {
+        if (!isCurrentTabSessionOnly() && localStorage.getItem("tarsashaz_remember_me") === "true") {
+          localStorage.setItem("tarsashaz_logged_in_user", JSON.stringify(updatedUser));
+        }
+        sessionStorage.setItem("tarsashaz_session_user", JSON.stringify(updatedUser));
+        localStorage.setItem("tarsashaz_role_mode", "szvb");
+        localStorage.setItem("tarsashaz_is_portfolio", "false");
+      } catch (e) {}
+    }
+
+    persistState((s) => ({
+      ...s,
+      currentUser: updatedUser,
+      currentBuildingId: curB.id,
+      activeRoleMode: 'szvb',
+      isPortfolioView: false,
+      flats: curB.flats || s.flats || [],
+      transactions: curB.transactions || s.transactions || [],
+      expenses: curB.expenses || s.expenses || [],
+      manualDebits: Array.isArray(curB.manualDebits) ? curB.manualDebits : (s.manualDebits || []),
+      documents: curB.documents || [],
+      docFolders: curB.docFolders || [],
+      loans: curB.loans || [],
+      infoSections: curB.infoSections || [],
+      buildingInitialReserveCommon: curB.buildingInitialReserveCommon || 0,
+      buildingInitialReserveRenovation: curB.buildingInitialReserveRenovation || 0,
+    }), 'localOnly');
+
+    if (IS_FIRESTORE_MODE && curB.id) {
+      reloadCurrentBuilding(curB.id);
+    }
+
+    const roleLabel = verifiedInfo.role === 'chairperson'
+      ? (isEn ? "SZVB Chairperson (Read-Only)" : "SZVB Elnök (Csak olvasás)")
+      : (isEn ? "SZVB Member (Read-Only)" : "SZVB Tag (Csak olvasás)");
+    showToast(isEn ? `Switched to ${roleLabel}` : `Átváltva: ${roleLabel}`);
+  };
+
   // Open Portfolio view ("Társasházaim")
   const openPortfolio = () => {
     if (!IS_FIRESTORE_MODE) {
@@ -1486,6 +1567,7 @@ export function AppProvider({ children }) {
     isCurrentUserAdmin,
     switchToKkMode,
     switchToTenantMode,
+    switchToSzvbMode,
     openPortfolio,
     openBuildingAdmin,
     ...authActions,
@@ -1503,7 +1585,12 @@ export function AppProvider({ children }) {
     isReadOnly: isUserBuildingViewer(state.currentUser, state.currentBuildingId, state.organizations, state.buildings),
     getAccessibleBuildings: (u = state.currentUser, b = state.buildings, o = state.organizations) =>
       getAccessibleBuildings(u, b, o),
-    getUserFlats: (u = state.currentUser, b = state.buildings) => getUserFlats(u, b)
+    getUserFlats: (u = state.currentUser, b = state.buildings) => getUserFlats(u, b),
+    getUserSzvbRoles: (u = state.currentUser, b = state.buildings) => getUserSzvbRolesAcrossBuildings(u, b),
+    isUserBuildingSzvb: (b = state.currentBuildingId) => {
+      const bObj = typeof b === 'string' ? (state.buildings || []).find((x) => x.id === b) : b;
+      return checkUserBuildingSzvb(state.currentUser, bObj);
+    }
   };
 
   return (

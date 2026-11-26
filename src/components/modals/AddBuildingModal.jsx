@@ -13,6 +13,7 @@ export function AddBuildingModal({ isOpen, onClose }) {
   const [officialName, setOfficialName] = useState('');
   const [address, setAddress] = useState('');
   const [taxNumber, setTaxNumber] = useState('');
+  const [hrsz, setHrsz] = useState('');
   const [totalOwnershipShare, setTotalOwnershipShare] = useState('10000');
   const [bankKKName, setBankKKName] = useState('');
   const [bankKKBank, setBankKKBank] = useState('OTP');
@@ -38,6 +39,7 @@ export function AddBuildingModal({ isOpen, onClose }) {
       officialName: officialName.trim(),
       address: address.trim(),
       taxNumber: formatTaxNumber(taxNumber).trim(),
+      hrsz: hrsz.trim(),
       totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000,
       bankKK: {
         name: bankKKName.trim() || officialName.trim() || name.trim(),
@@ -118,15 +120,29 @@ export function AddBuildingModal({ isOpen, onClose }) {
             />
           </div>
 
-          <div>
-            <label className="block font-semibold text-gray-700 mb-1">{t.bld_settings_tax_number || "Adószám"}</label>
-            <input
-              type="text"
-              value={taxNumber}
-              onChange={(e) => setTaxNumber(formatTaxNumber(e.target.value))}
-              placeholder="pl. 12345678-1-42"
-              className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block font-semibold text-gray-700 mb-1">{t.bld_settings_tax_number || "Adószám"}</label>
+              <input
+                type="text"
+                value={taxNumber}
+                onChange={(e) => setTaxNumber(formatTaxNumber(e.target.value))}
+                placeholder="pl. 12345678-1-42"
+                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-gray-700 mb-1">
+                {t.bld_settings_hrsz || (isEn ? "Land Registry No. (HRSZ)" : "Helyrajzi szám (hrsz.)")}
+              </label>
+              <input
+                type="text"
+                value={hrsz}
+                onChange={(e) => setHrsz(e.target.value)}
+                placeholder={isEn ? "e.g. 12345/0" : "pl. 12345/0"}
+                className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg font-mono focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
+              />
+            </div>
           </div>
 
           <div>

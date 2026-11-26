@@ -25,6 +25,7 @@ import {
   purgeSensitiveLocalStorage
 } from '../services/firestoreAdapter';
 import { normalizeEmail } from '../utils/teamPermissions';
+import { isUserBuildingSzvb } from '../utils/szvb';
 
 const MIN_PASSWORD_LENGTH = 10;
 
@@ -324,7 +325,7 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         buildings: safeBuildings,
         currentUser: userCopy,
         currentBuildingId: isKkAdmin ? null : (curB?.id || targetBuildingId),
-        activeRoleMode: isUserAdmin ? 'kk' : 'tenant',
+        activeRoleMode: isUserAdmin ? 'kk' : (userCopy.role === 'szvb' ? 'szvb' : 'tenant'),
         isPortfolioView: isKkAdmin ? true : false,
         flats: (curB && curB.flats) || baseState.flats || [],
         transactions: (curB && curB.transactions) || baseState.transactions || [],
@@ -355,8 +356,15 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
       showToast(state.currentLang === 'en' ? "Unauthorized role switch." : "Jogosulatlan szerepkörváltás.", "error");
       return;
     }
+    const targetBuildingId = user.buildingId || state.currentBuildingId || state.buildings?.[0]?.id || null;
+    if (user.role === 'szvb' && !isCurrentPrivileged) {
+      const targetBuilding = (state.buildings || []).find((b) => b.id === targetBuildingId);
+      if (!isUserBuildingSzvb(state.currentUser, targetBuilding)) {
+        showToast(state.currentLang === 'en' ? "Unauthorized SZVB role switch." : "Jogosulatlan SZVB szerepkörváltás.", "error");
+        return;
+      }
+    }
     const userCopy = stripSensitiveUserFields(JSON.parse(JSON.stringify(user)));
-    const targetBuildingId = userCopy.buildingId || state.currentBuildingId || state.buildings?.[0]?.id || null;
 
     if (!IS_FIRESTORE_MODE) {
       try {
@@ -375,7 +383,7 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         ...s,
         currentUser: userCopy,
         currentBuildingId: isKkAdmin ? null : (curB?.id || targetBuildingId),
-        activeRoleMode: isUserAdmin ? 'kk' : 'tenant',
+        activeRoleMode: isUserAdmin ? 'kk' : (userCopy.role === 'szvb' ? 'szvb' : 'tenant'),
         isPortfolioView: isKkAdmin ? true : false,
         flats: (curB && curB.flats) || s.flats || [],
         transactions: (curB && curB.transactions) || s.transactions || [],
@@ -437,6 +445,7 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
       ...state.currentUser,
       id: targetFlat?.flatNum || flatNum,
       role: "Owner",
+      szvbRole: null,
       flatNum: flatNum,
       buildingId: targetBuilding?.id || buildingId,
       name: individualName,

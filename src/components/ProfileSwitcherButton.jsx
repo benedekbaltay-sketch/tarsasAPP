@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Users, Building2 } from 'lucide-react';
+import { Users, Building2, Shield } from 'lucide-react';
+import { getUserSzvbRolesAcrossBuildings } from '../utils/szvb';
 
 export function ProfileSwitcherButton({ onOpenProfileSelector, className = "", label = null }) {
   const { state, t, getUserFlats } = useApp();
@@ -35,20 +36,34 @@ export function ProfileSwitcherButton({ onOpenProfileSelector, className = "", l
     );
   }
 
-  // Resident / Owner mode: only show if user has multiple flats
+  // Resident / Owner / SZVB mode: show if user has multiple flats OR has an SZVB audit role
   const myFlats = getUserFlats ? getUserFlats(currentUser, buildings) : [];
-  if (myFlats.length <= 1) return null;
+  const szvbRoles = getUserSzvbRolesAcrossBuildings(currentUser, buildings);
+  const isSzvbMode = currentUser.role === 'szvb';
+  if (myFlats.length <= 1 && szvbRoles.length === 0 && !isSzvbMode) return null;
 
-  const residentLabel = label || t.profile_selector_btn || (isHu ? "Profilváltás" : "Switch Profile");
+  const residentLabel = label || (isSzvbMode
+    ? (isHu ? "SZVB • Nézetváltás" : "SZVB • Switch View")
+    : (szvbRoles.length > 0
+        ? (isHu ? "Lakás / SZVB" : "Flat / SZVB")
+        : (t.profile_selector_btn || (isHu ? "Profilváltás" : "Switch Profile"))));
 
   return (
     <button
       type="button"
       onClick={onOpenProfileSelector}
-      className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#1E3A8A] font-semibold text-xs shadow-2xs transition-all hover:border-blue-300 cursor-pointer flex-shrink-0 active:scale-95 ${className}`}
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl border font-semibold text-xs shadow-2xs transition-all cursor-pointer flex-shrink-0 active:scale-95 ${
+        isSzvbMode
+          ? 'border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-900'
+          : 'border-blue-200 bg-blue-50/80 hover:bg-blue-100 text-[#1E3A8A] hover:border-blue-300'
+      } ${className}`}
       title={residentLabel}
     >
-      <Users className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
+      {isSzvbMode ? (
+        <Shield className="w-3.5 h-3.5 text-indigo-700 flex-shrink-0" />
+      ) : (
+        <Users className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
+      )}
       <span className="leading-none whitespace-nowrap">{residentLabel}</span>
     </button>
   );

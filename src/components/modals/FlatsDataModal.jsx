@@ -23,6 +23,7 @@ import { formatAnnexItem } from '../../utils/annex';
 import { ProfileSwitcherButton } from '../ProfileSwitcherButton';
 import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
+import { countBuildingAlbetets } from '../../utils/szvb';
 
 export function FlatsDataModal({ 
   isOpen, 
@@ -39,8 +40,10 @@ export function FlatsDataModal({
   const isEn = currentLang === 'en';
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings[0];
+  const isSzvb = state.currentUser?.role === 'szvb';
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
+    isSzvb ||
     (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuilding))
   );
 
@@ -60,7 +63,7 @@ export function FlatsDataModal({
   }, [isOpen]);
 
   const isAdmin = state.currentUser?.role === 'admin' || state.currentUser?.role === 'superadmin';
-  if (!isOpen || !isAdmin) return null;
+  if (!isOpen || !(isAdmin || isSzvb)) return null;
 
   const unitTypeConfig = {
     flat: { label: t.unit_type_flat || "Lakás", icon: Home, badgeClass: "bg-blue-50 text-blue-700 border-blue-200", dotClass: "bg-blue-600" },
@@ -99,6 +102,7 @@ export function FlatsDataModal({
     );
     return (
       (f.flatNum && f.flatNum.toLowerCase().includes(q)) ||
+      (f.hrsz && f.hrsz.toLowerCase().includes(q)) ||
       (f.ownerName && f.ownerName.toLowerCase().includes(q)) ||
       (f.email && f.email.toLowerCase().includes(q)) ||
       (f.phone && f.phone.replace(/\s+/g, '').includes(cleanQ)) ||
@@ -115,6 +119,7 @@ export function FlatsDataModal({
 
   const buildingTotalShare = Number(currentBuilding?.totalOwnershipShare) || 10000;
   const totalFlats = (flats || []).length;
+  const albetetStats = countBuildingAlbetets({ ...(currentBuilding || {}), flats: flats || [] });
   const totalArea = (flats || []).reduce((acc, f) => acc + (f.area || Math.round((f.ownershipShare || 10) * 5.8)), 0);
   const totalTenants = (flats || []).reduce((acc, f) => acc + (f.tenantCount || 1), 0);
   const totalShareSum = (flats || []).reduce((acc, f) => acc + (Number(f.ownershipShare) || 0), 0);
@@ -223,6 +228,7 @@ export function FlatsDataModal({
               </h4>
               <span className="text-xs text-gray-500 font-medium">
                 {currentBuilding?.address || ""}
+                {currentBuilding?.hrsz ? ` • hrsz: ${currentBuilding.hrsz}` : ""}
               </span>
             </div>
           </div>
@@ -230,9 +236,9 @@ export function FlatsDataModal({
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap text-xs">
             <div className="bg-gray-50 px-3 py-2 rounded-xl border border-gray-200">
               <span className="text-gray-400 text-[10px] uppercase font-bold block">
-                {isEn ? "Total Flats" : "Lakások száma"}
+                {isEn ? "Distinct Units (HRSZ)" : "Külön albetétek"}
               </span>
-              <strong className="text-gray-900 font-bold text-sm">{totalFlats} db</strong>
+              <strong className="text-gray-900 font-bold text-sm">{albetetStats.count} db</strong>
             </div>
             <div className="bg-gray-50 px-3 py-2 rounded-xl border border-gray-200">
               <span className="text-gray-400 text-[10px] uppercase font-bold block">
@@ -393,6 +399,11 @@ export function FlatsDataModal({
                             </span>
                             <span>{f.flatNum}.</span>
                           </div>
+                          {f.hrsz && (
+                            <div className="text-[10px] font-mono text-gray-400 font-normal mt-0.5">
+                              hrsz: {f.hrsz}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-4 font-medium text-gray-900 whitespace-nowrap">
                           <span className="truncate max-w-[160px] block" title={f.ownerName}>

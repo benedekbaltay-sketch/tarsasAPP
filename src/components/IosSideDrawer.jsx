@@ -15,9 +15,11 @@ import {
   Calendar,
   Settings,
   Users,
-  Eye
+  Eye,
+  Shield
 } from 'lucide-react';
 import { canUserManageTeam, resolveUserDisplayName, isUserBuildingViewer, canUserManageBuilding } from '../utils/teamPermissions';
+import { getUserSzvbRolesAcrossBuildings, getUserBuildingSzvbRole } from '../utils/szvb';
 
 export function IosSideDrawer({ 
   isOpen, 
@@ -29,6 +31,7 @@ export function IosSideDrawer({
 
   const isHu = currentLang === 'hu' || !currentLang;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const isSzvb = currentUser?.role === 'szvb';
   const canManageTeam = canUserManageTeam(currentUser, organizations, buildings);
   const userDisplayName = resolveUserDisplayName(currentUser, state);
 
@@ -42,6 +45,8 @@ export function IosSideDrawer({
   );
 
   const myFlats = getUserFlats ? getUserFlats(currentUser, buildings) : [];
+  const szvbRoles = !isAdmin ? getUserSzvbRolesAcrossBuildings(currentUser, buildings || []) : [];
+  const activeSzvbRole = isSzvb ? (currentUser?.szvbRole || getUserBuildingSzvbRole(currentUser, currentBuilding)) : null;
   const profileLabel = isAdmin 
     ? (t.menu_account_settings || "Fiók / Rendszerbeállítások") 
     : (myFlats.length > 1 ? (t.menu_my_flats || "Profilom / Lakásaim") : (t.menu_my_flat || "Profilom / Lakásom"));
@@ -111,10 +116,17 @@ export function IosSideDrawer({
                       <span>{isHu ? 'Csak megtekintő' : 'View only'}</span>
                     </span>
                   )}
+                  {isSzvb && currentBuilding && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
+                      <Shield className="w-2.5 h-2.5 text-indigo-600" />
+                      <span>{isHu ? 'SZVB' : 'SZVB'}</span>
+                    </span>
+                  )}
                 </div>
                 <span className="text-xs text-gray-500 font-medium block truncate">
                   {currentUser ? (
-                    isAdmin ? userDisplayName : 
+                    isAdmin ? userDisplayName :
+                    isSzvb ? `${activeSzvbRole === 'chairperson' ? (isHu ? 'SZVB Elnök' : 'SZVB Chairperson') : (isHu ? 'SZVB Tag' : 'SZVB Member')} • ${userDisplayName}` :
                     `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}`
                   ) : 'Menü'}
                 </span>
@@ -343,9 +355,150 @@ export function IosSideDrawer({
               </div>
             )}
 
-            {/* C) RESIDENT / TENANT MODE */}
-            {!isAdmin && (
-              <div className="bg-gray-50/80 rounded-2xl p-2 border border-gray-100 space-y-1">
+            {/* C1) SZVB AUDIT MODE (Strictly Read-Only building oversight) */}
+            {isSzvb && (
+              <div className="space-y-3">
+                <div className="bg-indigo-50/70 rounded-2xl p-2 border border-indigo-200/80 space-y-1">
+                  <div className="px-3 pt-1 pb-1.5 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-1">
+                      <Shield className="w-3 h-3" />
+                      <span>{isHu ? "SZVB Ellenőrzés (Csak olvasás)" : "SZVB Audit (Read-Only)"}</span>
+                    </span>
+                  </div>
+
+                  {/* Főmenü (SZVB Audit Dashboard) */}
+                  <button
+                    onClick={() => handleAction('main')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                        <LayoutDashboard className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">
+                        {t.menu_main || (isHu ? "Főmenü" : "Main Menu")}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Pénzügyek (Bevételek, kiadások, banki egyenlegek, hátraléklista, hitelek) */}
+                  <button
+                    onClick={() => handleAction('finance')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center shadow-xs">
+                        <LineChart className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">{t.menu_finance}</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Lakások adatai (Csak olvasás) */}
+                  <button
+                    onClick={() => handleAction('flats-data')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-500 text-white flex items-center justify-center shadow-xs">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">
+                        {t.menu_flats_data || (isHu ? "Lakások adatai" : "Flats Data")}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Közgyűlés (Elszámolások megtekintése/letöltése) */}
+                  <button
+                    onClick={() => handleAction('assembly')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                        <FileSpreadsheet className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">
+                        {t.menu_assembly || (isHu ? "Közgyűlés" : "General Assembly")}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Dokumentumok (Iratok, szerződések, bankkivonatok megtekintése/letöltése) */}
+                  <button
+                    onClick={() => handleAction('docs')}
+                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                        <FolderOpen className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-800">{t.menu_docs}</span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                </div>
+
+                {/* Quick switch back to own Resident/Owner view */}
+                {myFlats.length > 0 && (
+                  <div className="bg-blue-50/70 rounded-2xl p-2 border border-blue-200/80">
+                    <button
+                      onClick={() => handleAction('switch-to-tenant')}
+                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-[#1E3A8A] text-white flex items-center justify-center shadow-xs">
+                          <Home className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="text-sm font-bold text-[#1E3A8A] block leading-tight">
+                            {isHu ? "Váltás saját lakásomra" : "Switch to My Apartment"}
+                          </span>
+                          <span className="text-[11px] text-gray-500 font-medium block">
+                            {isHu ? "Tulajdonosi (lakó) nézet" : "Personal owner view"}
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[#1E3A8A] group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* C2) RESIDENT / TENANT MODE */}
+            {!isAdmin && !isSzvb && (
+              <div className="space-y-3">
+                {/* Quick switch to SZVB Audit Mode if this resident is an SZVB member */}
+                {szvbRoles.length > 0 && (
+                  <div className="bg-indigo-50/70 rounded-2xl p-2 border border-indigo-200/80">
+                    <button
+                      onClick={() => handleAction(szvbRoles.length === 1 ? 'switch-to-szvb' : 'profile-switcher')}
+                      className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white transition-all text-left group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                          <Shield className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="text-sm font-bold text-indigo-900 block leading-tight">
+                            {isHu ? "SZVB Ellenőrző nézet" : "SZVB Audit View"}
+                          </span>
+                          <span className="text-[11px] text-indigo-700/80 font-medium block">
+                            {isHu ? "Ház ellenőrzése (csak olvasás)" : "Building oversight (read-only)"}
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-indigo-600 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="bg-gray-50/80 rounded-2xl p-2 border border-gray-100 space-y-1">
                 
                 {/* Főmenü */}
                 <button
@@ -403,6 +556,7 @@ export function IosSideDrawer({
                   <ChevronRight className="w-4 h-4 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
                 </button>
 
+                </div>
               </div>
             )}
 

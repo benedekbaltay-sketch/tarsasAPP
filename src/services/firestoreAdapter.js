@@ -328,6 +328,8 @@ export function firestoreBuildingToUiBuilding(buildingDoc, extras = {}) {
       totalReserve: Math.round(Number(liveBal.totalReserve ?? ((Number(liveBal.KK) || 0) + (Number(liveBal.FA) || 0))) || 0),
     },
     aggregates: buildingDoc.aggregates || null,
+    hrsz: buildingDoc.hrsz || '',
+    szvb: buildingDoc.szvb || null,
     firestoreMonthlySummaries: monthlyMap,
     categories: Array.isArray(extras.categories) ? extras.categories : [],
     docFolders: Array.isArray(buildingDoc.docFolders) ? buildingDoc.docFolders : [],

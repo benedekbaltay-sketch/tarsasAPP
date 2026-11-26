@@ -39,11 +39,14 @@ export function FinancialSituationModal({
   const { flats, buildings, currentBuildingId, currentLang, currentUser } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
-  const canViewUnitBreakdown = isAdmin || currentUser?.role === 'szvb';
-  const canViewLoans = isAdmin || currentUser?.role === 'szvb';
+  const isSzvb = currentUser?.role === 'szvb';
+  const canViewUnitBreakdown = isAdmin || isSzvb;
+  const canViewLoans = isAdmin || isSzvb;
+  const canViewBankAccounts = isAdmin || isSzvb;
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
+    isSzvb ||
     (canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuildingId))
   );
   const [selectedMonthData, setSelectedMonthData] = useState(null);
@@ -59,7 +62,7 @@ export function FinancialSituationModal({
       },
     ];
 
-    if (isAdmin) {
+    if (canViewBankAccounts) {
       tabs.push({
         id: 'bank-import',
         label: t.finance_tab_bank_import || 'Bank',
@@ -76,7 +79,7 @@ export function FinancialSituationModal({
     }
 
     return tabs;
-  }, [isAdmin, isEffectiveReadOnly, canViewLoans, isEn, t]);
+  }, [canViewBankAccounts, isEffectiveReadOnly, canViewLoans, isEn, t]);
 
   useEffect(() => {
     if (isOpen) {
@@ -504,15 +507,15 @@ export function FinancialSituationModal({
           </div>
         )}
 
-        {/* TAB 2: Bank (Accounts first, then Bank File Import below) */}
-        {activeTab === 'bank-import' && isAdmin && (
+        {/* TAB 2: Bank (Accounts first — Read-Only for SZVB/Viewers, then Bank File Import strictly for Managing Admins) */}
+        {activeTab === 'bank-import' && canViewBankAccounts && (
           <div className="space-y-6 animate-fadeIn">
             <BankAccountsSection
               buildingId={currentBuilding?.id || currentBuildingId}
               isReadOnly={isEffectiveReadOnly}
             />
 
-            {!isEffectiveReadOnly && (
+            {isAdmin && !isEffectiveReadOnly && (
               <BankImportModal
                 isOpen={true}
                 embedded={true}
