@@ -366,6 +366,7 @@ export function mergeStateWithCloud(local, cloud) {
       return {
         ...n,
         read: Boolean(n.read || ln?.read || cn?.read),
+        deleted: Boolean(n.deleted || ln?.deleted || cn?.deleted),
         dismissed: resolvedDismissed,
         archived: resolvedArchived,
         ...(resolvedArchivedAt ? { archivedAt: resolvedArchivedAt } : {}),

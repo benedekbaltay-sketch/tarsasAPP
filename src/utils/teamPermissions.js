@@ -1129,7 +1129,7 @@ export function getNotificationsForUser(notifications = [], user) {
 
   return notifications
     .filter((n) => {
-      if (!n || n.dismissed || n.archived || n.meta?.isSenderCopy) return false;
+      if (!n || n.deleted || n.dismissed || n.archived || n.meta?.isSenderCopy) return false;
       const rEmail = normalizeEmail(n.recipientEmail);
       if (rEmail && userEmail && rEmail === userEmail) {
         return true;

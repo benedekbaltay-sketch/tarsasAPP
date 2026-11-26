@@ -1050,6 +1050,19 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     }), true);
   };
 
+  const deleteNotification = (notifId) => {
+    if (!notifId || !state.currentUser) return;
+    const nowIso = new Date().toISOString();
+    persistState((s) => ({
+      ...s,
+      notifications: (s.notifications || []).map((n) =>
+        n && n.id === notifId
+          ? { ...n, read: true, deleted: true, deletedAt: nowIso }
+          : n
+      ),
+    }), true);
+  };
+
   const dismissNotification = (notifId) => {
     // Preserve letter in user's Archive instead of permanently hiding it
     archiveNotification(notifId);
@@ -1388,6 +1401,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     markAllNotificationsRead,
     archiveNotification,
     unarchiveNotification,
+    deleteNotification,
     dismissNotification,
   };
 }

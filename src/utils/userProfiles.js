@@ -435,7 +435,7 @@ export function getSentMessagesForActiveProfile(notifications = [], currentUser 
 
   return notifications
     .filter((n) => {
-      if (!n || n.archived || n.dismissed) return false;
+      if (!n || n.deleted || n.archived || n.dismissed) return false;
       return doesSenderCopyMatchProfile(n, userEmail, activeProfile);
     })
     .sort((a, b) => (new Date(b.createdAt || 0).getTime() || 0) - (new Date(a.createdAt || 0).getTime() || 0));
@@ -454,7 +454,7 @@ export function getArchivedNotificationsForActiveProfile(notifications = [], cur
 
   return notifications
     .filter((n) => {
-      if (!n || (!n.archived && !n.dismissed)) return false;
+      if (!n || n.deleted || (!n.archived && !n.dismissed)) return false;
       if (n.meta?.isSenderCopy) {
         return doesSenderCopyMatchProfile(n, userEmail, activeProfile);
       }

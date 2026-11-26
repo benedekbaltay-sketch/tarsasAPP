@@ -192,6 +192,14 @@ test('3. Archive & Unarchive move letters cleanly between Inbox/Sent and Archive
   );
   assert.equal(getNotificationsForActiveProfile(afterRestore, kkUser, kkProfiles).length, 1);
   assert.equal(getArchivedNotificationsForActiveProfile(afterRestore, kkUser, kkProfiles).length, 0);
+
+  // Permanently delete KK's message -> removed from KK Inbox AND Archive, while Resident's Sent copy stays intact!
+  const afterDelete = afterRestore.map((n) =>
+    n.id === kkMsgId ? { ...n, read: true, deleted: true, deletedAt: new Date().toISOString() } : n
+  );
+  assert.equal(getNotificationsForActiveProfile(afterDelete, kkUser, kkProfiles).length, 0);
+  assert.equal(getArchivedNotificationsForActiveProfile(afterDelete, kkUser, kkProfiles).length, 0);
+  assert.equal(getSentMessagesForActiveProfile(afterDelete, residentUser, residentProfiles).length, 1);
 });
 
 test('4. sanitizeMailAttachments strips large inline blobs while keeping cloud storageKey & safe filenames', () => {

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { Mail, ShieldAlert, Shield, Info, CheckCheck, X, Clock, Maximize2, ClipboardCheck, Archive, Paperclip, Download } from 'lucide-react';
+import { Mail, ShieldAlert, Shield, Info, CheckCheck, X, Clock, Maximize2, ClipboardCheck, Archive, Trash2, Paperclip, Download } from 'lucide-react';
 import { isUserBuildingSzvb } from '../utils/szvb';
 import { isUserBuildingEconomicAuditor } from '../utils/economicAuditor';
 import { resolveUserProfiles, getNotificationsForActiveProfile } from '../utils/userProfiles';
@@ -36,6 +36,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
     markNotificationRead,
     markAllNotificationsRead,
     archiveNotification,
+    deleteNotification,
     dismissNotification,
     fetchMailAttachment,
     switchToSzvbMode,
@@ -51,6 +52,19 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [downloadingAttId, setDownloadingAttId] = useState(null);
   const panelRef = useRef(null);
+
+  const handleDeleteNotif = (notifId, closeModal = false) => {
+    if (!notifId || typeof deleteNotification !== 'function') return;
+    const confirmMsg = t.mail_delete_confirm || (isEn
+      ? 'Are you sure you want to permanently delete this message?'
+      : 'Biztosan véglegesen törlöd ezt a levelet?');
+    if (!window.confirm(confirmMsg)) return;
+    deleteNotification(notifId);
+    if (closeModal) setSelectedNotification(null);
+    if (typeof showToast === 'function') {
+      showToast(isEn ? 'Message deleted.' : 'Levél törölve.', 'info');
+    }
+  };
 
   const handleDownloadAttachment = async (att) => {
     if (!att || downloadingAttId) return;
@@ -243,7 +257,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                         )}
                       </div>
 
-                      <div className="min-w-0 flex-1 pr-5">
+                      <div className="min-w-0 flex-1 pr-12">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {isCritical && (
                             <span className="px-1.5 py-0.2 rounded bg-red-200/80 text-red-900 text-[9px] font-extrabold uppercase tracking-wider">
@@ -347,22 +361,36 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (typeof archiveNotification === 'function') {
-                            archiveNotification(notif.id);
-                          } else {
-                            dismissNotification(notif.id);
-                          }
-                        }}
-                        className="absolute top-2.5 right-2.5 p-1 rounded-md text-gray-400 hover:text-[#1E3A8A] hover:bg-blue-50 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
-                        title={t.mail_archive_btn || (isEn ? 'Archive' : 'Archiválás')}
-                        aria-label={t.mail_archive_btn || (isEn ? 'Archive' : 'Archiválás')}
-                      >
-                        <Archive className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="absolute top-2.5 right-2.5 flex items-center gap-0.5 opacity-75 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (typeof archiveNotification === 'function') {
+                              archiveNotification(notif.id);
+                            } else {
+                              dismissNotification(notif.id);
+                            }
+                          }}
+                          className="p-1 rounded-md text-gray-400 hover:text-[#1E3A8A] hover:bg-blue-50 cursor-pointer"
+                          title={t.mail_archive_btn || (isEn ? 'Archive' : 'Archiválás')}
+                          aria-label={t.mail_archive_btn || (isEn ? 'Archive' : 'Archiválás')}
+                        >
+                          <Archive className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteNotif(notif.id, false);
+                          }}
+                          className="p-1 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                          title={t.mail_delete_btn || (isEn ? 'Delete' : 'Törlés')}
+                          aria-label={t.mail_delete_btn || (isEn ? 'Delete' : 'Törlés')}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -582,6 +610,14 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                 >
                   <Archive className="w-3.5 h-3.5" />
                   <span>{t.mail_archive_btn || (isEn ? "Archive" : "Archiválás")}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteNotif(selectedNotification.id, true)}
+                  className="px-3.5 py-2 bg-white hover:bg-red-50 border border-red-200 text-red-600 rounded-xl text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 shadow-2xs transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{t.mail_delete_btn || (isEn ? "Delete" : "Törlés")}</span>
                 </button>
                 {canOpenCommCenter && (
                   <button
