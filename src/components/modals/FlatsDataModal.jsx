@@ -42,6 +42,7 @@ export function FlatsDataModal({
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings[0];
   const isSzvb = state.currentUser?.role === 'szvb';
   const isAuditor = state.currentUser?.role === 'auditor';
+  const hideOwnerPii = Boolean(isSzvb || isAuditor);
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     isSzvb ||
@@ -90,14 +91,14 @@ export function FlatsDataModal({
       if (typeof g === 'string') return g.toLowerCase().includes(q);
       return (g?.number || '').toLowerCase().includes(q) || (g?.area || '').toLowerCase().includes(q);
     });
-    const hasOwnerMatch = f.owners && f.owners.some(o => 
+    const hasOwnerMatch = !hideOwnerPii && f.owners && f.owners.some(o => 
       (o.name && o.name.toLowerCase().includes(q)) ||
       (o.email && o.email.toLowerCase().includes(q)) ||
       (o.emails && o.emails.some(em => em.toLowerCase().includes(q))) ||
       (o.phone && o.phone.replace(/\s+/g, '').includes(cleanQ)) ||
       (o.phones && o.phones.some(ph => ph.replace(/\s+/g, '').includes(cleanQ)))
     );
-    const hasTenantMatch = f.tenants && f.tenants.some(tn => 
+    const hasTenantMatch = !hideOwnerPii && f.tenants && f.tenants.some(tn => 
       (tn.name && tn.name.toLowerCase().includes(q)) ||
       (tn.payerName && tn.payerName.toLowerCase().includes(q)) ||
       (tn.phone && tn.phone.replace(/\s+/g, '').includes(cleanQ))
@@ -105,9 +106,9 @@ export function FlatsDataModal({
     return (
       (f.flatNum && f.flatNum.toLowerCase().includes(q)) ||
       (f.hrsz && f.hrsz.toLowerCase().includes(q)) ||
-      (f.ownerName && f.ownerName.toLowerCase().includes(q)) ||
-      (f.email && f.email.toLowerCase().includes(q)) ||
-      (f.phone && f.phone.replace(/\s+/g, '').includes(cleanQ)) ||
+      (!hideOwnerPii && f.ownerName && f.ownerName.toLowerCase().includes(q)) ||
+      (!hideOwnerPii && f.email && f.email.toLowerCase().includes(q)) ||
+      (!hideOwnerPii && f.phone && f.phone.replace(/\s+/g, '').includes(cleanQ)) ||
       (f.garageNum && f.garageNum.toLowerCase().includes(q)) ||
       (f.storageNum && f.storageNum.toLowerCase().includes(q)) ||
       (f.paymentCode && f.paymentCode.toLowerCase().includes(q)) ||
@@ -180,7 +181,7 @@ export function FlatsDataModal({
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder={isEn ? "Search flat or owner..." : "Keresés lakás/név..."}
+                  placeholder={hideOwnerPii ? (isEn ? "Search flat or HRSZ..." : "Keresés lakás/hrsz...") : (isEn ? "Search flat or owner..." : "Keresés lakás/név...")}
                   className="w-full pl-9 pr-4 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:border-[#1E3A8A] focus:bg-white"
                 />
               </div>
@@ -371,8 +372,12 @@ export function FlatsDataModal({
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200 uppercase tracking-wider text-[11px]">
                     <th className="py-3 px-4">{t.flat_col_unit || (isEn ? "Unit / Flat" : "Albetét / Lakás")}</th>
-                    <th className="py-3 px-4">{t.flat_col_owner || (isEn ? "Owner" : "Tulajdonos")}</th>
-                    <th className="py-3 px-4">{t.flat_col_contact || (isEn ? "Contact" : "Elérhetőség")}</th>
+                    {!hideOwnerPii && (
+                      <th className="py-3 px-4">{t.flat_col_owner || (isEn ? "Owner" : "Tulajdonos")}</th>
+                    )}
+                    {!hideOwnerPii && (
+                      <th className="py-3 px-4">{t.flat_col_contact || (isEn ? "Contact" : "Elérhetőség")}</th>
+                    )}
                     <th className="py-3 px-4 text-center">{t.tenant_count || (isEn ? "Residents" : "Lakók")}</th>
                     <th className="py-3 px-4 text-right">{t.flat_col_area_share || (isEn ? "Area / Share" : "Terület / Hányad")}</th>
                     <th className="py-3 px-4">{t.flat_col_annex || (isEn ? "Garage / Storage" : "Garázs / Tároló")}</th>
@@ -407,24 +412,28 @@ export function FlatsDataModal({
                             </div>
                           )}
                         </td>
-                        <td className="py-3 px-4 font-medium text-gray-900 whitespace-nowrap">
-                          <span className="truncate max-w-[160px] block" title={f.ownerName}>
-                            {f.ownerName || '-'}
-                          </span>
-                          {activeTenant && (
-                            <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-semibold mt-0.5">
-                              <UserCheck className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
-                              <span className="truncate max-w-[140px]">{t.active_tenant_badge || (isEn ? "Tenant" : "Bérlő")}: {activeTenant.name}</span>
+                        {!hideOwnerPii && (
+                          <td className="py-3 px-4 font-medium text-gray-900 whitespace-nowrap">
+                            <span className="truncate max-w-[160px] block" title={f.ownerName}>
+                              {f.ownerName || '-'}
+                            </span>
+                            {activeTenant && (
+                              <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-semibold mt-0.5">
+                                <UserCheck className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                                <span className="truncate max-w-[140px]">{t.active_tenant_badge || (isEn ? "Tenant" : "Bérlő")}: {activeTenant.name}</span>
+                              </div>
+                            )}
+                          </td>
+                        )}
+                        {!hideOwnerPii && (
+                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap">
+                            <div className="space-y-0.5">
+                              {f.email && <div className="truncate max-w-[160px] text-[11px]" title={f.email}>{f.email}</div>}
+                              {f.phone && <div className="text-[11px] text-gray-500 font-mono">{formatPhoneNumber(f.phone)}</div>}
+                              {!f.email && !f.phone && <span className="text-gray-400">-</span>}
                             </div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-gray-600 whitespace-nowrap">
-                          <div className="space-y-0.5">
-                            {f.email && <div className="truncate max-w-[160px] text-[11px]" title={f.email}>{f.email}</div>}
-                            {f.phone && <div className="text-[11px] text-gray-500 font-mono">{formatPhoneNumber(f.phone)}</div>}
-                            {!f.email && !f.phone && <span className="text-gray-400">-</span>}
-                          </div>
-                        </td>
+                          </td>
+                        )}
                         <td className="py-3 px-4 text-center whitespace-nowrap text-gray-700 font-medium">
                           {f.tenantCount || 1} {isEn ? "pers." : "fő"}
                         </td>
@@ -502,7 +511,7 @@ export function FlatsDataModal({
                             <UIcon className="w-3 h-3" />
                             <span>{uCfg.label}</span>
                           </span>
-                          {activeTenant && (
+                          {!hideOwnerPii && activeTenant && (
                             <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-semibold">
                               <UserCheck className="w-2.5 h-2.5 text-emerald-600" />
                               <span>{t.active_tenant_badge || (isEn ? "Tenant" : "Bérlő")}: {activeTenant.name}</span>
@@ -513,9 +522,15 @@ export function FlatsDataModal({
                         <h4 className="text-base font-bold text-gray-900 leading-tight group-hover:text-[#1E3A8A] transition-colors">
                           {f.flatNum}. {uCfg.label}
                         </h4>
-                        <span className="text-xs font-semibold text-gray-700 block mt-0.5">
-                          {f.ownerName}
-                        </span>
+                        {!hideOwnerPii ? (
+                          <span className="text-xs font-semibold text-gray-700 block mt-0.5">
+                            {f.ownerName}
+                          </span>
+                        ) : f.hrsz ? (
+                          <span className="text-[11px] font-mono text-gray-400 block mt-0.5">
+                            hrsz: {f.hrsz}
+                          </span>
+                        ) : null}
                       </div>
                       
                       {/* Pénzügyi adat kevésbé látványosan a jobb sarokban */}
@@ -535,14 +550,18 @@ export function FlatsDataModal({
 
                   {/* Flat Details */}
                   <div className="space-y-1.5 text-xs text-gray-600 mb-4">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">{t.email}:</span>
-                      <span className="font-medium truncate max-w-[180px]">{f.email || "-"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">{t.phone}:</span>
-                      <span className="font-medium">{f.phone ? formatPhoneNumber(f.phone) : "-"}</span>
-                    </div>
+                    {!hideOwnerPii && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">{t.email}:</span>
+                          <span className="font-medium truncate max-w-[180px]">{f.email || "-"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">{t.phone}:</span>
+                          <span className="font-medium">{f.phone ? formatPhoneNumber(f.phone) : "-"}</span>
+                        </div>
+                      </>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-gray-400">{t.tenant_count}:</span>
                       <span className="font-medium">{f.tenantCount || 1} fő</span>

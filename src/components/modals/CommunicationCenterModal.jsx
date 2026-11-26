@@ -185,6 +185,7 @@ export function CommunicationCenterModal({
   const [isDirectComposeOpen, setIsDirectComposeOpen] = useState(false);
   const [directReplyTarget, setDirectReplyTarget] = useState(null);
   const [directRecipientMode, setDirectRecipientMode] = useState('kk');
+  const [directDeliveryChannel, setDirectDeliveryChannel] = useState('both'); // 'both' | 'in_app' | 'email'
   const [directCategory, setDirectCategory] = useState('general');
   const [directSubject, setDirectSubject] = useState('');
   const [directBody, setDirectBody] = useState('');
@@ -444,6 +445,7 @@ export function CommunicationCenterModal({
     setDirectReplyTarget(replyTo);
     setDirectAttachments([]);
     setDirectCategory('general');
+    setDirectDeliveryChannel(isAuditor ? 'both' : 'in_app');
     if (replyTo) {
       const origTitle = (isEn ? (replyTo.titleEn || replyTo.titleHu) : (replyTo.titleHu || replyTo.titleEn)) || '';
       setDirectSubject(origTitle.toLowerCase().startsWith('re:') ? origTitle : `Re: ${origTitle}`);
@@ -472,6 +474,9 @@ export function CommunicationCenterModal({
       return;
     }
 
+    const useEmail = isAuditor ? (directDeliveryChannel === 'email' || directDeliveryChannel === 'both') : false;
+    const useInApp = isAuditor ? (directDeliveryChannel === 'in_app' || directDeliveryChannel === 'both') : true;
+
     setIsSendingDirect(true);
     try {
       const res = await sendDirectMessage({
@@ -483,6 +488,8 @@ export function CommunicationCenterModal({
         category: directCategory,
         attachments: directAttachments,
         auditOpinionMeta: null,
+        sendInApp: useInApp,
+        sendEmail: useEmail,
       });
       if (res?.success) {
         setIsDirectComposeOpen(false);
@@ -1053,9 +1060,13 @@ export function CommunicationCenterModal({
                                 {isEn ? 'Audit Observation' : 'Ellenőri észrevétel'}
                               </span>
                             )}
-                            {(notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn) && (
+                            {(notif.actorName || notif.actorEmail || notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn) && (
                               <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-bold">
-                                👤 {notif.actorName ? `${notif.actorName} · ` : ''}{isEn ? notif.meta.senderRoleLabelEn : notif.meta.senderRoleLabelHu}
+                                👤 {isEn ? 'From:' : 'Feladó:'}{' '}
+                                {notif.actorName || notif.actorEmail}
+                                {(notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn)
+                                  ? ` · ${isEn ? notif.meta.senderRoleLabelEn : notif.meta.senderRoleLabelHu}`
+                                  : ''}
                               </span>
                             )}
                             {notif.buildingName && (
@@ -1332,6 +1343,15 @@ export function CommunicationCenterModal({
                                   → {recSummary}
                                 </span>
                               )}
+                              {msg.meta?.deliveryChannel && (
+                                <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-bold">
+                                  {msg.meta.deliveryChannel === 'both'
+                                    ? (isEn ? 'Email + In-App' : 'E-mail + App')
+                                    : msg.meta.deliveryChannel === 'email'
+                                    ? (isEn ? 'Email only' : 'Csak e-mail')
+                                    : (isEn ? 'In-App' : 'Alkalmazásban')}
+                                </span>
+                              )}
                               {msg.buildingName && (
                                 <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 text-[10px] font-bold">
                                   🏢 {msg.buildingName}
@@ -1508,6 +1528,15 @@ export function CommunicationCenterModal({
                             <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 text-[10px] font-bold">
                               {isSentCopy ? (isEn ? 'Sent' : 'Elküldött') : (isEn ? 'Received' : 'Beérkezett')}
                             </span>
+                            {!isSentCopy && (notif.actorName || notif.actorEmail || notif.meta?.senderRoleLabelHu) && (
+                              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-bold">
+                                👤 {isEn ? 'From:' : 'Feladó:'}{' '}
+                                {notif.actorName || notif.actorEmail}
+                                {(notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn)
+                                  ? ` · ${isEn ? notif.meta.senderRoleLabelEn : notif.meta.senderRoleLabelHu}`
+                                  : ''}
+                              </span>
+                            )}
                             {notif.buildingName && (
                               <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 text-[10px] font-bold">
                                 🏢 {notif.buildingName}
@@ -2600,6 +2629,35 @@ export function CommunicationCenterModal({
                   </div>
                 </div>
               ) : null}
+
+              {/* Delivery Channel Selector for Financial Auditor (In-App / Email / Both) */}
+              {isAuditor && (
+                <div>
+                  <label className="block font-bold text-gray-700 mb-1.5">
+                    {isEn ? 'Delivery Channel' : 'Kézbesítés módja'}
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {[
+                      { id: 'both', label: isEn ? 'Both (Email + In-App)' : 'Mindkettő (E-mail + App)' },
+                      { id: 'in_app', label: isEn ? 'In-App Only' : 'Alkalmazáson belül' },
+                      { id: 'email', label: isEn ? 'Email Only' : 'Csak e-mailben' },
+                    ].map((ch) => (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        onClick={() => setDirectDeliveryChannel(ch.id)}
+                        className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                          directDeliveryChannel === ch.id
+                            ? 'bg-[#1E3A8A] text-white border-[#1E3A8A] shadow-xs'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {ch.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Resident Category Picker */}
               {isResident && !directReplyTarget && (

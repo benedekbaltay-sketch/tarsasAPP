@@ -186,6 +186,7 @@ export function buildDirectMessagePayload({
   category = 'general',
   attachments = [],
   auditOpinionMeta = null,
+  deliveryChannel = 'in_app',
 }) {
   if (!actorUser || !building) {
     return { ok: false, error: 'missing-context' };
@@ -367,6 +368,7 @@ export function buildDirectMessagePayload({
   const sharedMeta = {
     directMessage: true,
     category: category || 'general',
+    deliveryChannel: deliveryChannel || 'in_app',
     senderRole: role,
     senderRoleLabelHu,
     senderRoleLabelEn,

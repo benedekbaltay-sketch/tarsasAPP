@@ -270,6 +270,18 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                           )}
                         </div>
 
+                        {(notif.actorName || notif.actorEmail || notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn) && (
+                          <div className="flex items-center gap-1.5 flex-wrap mt-1 text-[10px]">
+                            <span className="font-bold text-[#1E3A8A] bg-blue-50 px-1.5 py-0.2 rounded">
+                              👤 {isEn ? 'From:' : 'Feladó:'}{' '}
+                              {notif.actorName || notif.actorEmail}
+                              {(notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn)
+                                ? ` · ${isEn ? notif.meta.senderRoleLabelEn : notif.meta.senderRoleLabelHu}`
+                                : ''}
+                            </span>
+                          </div>
+                        )}
+
                         <p
                           className={`text-[11px] mt-1 leading-relaxed break-words ${
                             isCritical ? 'text-red-900/90' : 'text-gray-600'
@@ -433,6 +445,19 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                   <h4 className="font-extrabold text-gray-900 text-base leading-snug">
                     {isEn ? (selectedNotification.titleEn || selectedNotification.titleHu) : (selectedNotification.titleHu || selectedNotification.titleEn)}
                   </h4>
+                  {(selectedNotification.actorName || selectedNotification.actorEmail || selectedNotification.meta?.senderRoleLabelHu || selectedNotification.meta?.senderRoleLabelEn) && (
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px] text-gray-600">
+                      <span>{isEn ? "From:" : "Feladó:"}</span>
+                      <strong className="text-gray-900">
+                        {selectedNotification.actorName || selectedNotification.actorEmail}
+                      </strong>
+                      {(selectedNotification.meta?.senderRoleLabelHu || selectedNotification.meta?.senderRoleLabelEn) && (
+                        <span className="px-1.5 py-0.2 rounded bg-blue-50 text-[#1E3A8A] text-[10px] font-bold">
+                          {isEn ? selectedNotification.meta.senderRoleLabelEn : selectedNotification.meta.senderRoleLabelHu}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {selectedNotification.buildingName && (
                   <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold shrink-0">

@@ -67,6 +67,7 @@ export function AdminView({
   const currentBuilding = (state.buildings || []).find(b => b.id === state.currentBuildingId) || state.buildings?.[0];
   const isSzvbMode = state.currentUser?.role === 'szvb';
   const isAuditorMode = state.currentUser?.role === 'auditor';
+  const hideOwnerPii = Boolean(isSzvbMode || isAuditorMode);
   const isEffectiveReadOnly = Boolean(
     isReadOnly ||
     isSzvbMode ||
@@ -489,7 +490,9 @@ export function AdminView({
               <thead>
                 <tr className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200 uppercase tracking-wider text-[11px]">
                   <th className="py-3 px-4">{t.flat_col_unit || (isEn ? "Unit / Flat" : "Albetét / Lakás")}</th>
-                  <th className="py-3 px-4">{t.flat_col_owner || (isEn ? "Owner" : "Tulajdonos")}</th>
+                  {!hideOwnerPii && (
+                    <th className="py-3 px-4">{t.flat_col_owner || (isEn ? "Owner" : "Tulajdonos")}</th>
+                  )}
                   <th className="py-3 px-4 text-right">{kkShort} {isEn ? "Bal." : "egyenleg"}</th>
                   <th className="py-3 px-4 text-right">{faShort} {isEn ? "Bal." : "egyenleg"}</th>
                   {customAccounts.map(acc => (
@@ -528,17 +531,19 @@ export function AdminView({
                         </div>
                       </td>
 
-                      {/* Owner */}
-                      <td className="py-3 px-4 text-gray-700 font-medium whitespace-nowrap">
-                        <span className="truncate max-w-[180px] block" title={flat.ownerName}>
-                          {flat.ownerName || '-'}
-                        </span>
-                        {flat.tenantName && (
-                          <span className="text-[10px] text-gray-400 block truncate max-w-[180px]">
-                            {isEn ? "Tenant: " : "Bérlő: "}{flat.tenantName}
+                      {/* Owner (hidden for SZVB & Financial Auditor under GDPR) */}
+                      {!hideOwnerPii && (
+                        <td className="py-3 px-4 text-gray-700 font-medium whitespace-nowrap">
+                          <span className="truncate max-w-[180px] block" title={flat.ownerName}>
+                            {flat.ownerName || '-'}
                           </span>
-                        )}
-                      </td>
+                          {flat.tenantName && (
+                            <span className="text-[10px] text-gray-400 block truncate max-w-[180px]">
+                              {isEn ? "Tenant: " : "Bérlő: "}{flat.tenantName}
+                            </span>
+                          )}
+                        </td>
+                      )}
 
                       {/* KK Balance */}
                       <td className="py-3 px-4 text-right whitespace-nowrap font-medium font-mono">
@@ -681,9 +686,11 @@ export function AdminView({
                         <h4 className="text-sm font-bold text-gray-900 leading-tight">
                           {flat.flatNum}. {isEn ? "Flat" : "lakás"}
                         </h4>
-                        <span className="text-xs text-gray-500 font-medium truncate block max-w-[150px]">
-                          {flat.ownerName}
-                        </span>
+                        {!hideOwnerPii && (
+                          <span className="text-xs text-gray-500 font-medium truncate block max-w-[150px]">
+                            {flat.ownerName}
+                          </span>
+                        )}
                       </div>
 
                       {isGridEditMode && !isEffectiveReadOnly ? (

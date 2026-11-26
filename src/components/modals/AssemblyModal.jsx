@@ -70,8 +70,18 @@ export function AssemblyModal({
 
   if (!isOpen) return null;
 
+  const isSzvb = state.currentUser?.role === 'szvb';
+  const isAuditor = state.currentUser?.role === 'auditor';
+  const hideOwnerPii = Boolean(isSzvb || isAuditor);
+
   const handleDownload = () => {
-    exportOwnerBalancesToExcel(report, isEn);
+    const exportPayload = hideOwnerPii
+      ? {
+          ...report,
+          rows: (report.rows || []).map((r) => ({ ...r, ownerName: '' })),
+        }
+      : report;
+    exportOwnerBalancesToExcel(exportPayload, isEn);
     showToast(
       isEn 
         ? "Excel statement successfully generated and downloaded!" 
@@ -89,14 +99,14 @@ export function AssemblyModal({
     }
   };
 
-  // Filter rows for preview table
+  // Filter rows for preview table (never search hidden owner names in anonymized SZVB/Auditor mode)
   const filteredRows = (report.rows || []).filter(r => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
       (r.flatNum && r.flatNum.toLowerCase().includes(q)) ||
       (r.flatLabel && r.flatLabel.toLowerCase().includes(q)) ||
-      (r.ownerName && r.ownerName.toLowerCase().includes(q))
+      (!hideOwnerPii && r.ownerName && r.ownerName.toLowerCase().includes(q))
     );
   });
 
@@ -543,9 +553,11 @@ export function AssemblyModal({
                             <th className="py-3 px-3 min-w-[110px] font-bold border-r border-blue-800">
                               {isEn ? "Unit" : "Albetét"}
                             </th>
-                            <th className="py-3 px-3 min-w-[170px] font-bold border-r border-blue-800">
-                              {isEn ? "Owner(s)" : "Tulajdonos(ok)"}
-                            </th>
+                            {!hideOwnerPii && (
+                              <th className="py-3 px-3 min-w-[170px] font-bold border-r border-blue-800">
+                                {isEn ? "Owner(s)" : "Tulajdonos(ok)"}
+                              </th>
+                            )}
                             <th className="py-3 px-3 min-w-[150px] font-bold border-r border-blue-800">
                               {isEn ? "Fund" : "Alap"}
                             </th>
@@ -571,9 +583,11 @@ export function AssemblyModal({
                                 <td className="py-2.5 px-3 font-bold text-gray-900 border-r border-gray-100 truncate">
                                   {r.flatLabel}
                                 </td>
-                                <td className="py-2.5 px-3 text-gray-700 font-medium border-r border-gray-100 truncate max-w-[200px]" title={r.ownerName}>
-                                  {r.ownerName}
-                                </td>
+                                {!hideOwnerPii && (
+                                  <td className="py-2.5 px-3 text-gray-700 font-medium border-r border-gray-100 truncate max-w-[200px]" title={r.ownerName}>
+                                    {r.ownerName}
+                                  </td>
+                                )}
                                 <td className="py-2.5 px-3 border-r border-gray-100">
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
                                     {isEn ? "Common Fee (KK)" : "Közös Költség (KK)"}
@@ -598,9 +612,11 @@ export function AssemblyModal({
                                 <td className="py-2 px-3 text-xs text-gray-500 border-r border-gray-100 truncate">
                                   {r.flatLabel}
                                 </td>
-                                <td className="py-2 px-3 text-xs text-gray-500 border-r border-gray-100 truncate max-w-[200px]" title={r.ownerName}>
-                                  {r.ownerName}
-                                </td>
+                                {!hideOwnerPii && (
+                                  <td className="py-2 px-3 text-xs text-gray-500 border-r border-gray-100 truncate max-w-[200px]" title={r.ownerName}>
+                                    {r.ownerName}
+                                  </td>
+                                )}
                                 <td className="py-2 px-3 border-r border-gray-100">
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
                                     {isEn ? "Renovation Fund (FA)" : "Felújítási Alap (FA)"}

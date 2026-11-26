@@ -44,6 +44,7 @@ export function FlatDetailModal({
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const isSzvb = currentUser?.role === 'szvb';
   const isAuditor = currentUser?.role === 'auditor';
+  const hideOwnerPii = Boolean(isSzvb || isAuditor);
 
   const currentBuilding = (buildings || []).find(b => b.id === currentBuildingId) || buildings?.[0];
   const isEffectiveReadOnly = Boolean(
@@ -275,8 +276,33 @@ export function FlatDetailModal({
         {/* Body */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5">
           
-          {/* Identity Bar */}
-          {flat.owners && flat.owners.length > 1 ? (
+          {/* Identity Bar (Strictly anonymized for SZVB & Financial Auditor under GDPR) */}
+          {hideOwnerPii ? (
+            <div className="bg-gray-50 border border-gray-200/80 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-4">
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-0.5">
+                    {t.tenant_count}
+                  </span>
+                  <span className="font-semibold text-gray-700">{flat.tenantCount || 1} {isEn ? "persons" : "fő"}</span>
+                </div>
+                {flat.hrsz && (
+                  <>
+                    <div className="hidden sm:block w-px h-6 bg-gray-200"></div>
+                    <div>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-0.5">
+                        HRSZ
+                      </span>
+                      <span className="font-mono font-semibold text-gray-700">{flat.hrsz}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-bold">
+                {isEn ? "Owner personal data hidden (GDPR)" : "Tulajdonosi személyes adatok rejtve (GDPR)"}
+              </span>
+            </div>
+          ) : flat.owners && flat.owners.length > 1 ? (
             <div className="bg-gray-50 border border-gray-200/80 rounded-xl p-3.5 space-y-2.5 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">

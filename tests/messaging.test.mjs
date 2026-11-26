@@ -210,9 +210,26 @@ test('4. sanitizeMailAttachments strips large inline blobs while keeping cloud s
   assert.equal(cleaned[1].inlineData, smallBlob);
 });
 
-test('5. Recipient resolvers deduplicate KK, SZVB, and active Financial Auditor cleanly', () => {
+test('5. Recipient resolvers deduplicate KK, SZVB, and active Financial Auditor cleanly & preserve sender + deliveryChannel metadata', () => {
   const { building, organizations, users } = makeFixtures();
   assert.equal(resolveBuildingKkRecipients(building, organizations, users).length, 1);
   assert.equal(resolveBuildingSzvbRecipients(building).length, 1);
   assert.equal(resolveBuildingAuditorRecipient(building)?.email, 'anna@audit.hu');
+
+  const auditorUser = { email: 'anna@audit.hu', name: 'Dr. Könyvvizsgáló Anna', role: 'auditor', buildingId: 'b-mail' };
+  const payload = buildDirectMessagePayload({
+    actorUser: auditorUser,
+    building,
+    organizations,
+    users,
+    recipientMode: 'kk_and_szvb',
+    subject: 'Havi könyvelés észrevétel',
+    body: 'Minden tétel rendben van.',
+    deliveryChannel: 'both',
+  });
+  assert.equal(payload.ok, true);
+  assert.equal(payload.recipientNotifications[0].actorName, 'Dr. Könyvvizsgáló Anna');
+  assert.equal(payload.recipientNotifications[0].meta.senderRoleLabelHu, 'Gazdasági ellenőr');
+  assert.equal(payload.recipientNotifications[0].meta.deliveryChannel, 'both');
+  assert.equal(payload.senderCopyNotification.meta.deliveryChannel, 'both');
 });

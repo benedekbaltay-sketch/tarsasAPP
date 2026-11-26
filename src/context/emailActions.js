@@ -891,10 +891,24 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     category = 'general',
     attachments = [],
     auditOpinionMeta = null,
+    sendInApp = true,
+    sendEmail = false,
   } = {}) => {
     const cur = getState();
     const actorUser = cur?.currentUser;
     if (!actorUser) return { success: false, error: 'unauthenticated' };
+
+    if (!sendInApp && !sendEmail) {
+      if (typeof showToast === 'function') {
+        showToast(
+          isEn()
+            ? 'Please select at least one delivery channel (In-App or Email).'
+            : 'Kérjük, válassz legalább egy kézbesítési csatornát (Alkalmazáson belül vagy E-mail)!',
+          'error'
+        );
+      }
+      return { success: false, error: 'no-channel' };
+    }
 
     const targetBId = buildingId || replyToNotif?.buildingId || cur.currentBuildingId || actorUser.buildingId || cur.buildings?.[0]?.id;
     const building = (cur.buildings || []).find((b) => b.id === targetBId);
@@ -905,10 +919,21 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       return { success: false, error: 'missing-building' };
     }
 
+    const deliveryChannel = sendEmail && sendInApp ? 'both' : sendEmail ? 'email' : 'in_app';
     const uploadedAttachments = await uploadMailAttachments(building.id, attachments);
 
+    // Ensure actorUser carries a clean human display name (e.g. from building.economicAuditor / szvb / flat)
+    const enrichedActor = {
+      ...actorUser,
+      name:
+        actorUser.name ||
+        (actorUser.role === 'auditor' ? building.economicAuditor?.name : '') ||
+        actorUser.email ||
+        '',
+    };
+
     const payload = buildDirectMessagePayload({
-      actorUser,
+      actorUser: enrichedActor,
       building,
       organizations: cur.organizations || [],
       users: cur.users || [],
@@ -920,6 +945,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       category,
       attachments: uploadedAttachments,
       auditOpinionMeta,
+      deliveryChannel,
     });
 
     if (!payload.ok) {
@@ -943,7 +969,74 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       return { success: false, error: payload.error };
     }
 
-    const allNewNotifs = [...payload.recipientNotifications, payload.senderCopyNotification];
+    // Dispatch real emails when Email channel ('email' or 'both') is selected
+    let emailsSent = 0;
+    let emailsFailed = 0;
+    let firstEmailError = '';
+    if (sendEmail) {
+      const uniqueEmailRecipients = [];
+      const seenEmails = new Set();
+      (payload.recipients || []).forEach((r) => {
+        if (r?.email && !seenEmails.has(r.email)) {
+          seenEmails.add(r.email);
+          uniqueEmailRecipients.push(r);
+        }
+      });
+
+      const senderLabel = isEn()
+        ? (payload.senderCopyNotification?.meta?.senderRoleLabelEn || '')
+        : (payload.senderCopyNotification?.meta?.senderRoleLabelHu || '');
+      const senderHeader = enrichedActor.name
+        ? (isEn()
+            ? `From: ${enrichedActor.name}${senderLabel ? ` (${senderLabel})` : ''}\n\n`
+            : `Feladó: ${enrichedActor.name}${senderLabel ? ` (${senderLabel})` : ''}\n\n`)
+        : '';
+
+      await Promise.all(
+        uniqueEmailRecipients.map(async (r) => {
+          try {
+            const sendRes = await sendResidentCustomNoticeEmail({
+              recipientEmail: r.email,
+              recipientName: r.name || r.email,
+              flatNum: r.flatNum || '',
+              subject: subject.trim(),
+              messageBody: `${senderHeader}${body.trim()}`,
+              category: category || 'general',
+              targetBuilding: building,
+              repProfile: cur.repProfile || {},
+              organizations: cur.organizations || [],
+              senderUser: enrichedActor,
+              isEn: isEn(),
+              emailSettings: building.emailSettings || cur.emailSettings || {},
+            });
+            if (sendRes && sendRes.success) {
+              emailsSent += 1;
+            } else {
+              emailsFailed += 1;
+              if (!firstEmailError) firstEmailError = sendRes?.message || '';
+            }
+          } catch (err) {
+            emailsFailed += 1;
+            if (!firstEmailError) firstEmailError = err?.message || '';
+          }
+        })
+      );
+    }
+
+    const senderCopyWithDelivery = {
+      ...payload.senderCopyNotification,
+      meta: {
+        ...(payload.senderCopyNotification.meta || {}),
+        deliveryChannel,
+        emailsSent,
+        emailsFailed,
+      },
+    };
+
+    const allNewNotifs = [
+      ...(sendInApp ? payload.recipientNotifications : []),
+      senderCopyWithDelivery,
+    ];
 
     const updater = (prev) => {
       const curNotifs = Array.isArray(prev.notifications) ? prev.notifications : [];
@@ -971,21 +1064,45 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     }
 
     if (typeof showToast === 'function') {
-      showToast(
-        payload.syncedAuditOpinion
-          ? (isEn()
-              ? 'Official written audit opinion sent and archived in Audit Opinions!'
-              : 'Hivatalos írásbeli szakmai vélemény elküldve és rögzítve az Ellenőri vélemények között!')
-          : (isEn()
-              ? 'Message sent successfully!'
-              : 'Levél sikeresen elküldve!'),
-        'success'
-      );
+      if (sendEmail && emailsFailed > 0 && emailsSent === 0) {
+        showToast(
+          sendInApp
+            ? (isEn()
+                ? `Delivered in-app, but email sending failed${firstEmailError ? `: ${firstEmailError}` : '.'}`
+                : `Az alkalmazáson belül megérkezett, de az e-mail küldés sikertelen volt${firstEmailError ? `: ${firstEmailError}` : '.'}`)
+            : (isEn()
+                ? `Email delivery failed${firstEmailError ? `: ${firstEmailError}` : '.'}`
+                : `Az e-mail küldése sikertelen volt${firstEmailError ? `: ${firstEmailError}` : '.'}`),
+          'warning'
+        );
+      } else if (sendEmail && sendInApp) {
+        showToast(
+          isEn()
+            ? `Message sent in-app and via email (${emailsSent} email(s))!`
+            : `Levél elküldve az alkalmazáson belül és e-mailben is (${emailsSent} db)!`,
+          'success'
+        );
+      } else if (sendEmail) {
+        showToast(
+          isEn()
+            ? `Email sent successfully (${emailsSent} recipient(s))!`
+            : `E-mail sikeresen elküldve (${emailsSent} címzettnek)!`,
+          'success'
+        );
+      } else {
+        showToast(
+          isEn() ? 'Message sent successfully!' : 'Levél sikeresen elküldve!',
+          'success'
+        );
+      }
     }
 
     return {
       success: true,
       recipientCount: payload.recipients.length,
+      emailsSent,
+      emailsFailed,
+      deliveryChannel,
       syncedAuditOpinion: payload.syncedAuditOpinion,
     };
   };
