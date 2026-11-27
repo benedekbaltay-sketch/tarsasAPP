@@ -5,6 +5,7 @@ import {
   callProvisionBuilding,
   callManageBuildingLifecycle,
   callManageUnitLifecycle,
+  callManageSzvbMembers,
   callManageEconomicAuditor,
   updateBuildingMetadata,
   updateUnitMasterData,
@@ -47,7 +48,12 @@ import {
   AUDIT_OBSERVATION_SEVERITIES,
   AUDIT_OBSERVATION_CATEGORIES,
 } from '../utils/economicAuditor';
-import { isUserBuildingSzvb } from '../utils/szvb';
+import {
+  isUserBuildingSzvb,
+  mergeFlatOwnersIntoBuildingSzvb,
+  syncSzvbToBuildingFlats,
+  buildSzvbUpdateNotifications,
+} from '../utils/szvb';
 import { provisionAndSendColleagueInviteEmail } from '../services/inviteAuthService';
 
 export function createBuildingActions({ state, setState, persistState, showToast, t, reloadCurrentBuilding, hydrateAndSwitchBuilding }) {
@@ -224,8 +230,8 @@ export function createBuildingActions({ state, setState, persistState, showToast
     showToast(state.currentLang === 'en' ? "Flat deleted!" : "Lakás törölve!");
   };
 
-  // Save Flat Master Data
-  const saveFlatMaster = (flatNum, updatedData) => {
+  // Save Flat Master Data (also synchronizes SZVB membership & chairperson changes bidirectionally!)
+  const saveFlatMaster = (flatNum, updatedData, targetBuildingIdOverride = null) => {
     let safeUpdate = updatedData || {};
     if (!isAdmin()) {
       // Non-admin Owners may only update their own unit's personal contact fields
@@ -238,14 +244,27 @@ export function createBuildingActions({ state, setState, persistState, showToast
       if (updatedData?.emergencyContact !== undefined) safeUpdate.emergencyContact = updatedData.emergencyContact;
       if (updatedData?.notes !== undefined) safeUpdate.notes = updatedData.notes;
     } else {
-      if (!requireAdmin()) return;
+      if (!requireAdmin(targetBuildingIdOverride)) return;
       const { pass, password, resetToken, resetTokenExpiry, ...clean } = updatedData || {};
       safeUpdate = clean;
     }
 
+    const resolvedBuildingId = targetBuildingIdOverride || state.currentBuildingId || state.buildings?.[0]?.id;
+    const targetBuilding = (state.buildings || []).find(b => b && b.id === resolvedBuildingId) || state.buildings?.[0] || null;
+    const existingFlat = (targetBuilding?.flats || state.flats || []).find(f => f && f.flatNum === flatNum);
+
+    // Compute bidirectional SZVB updates if an admin edited owners[] on this flat
+    const szvbMerge = (isAdmin() && Array.isArray(safeUpdate.owners))
+      ? mergeFlatOwnersIntoBuildingSzvb({
+          prevSzvb: targetBuilding?.szvb || null,
+          flatNum: safeUpdate.flatNum || flatNum,
+          prevOwners: existingFlat?.owners || [],
+          nextOwners: safeUpdate.owners,
+        })
+      : { nextSzvb: null, changed: false };
+
     if (IS_FIRESTORE_MODE) {
-      const buildingId = state.currentBuildingId || state.buildings?.[0]?.id;
-      const existingFlat = (state.flats || []).find(f => f.flatNum === flatNum);
+      const buildingId = resolvedBuildingId;
       const unitId = existingFlat?.unitId || existingFlat?.id || slugifyUnitId(flatNum);
       if (!buildingId || !unitId) return;
 
@@ -259,8 +278,19 @@ export function createBuildingActions({ state, setState, persistState, showToast
 
       writePromise
         .then(async () => {
+          if (szvbMerge.changed && szvbMerge.nextSzvb) {
+            await callManageSzvbMembers({
+              buildingId,
+              chairperson: szvbMerge.nextSzvb.chairperson || null,
+              members: szvbMerge.nextSzvb.members || [],
+            });
+          }
           if (typeof reloadCurrentBuilding === 'function') await reloadCurrentBuilding(buildingId);
-          showToast(state.currentLang === 'en' ? "Flat data saved!" : "Lakás adatai mentve!");
+          showToast(
+            szvbMerge.changed
+              ? (state.currentLang === 'en' ? "Flat data & SZVB roles saved!" : "Lakás adatai és SZVB szerepkörök mentve!")
+              : (state.currentLang === 'en' ? "Flat data saved!" : "Lakás adatai mentve!")
+          );
         })
         .catch((err) => {
           console.warn('Firestore saveFlatMaster error:', err.message);
@@ -269,12 +299,37 @@ export function createBuildingActions({ state, setState, persistState, showToast
       return;
     }
 
+    const szvbNotifications = (szvbMerge.changed && szvbMerge.nextSzvb && targetBuilding)
+      ? buildSzvbUpdateNotifications({
+          prevSzvb: targetBuilding.szvb || null,
+          nextSzvb: szvbMerge.nextSzvb,
+          building: targetBuilding,
+          actorUser: state.currentUser,
+        })
+      : [];
+
     persistState(s => {
-      const updatedFlats = (s.flats || []).map(f => {
+      let updatedFlats = (s.flats || []).map(f => {
         if (f.flatNum === flatNum) {
           return { ...f, ...safeUpdate, lastUpdated: Date.now() };
         }
         return f;
+      });
+      if (szvbMerge.changed && szvbMerge.nextSzvb) {
+        updatedFlats = syncSzvbToBuildingFlats(updatedFlats, szvbMerge.nextSzvb);
+      }
+
+      const updatedBuildings = (s.buildings || []).map(b => {
+        if (!b || b.id !== resolvedBuildingId) return b;
+        let bFlats = (b.flats || []).map(f => (f.flatNum === flatNum ? { ...f, ...safeUpdate, lastUpdated: Date.now() } : f));
+        if (szvbMerge.changed && szvbMerge.nextSzvb) {
+          bFlats = syncSzvbToBuildingFlats(bFlats, szvbMerge.nextSzvb);
+        }
+        return {
+          ...b,
+          flats: bFlats,
+          ...(szvbMerge.changed && szvbMerge.nextSzvb ? { szvb: szvbMerge.nextSzvb } : {}),
+        };
       });
 
       // Also update email or name in users (Admin edits only)
@@ -329,11 +384,19 @@ export function createBuildingActions({ state, setState, persistState, showToast
       return {
         ...s,
         currentUser: updatedCurUser,
+        buildings: updatedBuildings,
         flats: updatedFlats,
-        users: updatedUsers
+        users: updatedUsers,
+        ...(szvbNotifications.length > 0
+          ? { notifications: [...szvbNotifications, ...(s.notifications || [])].slice(0, 300) }
+          : {}),
       };
     });
-    showToast(state.currentLang === 'en' ? "Flat data saved!" : "Lakás adatai mentve!");
+    showToast(
+      szvbMerge.changed
+        ? (state.currentLang === 'en' ? "Flat data & SZVB roles saved!" : "Lakás adatai és SZVB szerepkörök mentve!")
+        : (state.currentLang === 'en' ? "Flat data saved!" : "Lakás adatai mentve!")
+    );
   };
 
   // Document management: Upload Document

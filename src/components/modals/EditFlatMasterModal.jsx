@@ -33,12 +33,15 @@ import {
   ChevronDown,
   ChevronUp,
   Star,
-  Eye
+  Eye,
+  Crown
 } from 'lucide-react';
 import { formatPhoneNumber, cleanPhoneNumber } from '../../utils/phone';
 import { formatAnnexItem, getNormalizedAnnexList } from '../../utils/annex';
 import { useBackdropClose } from '../../utils/useBackdropClose';
-import { canUserManageBuilding } from '../../utils/teamPermissions';
+import { canUserManageBuilding, normalizeEmail } from '../../utils/teamPermissions';
+import { getUserBuildingSzvbRole, normalizeBuildingSzvb } from '../../utils/szvb';
+import { ConfirmDialog } from '../ConfirmDialog';
 
 /**
  * Parse an ownership share string (e.g. "1/2", "50%", "33.33", "0.5") to a percentage number (0-100).
@@ -161,37 +164,53 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
     setExcludeUtility(Boolean(flat.excludeUtility));
     setNotes(flat.notes || '');
 
-    // Owners
+    // Owners (hydrating authoritative SZVB member / chairperson role from targetBuilding.szvb)
     if (flat.owners && Array.isArray(flat.owners) && flat.owners.length > 0) {
-      setOwners(flat.owners.map((o, idx) => ({
-        id: o.id || `owner-${idx}-${Date.now()}`,
-        role: o.role || 'owner',
-        name: o.name || '',
-        share: o.share || '',
-        email: o.email || (Array.isArray(o.emails) ? o.emails[0] : '') || '',
-        phone: formatPhoneNumber(o.phone || (Array.isArray(o.phones) ? o.phones[0] : '') || ''),
-        postalCode: o.postalCode || '',
-        city: o.city || '',
-        street: o.street || '',
-        isPrimaryContact: Boolean(o.isPrimaryContact || idx === 0),
-        sendEmailNotification: o.sendEmailNotification !== undefined ? Boolean(o.sendEmailNotification) : true,
-        isBoardMember: Boolean(o.isBoardMember),
-        bankAccounts: Array.isArray(o.bankAccounts) ? [...o.bankAccounts] : (o.bankAccount ? [o.bankAccount] : [])
-      })));
+      setOwners(flat.owners.map((o, idx) => {
+        const ownerEmail = o.email || (Array.isArray(o.emails) ? o.emails[0] : '') || '';
+        const liveSzvbRole = targetBuilding
+          ? getUserBuildingSzvbRole({ email: ownerEmail, name: o.name || '' }, targetBuilding)
+          : null;
+        const resolvedIsBoard = Boolean(liveSzvbRole || o.isBoardMember);
+        const resolvedBoardRole = resolvedIsBoard
+          ? (liveSzvbRole || (o.boardRole === 'chairperson' ? 'chairperson' : 'member'))
+          : null;
+        return {
+          id: o.id || `owner-${idx}-${Date.now()}`,
+          role: o.role || 'owner',
+          name: o.name || '',
+          share: o.share || '',
+          email: ownerEmail,
+          phone: formatPhoneNumber(o.phone || (Array.isArray(o.phones) ? o.phones[0] : '') || ''),
+          postalCode: o.postalCode || '',
+          city: o.city || '',
+          street: o.street || '',
+          isPrimaryContact: Boolean(o.isPrimaryContact || idx === 0),
+          sendEmailNotification: o.sendEmailNotification !== undefined ? Boolean(o.sendEmailNotification) : true,
+          isBoardMember: resolvedIsBoard,
+          boardRole: resolvedBoardRole,
+          bankAccounts: Array.isArray(o.bankAccounts) ? [...o.bankAccounts] : (o.bankAccount ? [o.bankAccount] : [])
+        };
+      }));
     } else {
+      const fallbackEmail = flat.email || '';
+      const liveSzvbRole = targetBuilding
+        ? getUserBuildingSzvbRole({ email: fallbackEmail, name: flat.ownerName || '' }, targetBuilding)
+        : null;
       setOwners([{
         id: `owner-0-${Date.now()}`,
         role: 'owner',
         name: flat.ownerName || '',
         share: flat.ownershipShare ? `${flat.ownershipShare}%` : '',
-        email: flat.email || '',
+        email: fallbackEmail,
         phone: formatPhoneNumber(flat.phone || ''),
         postalCode: flat.postalCode || '',
         city: flat.city || '',
         street: flat.street || '',
         isPrimaryContact: true,
         sendEmailNotification: true,
-        isBoardMember: false,
+        isBoardMember: Boolean(liveSzvbRole),
+        boardRole: liveSzvbRole || null,
         bankAccounts: flat.bankAccount ? [flat.bankAccount] : []
       }]);
     }
@@ -438,14 +457,76 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
     setOwners(prev => prev.map(o => o.id === id ? { ...o, [field]: value } : o));
   };
 
+  const [pendingChairReplace, setPendingChairReplace] = useState(null); // { ownerId, existingChairName }
+
   const handleToggleOwnerFlag = (ownerId, field) => {
     if (!isEditMode) return;
     setOwners(prev => prev.map(o => {
       if (o.id === ownerId) {
-        return { ...o, [field]: !o[field] };
+        const nextVal = !o[field];
+        if (field === 'isBoardMember') {
+          return {
+            ...o,
+            isBoardMember: nextVal,
+            boardRole: nextVal ? (o.boardRole === 'chairperson' ? 'chairperson' : 'member') : null,
+          };
+        }
+        return { ...o, [field]: nextVal };
       }
       return o;
     }));
+  };
+
+  const applyBoardChairPromotion = (ownerId) => {
+    setOwners(prev => prev.map(o => {
+      if (o.id === ownerId) {
+        return { ...o, isBoardMember: true, boardRole: 'chairperson' };
+      }
+      if (o.isBoardMember && o.boardRole === 'chairperson') {
+        // Demote any co-owner on this same flat who was chairperson to regular SZVB member
+        return { ...o, boardRole: 'member' };
+      }
+      return o;
+    }));
+  };
+
+  const handleToggleBoardChair = (ownerId) => {
+    if (!isEditMode) return;
+    const targetOwner = owners.find(o => o.id === ownerId);
+    if (!targetOwner || !targetOwner.isBoardMember) return;
+
+    // Unchecking Chairperson -> demote cleanly to regular SZVB member
+    if (targetOwner.boardRole === 'chairperson') {
+      setOwners(prev => prev.map(o => (o.id === ownerId ? { ...o, boardRole: 'member' } : o)));
+      return;
+    }
+
+    // Check if there is already ANOTHER Chairperson (either on this flat or in targetBuilding.szvb)
+    const targetEmail = normalizeEmail(targetOwner.email);
+    const targetNameNorm = String(targetOwner.name || '').trim().toLowerCase();
+
+    const sameFlatOtherChair = owners.find(
+      o => o.id !== ownerId && o.isBoardMember && o.boardRole === 'chairperson'
+    );
+    const buildingChair = normalizeBuildingSzvb(targetBuilding).chairperson;
+    const isSameAsBuildingChair = Boolean(
+      buildingChair &&
+      ((targetEmail && normalizeEmail(buildingChair.email) === targetEmail) ||
+        (!targetEmail && targetNameNorm && String(buildingChair.name || '').trim().toLowerCase() === targetNameNorm))
+    );
+
+    const existingChairName = sameFlatOtherChair
+      ? (sameFlatOtherChair.name || sameFlatOtherChair.email || (isEn ? 'current chairperson' : 'jelenlegi elnök'))
+      : (buildingChair && !isSameAsBuildingChair
+          ? (buildingChair.name || buildingChair.email || (isEn ? 'current chairperson' : 'jelenlegi elnök'))
+          : null);
+
+    if (existingChairName) {
+      setPendingChairReplace({ ownerId, existingChairName });
+      return;
+    }
+
+    applyBoardChairPromotion(ownerId);
   };
 
   const handleOwnerAddBankAccount = (ownerId) => {
@@ -669,6 +750,7 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
           isPrimaryContact: Boolean(o.isPrimaryContact),
           sendEmailNotification: Boolean(o.sendEmailNotification),
           isBoardMember: Boolean(o.isBoardMember),
+          boardRole: o.isBoardMember ? (o.boardRole === 'chairperson' ? 'chairperson' : 'member') : null,
           bankAccounts: cleanBankAccs
         };
       })
@@ -796,7 +878,7 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
       storageNum: legacyStorages.map(s => formatAnnexItem(s)).filter(Boolean).join(', ')
     };
 
-    saveFlatMaster(flatNum, updatedMasterData);
+    saveFlatMaster(flatNum, updatedMasterData, targetBuildingId);
     onClose();
   };
 
@@ -1533,8 +1615,17 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
                                 )}
 
                                 {owner.isBoardMember && (
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                    SZVB
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border inline-flex items-center gap-1 ${
+                                    owner.boardRole === 'chairperson'
+                                      ? 'bg-indigo-600 text-white border-indigo-700'
+                                      : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                  }`}>
+                                    {owner.boardRole === 'chairperson' && <Crown className="w-2.5 h-2.5 text-amber-300" />}
+                                    <span>
+                                      {owner.boardRole === 'chairperson'
+                                        ? (isEn ? 'SZVB Chair' : 'SZVB Elnök')
+                                        : 'SZVB'}
+                                    </span>
                                   </span>
                                 )}
                               </div>
@@ -1816,7 +1907,39 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
                                   </div>
                                   <span>{t.is_board_member || (isEn ? "Audit Board Member" : "SZVB tag")}</span>
                                 </button>
+
+                                {/* SZVB elnök (appears dynamically when SZVB tag is checked) */}
+                                {owner.isBoardMember && (
+                                  <button
+                                    type="button"
+                                    disabled={!isEditMode}
+                                    onClick={() => handleToggleBoardChair(owner.id)}
+                                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                                      !isEditMode ? 'cursor-default opacity-85' : 'cursor-pointer'
+                                    } ${
+                                      owner.boardRole === 'chairperson'
+                                        ? 'bg-amber-50 text-amber-950 border-amber-300 shadow-2xs'
+                                        : 'bg-white text-gray-600 border-gray-200 hover:bg-amber-50/50'
+                                    }`}
+                                  >
+                                    <div className={`w-4 h-4 rounded flex items-center justify-center transition-colors ${
+                                      owner.boardRole === 'chairperson' ? 'bg-amber-500 text-white' : 'bg-white border border-gray-300'
+                                    }`}>
+                                      {owner.boardRole === 'chairperson' && <Check className="w-3 h-3 stroke-[3]" />}
+                                    </div>
+                                    <Crown className={`w-3.5 h-3.5 ${owner.boardRole === 'chairperson' ? 'text-amber-600' : 'text-gray-400'}`} />
+                                    <span>{isEn ? "SZVB Chairperson" : "SZVB elnök"}</span>
+                                  </button>
+                                )}
                               </div>
+
+                              {owner.isBoardMember && !String(owner.email || '').trim() && (
+                                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 font-medium">
+                                  {isEn
+                                    ? "Note: Enter an email address for this owner so they receive an SZVB audit profile and notification."
+                                    : "Tipp: Adj meg e-mail címet a tulajdonoshoz, hogy megkapja az SZVB profilját és az értesítést!"}
+                                </p>
+                              )}
 
                               {/* Ismert bankszámlaszámok */}
                               <div className="pt-2 border-t border-gray-100 space-y-2">
@@ -2738,6 +2861,25 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
         </div>
 
       </div>
+
+      <ConfirmDialog
+        isOpen={Boolean(pendingChairReplace)}
+        title={isEn ? "Replace SZVB Chairperson?" : "SZVB elnök leváltása?"}
+        message={
+          isEn
+            ? `Are you sure you want to replace ${pendingChairReplace?.existingChairName || ''} as SZVB Chairperson? The previous chairperson will remain on the committee as a regular SZVB member.`
+            : `Biztosan leváltod ${pendingChairReplace?.existingChairName || ''} elnököt? A korábbi elnök nem kerül ki a bizottságból, csak sima SZVB-tagra fokozódik le.`
+        }
+        confirmLabel={isEn ? "Yes, Replace" : "Igen, leváltom"}
+        cancelLabel={t.cancel || (isEn ? "Cancel" : "Mégse")}
+        variant="warning"
+        onConfirm={() => {
+          const targetId = pendingChairReplace?.ownerId;
+          setPendingChairReplace(null);
+          if (targetId) applyBoardChairPromotion(targetId);
+        }}
+        onCancel={() => setPendingChairReplace(null)}
+      />
     </div>
   );
 }

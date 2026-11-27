@@ -12,6 +12,7 @@ import {
   getUserSzvbRolesAcrossBuildings,
   syncSzvbToBuildingFlats,
   buildSzvbUpdateNotifications,
+  mergeFlatOwnersIntoBuildingSzvb,
 } from '../src/utils/szvb.js';
 import {
   ALERT_ID_SZVB_STATUTORY_25,
@@ -288,4 +289,56 @@ test('9. buildSzvbUpdateNotifications emits detailed HU/EN grant, role-change, a
   assert.match(revoked.messageHu, /visszavonásra került/i);
   assert.match(revoked.messageEn, /revoked/i);
   assert.equal(revoked.changes[0].type, 'revoked');
+});
+
+test('10. mergeFlatOwnersIntoBuildingSzvb syncs SZVB member/chairperson checkboxes and demotes replaced chairperson to member', () => {
+  const initialSzvb = {
+    chairperson: { key: 'email:regi@example.com', name: 'Régi Elnök', email: 'regi@example.com', flatNum: '1' },
+    members: [{ key: 'email:masik@example.com', name: 'Másik Tag', email: 'masik@example.com', flatNum: '2' }],
+  };
+
+  // 1) Check "SZVB tag" on flat 3 owner -> added to members[]
+  const step1 = mergeFlatOwnersIntoBuildingSzvb({
+    prevSzvb: initialSzvb,
+    flatNum: '3',
+    prevOwners: [{ name: 'Új Tulaj', email: 'uj@example.com', isBoardMember: false, boardRole: null }],
+    nextOwners: [{ name: 'Új Tulaj', email: 'uj@example.com', isBoardMember: true, boardRole: 'member' }],
+  });
+  assert.equal(step1.changed, true);
+  assert.equal(step1.nextSzvb.chairperson.email, 'regi@example.com');
+  assert.equal(step1.nextSzvb.members.some((m) => m.email === 'uj@example.com'), true);
+
+  // 2) Check "SZVB elnök" on flat 3 owner -> replaces Régi Elnök AND demotes Régi Elnök to regular SZVB member!
+  const step2 = mergeFlatOwnersIntoBuildingSzvb({
+    prevSzvb: step1.nextSzvb,
+    flatNum: '3',
+    prevOwners: [{ name: 'Új Tulaj', email: 'uj@example.com', isBoardMember: true, boardRole: 'member' }],
+    nextOwners: [{ name: 'Új Tulaj', email: 'uj@example.com', isBoardMember: true, boardRole: 'chairperson' }],
+  });
+  assert.equal(step2.changed, true);
+  assert.equal(step2.nextSzvb.chairperson.email, 'uj@example.com');
+  assert.equal(step2.nextSzvb.members.some((m) => m.email === 'regi@example.com'), true);
+  assert.equal(step2.nextSzvb.members.some((m) => m.email === 'uj@example.com'), false);
+
+  // 3) Uncheck "SZVB elnök" (keep "SZVB tag") -> demotes Új Tulaj from chairperson to regular member
+  const step3 = mergeFlatOwnersIntoBuildingSzvb({
+    prevSzvb: step2.nextSzvb,
+    flatNum: '3',
+    prevOwners: [{ name: 'Új Tulaj', email: 'uj@example.com', isBoardMember: true, boardRole: 'chairperson' }],
+    nextOwners: [{ name: 'Új Tulaj', email: 'uj@example.com', isBoardMember: true, boardRole: 'member' }],
+  });
+  assert.equal(step3.changed, true);
+  assert.equal(step3.nextSzvb.chairperson, null);
+  assert.equal(step3.nextSzvb.members.some((m) => m.email === 'uj@example.com'), true);
+
+  // 4) Uncheck "SZVB tag" -> removes Új Tulaj completely from SZVB while preserving others
+  const step4 = mergeFlatOwnersIntoBuildingSzvb({
+    prevSzvb: step3.nextSzvb,
+    flatNum: '3',
+    prevOwners: [{ name: 'Új Tulaj', email: 'uj@example.com', isBoardMember: true, boardRole: 'member' }],
+    nextOwners: [{ name: 'Új Tulaj', email: 'uj@example.com', isBoardMember: false, boardRole: null }],
+  });
+  assert.equal(step4.changed, true);
+  assert.equal(step4.nextSzvb.members.some((m) => m.email === 'uj@example.com'), false);
+  assert.equal(step4.nextSzvb.members.some((m) => m.email === 'regi@example.com'), true);
 });

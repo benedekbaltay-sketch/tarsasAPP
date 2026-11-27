@@ -653,3 +653,130 @@ export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null,
   return notifications;
 }
 
+/**
+ * Computes the next building `szvb` object (`{ chairperson, members }`) when an admin edits
+ * `isBoardMember` / `boardRole` flags on a single flat's owners in `EditFlatMasterModal`.
+ *
+ * Guarantees:
+ * - Checking `isBoardMember` adds the owner to `szvb.members` (or `szvb.chairperson` if `boardRole === 'chairperson'`).
+ * - Promoting an owner to `chairperson` when another chairperson already exists AUTOMATICALLY
+ *   demotes the previous chairperson into `szvb.members` (regular SZVB member, never removing them!).
+ * - Unchecking `boardRole === 'chairperson'` while keeping `isBoardMember: true` demotes that owner to `szvb.members`.
+ * - Unchecking `isBoardMember` removes that owner from both `chairperson` and `members`.
+ */
+export function mergeFlatOwnersIntoBuildingSzvb({
+  prevSzvb = null,
+  flatNum = '',
+  prevOwners = [],
+  nextOwners = [],
+} = {}) {
+  const normPrev = normalizeBuildingSzvb({ szvb: prevSzvb });
+  const cleanFlatNum = String(flatNum || '').trim();
+
+  const matchesPerson = (a, b) => {
+    if (!a || !b) return false;
+    const emA = normalizeEmail(a.email);
+    const emB = normalizeEmail(b.email);
+    if (emA && emB) return emA === emB;
+    if (a.key && b.key && a.key === b.key) return true;
+    const nameA = String(a.name || '').trim().toLowerCase();
+    const nameB = String(b.name || '').trim().toLowerCase();
+    return Boolean(nameA && nameA === nameB);
+  };
+
+  const toSzvbPerson = (owner) => {
+    if (!owner) return null;
+    const email = normalizeEmail(owner.email || (Array.isArray(owner.emails) ? owner.emails[0] : ''));
+    const name = String(owner.name || '').trim() || email;
+    if (!name && !email) return null;
+    const key = email
+      ? `email:${email}`
+      : `name:${name.toLowerCase()}|flat:${cleanFlatNum.toLowerCase()}`;
+    return {
+      key,
+      name,
+      email,
+      flatNum: cleanFlatNum,
+    };
+  };
+
+  let nextChair = normPrev.chairperson ? { ...normPrev.chairperson } : null;
+  let nextMembers = (normPrev.members || []).map((m) => ({ ...m }));
+
+  const nextOwnerList = Array.isArray(nextOwners) ? nextOwners : [];
+  const prevOwnerList = Array.isArray(prevOwners) ? prevOwners : [];
+
+  // 1. Collect all people from this flat who are NOT (or no longer) board members
+  const uncheckedOrRemoved = [];
+  for (const o of nextOwnerList) {
+    if (!o?.isBoardMember) {
+      const p = toSzvbPerson(o);
+      if (p) uncheckedOrRemoved.push(p);
+    }
+  }
+  for (const prevO of prevOwnerList) {
+    const pPrev = toSzvbPerson(prevO);
+    if (!pPrev) continue;
+    const stillPresentAndBoard = nextOwnerList.some((no) => no?.isBoardMember && matchesPerson(toSzvbPerson(no), pPrev));
+    if (!stillPresentAndBoard) {
+      uncheckedOrRemoved.push(pPrev);
+    }
+  }
+
+  for (const rem of uncheckedOrRemoved) {
+    if (nextChair && matchesPerson(nextChair, rem)) {
+      nextChair = null;
+    }
+    nextMembers = nextMembers.filter((m) => !matchesPerson(m, rem));
+  }
+
+  // 2. Apply all checked SZVB members & chairperson from this flat
+  for (const o of nextOwnerList) {
+    if (!o?.isBoardMember) continue;
+    const person = toSzvbPerson(o);
+    if (!person) continue;
+
+    if (o.boardRole === 'chairperson') {
+      if (nextChair && !matchesPerson(nextChair, person)) {
+        // Demote previous chairperson cleanly to regular SZVB member!
+        if (!nextMembers.some((m) => matchesPerson(m, nextChair))) {
+          nextMembers.push({ ...nextChair });
+        }
+      }
+      nextChair = person;
+      nextMembers = nextMembers.filter((m) => !matchesPerson(m, person));
+    } else {
+      // Regular SZVB member
+      if (nextChair && matchesPerson(nextChair, person)) {
+        // Owner unchecked Chairperson while keeping SZVB member checked -> demote to member
+        nextChair = null;
+      }
+      const existingIdx = nextMembers.findIndex((m) => matchesPerson(m, person));
+      if (existingIdx >= 0) {
+        nextMembers[existingIdx] = person;
+      } else {
+        nextMembers.push(person);
+      }
+    }
+  }
+
+  const nextSzvb = normalizeBuildingSzvb({
+    szvb: {
+      chairperson: nextChair,
+      members: nextMembers,
+    },
+  });
+
+  const serialize = (s) =>
+    JSON.stringify({
+      chairperson: s.chairperson ? { email: s.chairperson.email, name: s.chairperson.name, flatNum: s.chairperson.flatNum } : null,
+      members: (s.members || []).map((m) => ({ email: m.email, name: m.name, flatNum: m.flatNum })),
+    });
+
+  return {
+    nextSzvb,
+    changed: serialize(normPrev) !== serialize(nextSzvb),
+  };
+}
+
+
