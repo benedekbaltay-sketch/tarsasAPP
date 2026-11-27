@@ -55,6 +55,7 @@ export function resolveUserProfiles(user, { buildings = [], organizations = [], 
 
   const isSuperAdmin =
     user.role === 'superadmin' ||
+    user.isSuperAdmin === true ||
     matchedAdminUser?.role === 'superadmin';
 
   const hasFirestoreAdminMembership = Array.isArray(user.memberships)
@@ -592,8 +593,8 @@ export function resolveActiveProfileValidity(
     return { isValid: true, matchedProfile: null, fallbackProfile: null, reason: null, szvbRoleChanged: false };
   }
 
-  // SuperAdmin is always valid
-  if (currentUser.role === 'superadmin') {
+  // SuperAdmin (including when viewing a flat or KK profile in their own session) is NEVER auto-ejected
+  if (currentUser.role === 'superadmin' || currentUser.isSuperAdmin === true) {
     return { isValid: true, matchedProfile: null, fallbackProfile: null, reason: null, szvbRoleChanged: false };
   }
 
@@ -611,23 +612,50 @@ export function resolveActiveProfileValidity(
     organizations,
     users,
   });
-  const activeKey = getActiveProfileKey(currentUser);
-  const matchedProfile = (resolved.allProfiles || []).find((p) => p && p.id === activeKey) || null;
 
-  // Also check explicit server-side membership deactivation on current building (e.g. external auditor)
   const bId = currentUser.buildingId || null;
-  let explicitlyDeactivatedInMembership = false;
+  let explicitMembership = null;
   if (bId && currentUser.memberships) {
-    let mem = null;
     if (Array.isArray(currentUser.memberships)) {
-      mem = currentUser.memberships.find((m) => m && m.buildingId === bId) || null;
+      explicitMembership = currentUser.memberships.find((m) => m && m.buildingId === bId) || null;
     } else if (typeof currentUser.memberships === 'object') {
-      mem = currentUser.memberships[bId] || null;
-    }
-    if (mem && mem.active === false && (currentUser.role === 'szvb' || currentUser.role === 'auditor' || currentUser.role === 'Owner')) {
-      explicitlyDeactivatedInMembership = true;
+      explicitMembership = currentUser.memberships[bId] || null;
     }
   }
+  const explicitlyDeactivatedInMembership = Boolean(explicitMembership && explicitMembership.active === false);
+
+  // For KK / Admin mode: ONLY eject when the organization explicitly suspended this staff member (`isSuspendedStaff === true`).
+  // Never falsely eject an active KK owner/admin due to partial/unhydrated state.
+  if (currentUser.role === 'admin') {
+    if (!resolved.isSuspendedStaff) {
+      return {
+        isValid: true,
+        matchedProfile: resolved.kkProfile || null,
+        fallbackProfile: null,
+        reason: null,
+        szvbRoleChanged: false,
+      };
+    }
+  }
+
+  // For Owner mode: NEVER falsely eject just because `building.flats` is empty/unhydrated!
+  // Only eject an Owner if server-side membership explicitly marked them `active === false`.
+  if (currentUser.role === 'Owner') {
+    if (!explicitlyDeactivatedInMembership) {
+      const activeKey = getActiveProfileKey(currentUser);
+      const matchedOwner = (resolved.allProfiles || []).find((p) => p && p.id === activeKey) || null;
+      return {
+        isValid: true,
+        matchedProfile: matchedOwner,
+        fallbackProfile: null,
+        reason: null,
+        szvbRoleChanged: false,
+      };
+    }
+  }
+
+  const activeKey = getActiveProfileKey(currentUser);
+  const matchedProfile = (resolved.allProfiles || []).find((p) => p && p.id === activeKey) || null;
 
   if (matchedProfile && !explicitlyDeactivatedInMembership) {
     const szvbRoleChanged = Boolean(
@@ -645,7 +673,8 @@ export function resolveActiveProfileValidity(
     };
   }
 
-  // Active profile is NO LONGER authorized -> choose the safest fallback profile!
+  // Active delegated profile (SZVB, Financial Auditor, or explicitly suspended KK staff / deactivated Owner)
+  // is NO LONGER authorized -> choose the safest fallback profile!
   const remainingProfiles = (resolved.allProfiles || []).filter((p) => {
     if (!p) return false;
     if (explicitlyDeactivatedInMembership && bId && p.buildingId === bId) return false;

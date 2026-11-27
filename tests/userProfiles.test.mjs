@@ -343,3 +343,39 @@ test('7. Real-time active-profile revocation guard: revoked SZVB/Auditor/KK imme
   assert.equal(revokedKk.revokedRole, 'admin');
   assert.equal(revokedKk.fallbackProfile?.type, 'owner');
 });
+
+test('8. Zero false-positive ejections: SuperAdmin in flat/KK mode, active KK admin, and unhydrated Owner NEVER get kicked out', () => {
+  const unhydratedBuildings = [
+    { id: 'b1', name: 'Kossuth u. 4.', flats: [], hydrated: false, szvb: null },
+  ];
+
+  // SuperAdmin switched to a flat profile (with isSuperAdmin preserved) on an unhydrated building -> ALWAYS valid
+  const superInFlat = {
+    email: 'super@example.com',
+    role: 'Owner',
+    isSuperAdmin: true,
+    buildingId: 'b1',
+    flatNum: '14',
+  };
+  assert.equal(
+    resolveActiveProfileValidity(superInFlat, { buildings: unhydratedBuildings, organizations: [], users: [] }).isValid,
+    true
+  );
+  // SuperAdmin still retains their Rendszergazda (kk) profile in resolveUserProfiles so they can switch back
+  const superResolved = resolveUserProfiles(superInFlat, { buildings: unhydratedBuildings, organizations: [], users: [] });
+  assert.equal(superResolved.kkProfile?.role, 'superadmin');
+
+  // Regular active KK admin (not suspended) -> ALWAYS valid even if organizations/users are empty
+  const activeKkAdmin = { email: 'kk@example.com', role: 'admin', buildingId: 'b1' };
+  assert.equal(
+    resolveActiveProfileValidity(activeKkAdmin, { buildings: unhydratedBuildings, organizations: [], users: [] }).isValid,
+    true
+  );
+
+  // Regular active Owner on an unhydrated building (flats: []) -> NEVER falsely ejected
+  const unhydratedOwner = { email: 'lako@example.com', role: 'Owner', buildingId: 'b1', flatNum: '5' };
+  assert.equal(
+    resolveActiveProfileValidity(unhydratedOwner, { buildings: unhydratedBuildings, organizations: [], users: [] }).isValid,
+    true
+  );
+});

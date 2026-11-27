@@ -301,8 +301,14 @@ export function AppProvider({ children }) {
     setCloudSyncStatus('syncing');
     try {
       const membership = state.currentUser?.memberships?.[bId];
+      const isSuperSession = Boolean(
+        state.currentUser?.role === 'superadmin' || state.currentUser?.isSuperAdmin === true
+      );
+      const effectiveReadRole = isSuperSession
+        ? 'superadmin'
+        : (roleOverride || state.currentUser?.role || membership?.role || 'owner');
       const hydrated = await hydrateFirestoreBuilding(bId, {
-        role: roleOverride || state.currentUser?.role || membership?.role || 'owner',
+        role: effectiveReadRole,
         uid,
         unitIds: membership?.unitIds || [],
         accessFromDate: state.currentUser?.accessFromDate || null,
@@ -1401,8 +1407,9 @@ export function AppProvider({ children }) {
     .sort()
     .join(',');
 
+  const isImpersonating = Boolean(state.impersonatedFrom);
   useEffect(() => {
-    if (!IS_FIRESTORE_MODE || !state.currentUser?.uid) return;
+    if (!IS_FIRESTORE_MODE || !state.currentUser?.uid || isImpersonating) return;
     const uid = state.currentUser.uid;
     const unsubs = [];
 
@@ -1420,7 +1427,7 @@ export function AppProvider({ children }) {
         if (!liveUserDoc) return;
         const liveMemberships = liveUserDoc.memberships || {};
         setState((prev) => {
-          if (!prev.currentUser || prev.currentUser.uid !== uid) return prev;
+          if (!prev.currentUser || prev.currentUser.uid !== uid || prev.impersonatedFrom) return prev;
           return {
             ...prev,
             currentUser: {
@@ -1505,11 +1512,20 @@ export function AppProvider({ children }) {
           },
           (deniedBuildingId) => {
             // Building membership was revoked completely (e.g. external auditor removed):
-            // drop the inaccessible building locally so the active-profile guard immediately ejects them.
-            setState((prev) => ({
-              ...prev,
-              buildings: (prev.buildings || []).filter((b) => b && b.id !== deniedBuildingId),
-            }));
+            // NEVER drop buildings during SuperAdmin sessions or impersonation.
+            setState((prev) => {
+              if (
+                prev.impersonatedFrom ||
+                prev.currentUser?.role === 'superadmin' ||
+                prev.currentUser?.isSuperAdmin === true
+              ) {
+                return prev;
+              }
+              return {
+                ...prev,
+                buildings: (prev.buildings || []).filter((b) => b && b.id !== deniedBuildingId),
+              };
+            });
           }
         )
       );
@@ -1520,7 +1536,7 @@ export function AppProvider({ children }) {
         try { fn(); } catch {}
       });
     };
-  }, [state.currentUser?.uid, orgIdsKey, buildingIdsKey]);
+  }, [state.currentUser?.uid, orgIdsKey, buildingIdsKey, isImpersonating]);
 
   // Reactive Active-Profile Revocation Guard:
   // If the user's currently active profile (SZVB, Financial Auditor, or offboarded KK) is revoked
@@ -1529,7 +1545,15 @@ export function AppProvider({ children }) {
   // privileged screens or submit actions with revoked authority.
   const lastRevocationSigRef = useRef('');
   useEffect(() => {
-    if (!isInitialSyncDone || !state.currentUser || state.impersonatedFrom) return;
+    if (
+      !isInitialSyncDone ||
+      !state.currentUser ||
+      state.impersonatedFrom ||
+      state.currentUser.role === 'superadmin' ||
+      state.currentUser.isSuperAdmin === true
+    ) {
+      return;
+    }
 
     const validity = resolveActiveProfileValidity(state.currentUser, {
       buildings: state.buildings,
@@ -1567,7 +1591,8 @@ export function AppProvider({ children }) {
     const fallback = validity.fallbackProfile;
 
     if (!fallback) {
-      // Zero valid profiles remain (e.g. external auditor whose sole access was revoked)
+      // Only auto-signout external SZVB/Auditor accounts whose sole access was revoked (never admin/superadmin!)
+      if (revokedRole !== 'szvb' && revokedRole !== 'auditor') return;
       if (IS_FIRESTORE_MODE) {
         const { auth } = getFirebaseInstance();
         if (auth) signOut(auth).catch(() => {});
@@ -1844,6 +1869,7 @@ export function AppProvider({ children }) {
       flatNum: "0",
       buildingId: targetBuildingId,
       isAdminUser: true,
+      isSuperAdmin: Boolean(state.currentUser?.isSuperAdmin || state.currentUser?.role === 'superadmin' || kkProfile.role === 'superadmin'),
       memberships: state.currentUser?.memberships,
     });
 
@@ -1889,6 +1915,8 @@ export function AppProvider({ children }) {
   // Switch to Resident (Tenant / Owner) Mode
   const switchToTenantMode = (flatNum = null, buildingId = null) => {
     const isEn = state.currentLang === 'en';
+    const prevRole = state.currentUser?.role;
+    const isSuperSession = Boolean(state.currentUser?.isSuperAdmin || prevRole === 'superadmin');
     const { kkProfile, ownerProfiles } = resolveUserProfiles(state.currentUser, {
       buildings: state.buildings,
       organizations: state.organizations,
@@ -1919,6 +1947,7 @@ export function AppProvider({ children }) {
       unitId: chosenFlat.unitId || chosenFlat.id,
       buildingId: targetBuildingId,
       isAdminUser: Boolean(kkProfile),
+      isSuperAdmin: isSuperSession,
       memberships: state.currentUser?.memberships,
     });
 
@@ -1960,7 +1989,8 @@ export function AppProvider({ children }) {
     }), 'localOnly');
 
     if (IS_FIRESTORE_MODE && targetBuildingId) {
-      reloadCurrentBuilding(targetBuildingId, { roleOverride: 'Owner' });
+      const shouldForceOwnerScope = !isSuperSession && (prevRole === 'szvb' || prevRole === 'auditor');
+      reloadCurrentBuilding(targetBuildingId, shouldForceOwnerScope ? { roleOverride: 'Owner' } : {});
     }
 
     showToast(isEn ? `Switched to Flat ${chosenFlat.flatNum}` : `Átváltva: ${chosenFlat.flatNum}. lakás`);
@@ -2006,6 +2036,7 @@ export function AppProvider({ children }) {
       flatNum: verifiedInfo.flatNum || state.currentUser?.flatNum || '0',
       buildingId: curB.id,
       isAdminUser: Boolean(kkProfile),
+      isSuperAdmin: Boolean(state.currentUser?.isSuperAdmin || state.currentUser?.role === 'superadmin'),
       memberships: state.currentUser?.memberships,
     });
 
@@ -2097,6 +2128,7 @@ export function AppProvider({ children }) {
       flatNum: aud.type === 'internal' ? (aud.flatNum || state.currentUser?.flatNum || '0') : '0',
       buildingId: curB.id,
       isAdminUser: Boolean(kkProfile),
+      isSuperAdmin: Boolean(state.currentUser?.isSuperAdmin || state.currentUser?.role === 'superadmin'),
       memberships: state.currentUser?.memberships,
     });
 

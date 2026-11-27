@@ -843,6 +843,7 @@ export async function hydrateFirestoreSession(firebaseUser) {
         : (firstOwnedFlat?.unitId || primaryMembership?.unitIds?.[0] || null),
     buildingId: primaryBuildingId,
     isAdminUser: primaryRole === 'admin' || primaryRole === 'superadmin',
+    isSuperAdmin: Boolean(isSuperAdmin),
     accessFromDate,
     memberships: rawMemberships,
   };

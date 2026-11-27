@@ -459,7 +459,9 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     if (!state.currentUser) return;
     const isSuperAdmin = (
       state.currentUser.role === 'superadmin' ||
-      state.impersonatedFrom?.originalUser?.role === 'superadmin'
+      state.currentUser.isSuperAdmin === true ||
+      state.impersonatedFrom?.originalUser?.role === 'superadmin' ||
+      state.impersonatedFrom?.originalUser?.isSuperAdmin === true
     );
     if (!isSuperAdmin) {
       showToast(state.currentLang === 'en' ? "Unauthorized action." : "Jogosulatlan művelet.", "error");
