@@ -25,3 +25,4 @@ export {
   notifyBankAccountChange,
 } from './src/organizations.js';
 export { downloadBuildingFile, uploadBuildingFile } from './src/files.js';
+export { manageBuildingLifecycle } from './src/buildingLifecycle.js';

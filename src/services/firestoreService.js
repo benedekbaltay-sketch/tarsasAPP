@@ -652,6 +652,12 @@ export async function callProvisionBuilding(buildingData) {
   return res.data;
 }
 
+export async function callManageBuildingLifecycle(payload) {
+  const fn = httpsCallable(requireFunctions(), 'manageBuildingLifecycle');
+  const res = await fn(payload);
+  return res.data;
+}
+
 export async function callManageBuildingMember(memberData) {
   const fn = httpsCallable(requireFunctions(), 'manageBuildingMember');
   const res = await fn(memberData);

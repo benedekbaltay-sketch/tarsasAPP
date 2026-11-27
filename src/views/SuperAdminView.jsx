@@ -30,7 +30,9 @@ import {
   Crown,
   X,
   Loader2,
-  Building2
+  Building2,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { formatCurrency } from '../utils/finances';
 import { formatPhoneNumber } from '../utils/phone';
@@ -43,6 +45,7 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
     actAsUser,
     showToast,
     restoreArchivedBuilding,
+    permanentlyDeleteArchivedBuilding,
     createOrganizationOwner,
     updateOrganizationOwnerEmail,
   } = useApp();
@@ -71,9 +74,14 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
 
   const [restoreTargetBuilding, setRestoreTargetBuilding] = useState(null);
   const [restoreSelectedOwnerKey, setRestoreSelectedOwnerKey] = useState('');
+  const [isRestoringBuilding, setIsRestoringBuilding] = useState(false);
+
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState(null);
+  const [permanentDeleteInput, setPermanentDeleteInput] = useState('');
+  const [isPermanentlyDeleting, setIsPermanentlyDeleting] = useState(false);
 
   // Lock body scroll & handle Escape when any SuperAdmin modal is open
-  const anyModalOpen = Boolean(isCreateOwnerOpen || editEmailOwner || restoreTargetBuilding);
+  const anyModalOpen = Boolean(isCreateOwnerOpen || editEmailOwner || restoreTargetBuilding || permanentDeleteTarget);
   useEffect(() => {
     if (!anyModalOpen) return;
     const prevOverflow = document.body.style.overflow;
@@ -82,7 +90,8 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
       if (e.key === 'Escape') {
         if (!isCreatingOwner) setIsCreateOwnerOpen(false);
         if (!isUpdatingEmail) setEditEmailOwner(null);
-        setRestoreTargetBuilding(null);
+        if (!isRestoringBuilding) setRestoreTargetBuilding(null);
+        if (!isPermanentlyDeleting) setPermanentDeleteTarget(null);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -90,7 +99,7 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [anyModalOpen, isCreatingOwner, isUpdatingEmail]);
+  }, [anyModalOpen, isCreatingOwner, isUpdatingEmail, isRestoringBuilding, isPermanentlyDeleting]);
 
   const activeBuildings = useMemo(
     () => (buildings || []).filter(b => b && !b.archived),
@@ -825,7 +834,7 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
                 })
                 .map((b) => {
                   const archivedDateStr = b.archivedAt ? new Date(b.archivedAt).toLocaleString(isEn ? 'en-US' : 'hu-HU') : '—';
-                  const flatCount = (b.flats || []).length || b.aggregates?.unitCount || 0;
+                  const flatCount = (b.flats || []).length || b.aggregates?.totalUnitCount || b.aggregates?.unitCount || 0;
                   const txCount = (b.transactions || []).length + (b.expenses || []).length;
 
                   return (
@@ -891,7 +900,21 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
                         </div>
                       </div>
 
-                      <div className="pt-2 border-t border-gray-100 flex items-center justify-end">
+                      <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-2 flex-wrap">
+                        {!b._isUnassignedOnly && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPermanentDeleteTarget(b);
+                              setPermanentDeleteInput('');
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white text-[11px] font-bold transition-all cursor-pointer active:scale-95"
+                            title={t.superadmin_permanent_delete_btn || (isEn ? "Delete Permanently" : "Végleges törlés")}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>{t.superadmin_permanent_delete_btn || (isEn ? "Delete Permanently" : "Végleges törlés")}</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
@@ -903,10 +926,10 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
                             );
                             setRestoreSelectedOwnerKey(origMatch ? origMatch.key : (ownersList[0]?.key || ''));
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-[11px] font-bold shadow-xs transition-all cursor-pointer active:scale-95"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-[11px] font-bold shadow-xs transition-all cursor-pointer active:scale-95 ml-auto"
                         >
                           <RotateCcw className="w-3 h-3" />
-                          <span>{t.superadmin_restore_transfer_btn || (isEn ? "Restore / Transfer to Owner" : "Visszaállítás / Átadás tulajdonosnak")}</span>
+                          <span>{t.superadmin_restore_transfer_btn || (isEn ? "Restore / Transfer to Owner" : "Visszaállítás / Átadás")}</span>
                         </button>
                       </div>
                     </div>
@@ -1624,6 +1647,7 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
             <div className="flex gap-2.5 pt-2">
               <button
                 type="button"
+                disabled={isRestoringBuilding}
                 onClick={() => setRestoreTargetBuilding(null)}
                 className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer"
               >
@@ -1631,24 +1655,132 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
               </button>
               <button
                 type="button"
-                disabled={!restoreSelectedOwnerKey}
-                onClick={() => {
+                disabled={!restoreSelectedOwnerKey || isRestoringBuilding}
+                onClick={async () => {
                   const selectedOwner = ownersList.find(o => o.key === restoreSelectedOwnerKey);
-                  if (!selectedOwner) return;
-                  const ok = restoreArchivedBuilding(restoreTargetBuilding.id, {
-                    orgId: selectedOwner.orgId,
-                    ownerEmail: selectedOwner.email,
-                    ownerName: selectedOwner.name,
-                  });
-                  if (ok) {
-                    setRestoreTargetBuilding(null);
-                    setRestoreSelectedOwnerKey('');
+                  if (!selectedOwner || isRestoringBuilding) return;
+                  setIsRestoringBuilding(true);
+                  try {
+                    const ok = await restoreArchivedBuilding(restoreTargetBuilding.id, {
+                      orgId: selectedOwner.orgId,
+                      ownerEmail: selectedOwner.email,
+                      ownerName: selectedOwner.name,
+                    });
+                    if (ok) {
+                      setRestoreTargetBuilding(null);
+                      setRestoreSelectedOwnerKey('');
+                    }
+                  } finally {
+                    setIsRestoringBuilding(false);
                   }
                 }}
                 className="flex-1 py-2.5 bg-[#1E3A8A] hover:bg-[#1e40af] disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <RotateCcw className="w-4 h-4" />
+                {isRestoringBuilding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
                 <span>{isEn ? "Restore & Assign" : "Visszaállítás és átadás"}</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ==================== MODAL 4: PERMANENT DELETE FROM ARCHIVE (Portal) ==================== */}
+      {permanentDeleteTarget && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs cursor-default"
+          onClick={() => !isPermanentlyDeleting && setPermanentDeleteTarget(null)}
+        >
+          <div
+            className="bg-white rounded-2xl border border-rose-200 shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[92vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-gray-900 font-display">
+                    {t.superadmin_permanent_delete_modal_title || (isEn ? "Permanently Delete Condominium" : "Társasház végleges törlése")}
+                  </h3>
+                  <p className="text-[11px] text-rose-600 font-semibold truncate">{permanentDeleteTarget.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isPermanentlyDeleting}
+                onClick={() => setPermanentDeleteTarget(null)}
+                className="w-8 h-8 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-500 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-950 space-y-1.5">
+              <div className="font-bold flex items-center gap-1.5 text-rose-800">
+                <Trash2 className="w-4 h-4 shrink-0" />
+                <span>{isEn ? "Irreversible Permanent Deletion!" : "Visszafordíthatatlan végleges törlés!"}</span>
+              </div>
+              <p className="text-[11px] text-rose-900 leading-relaxed">
+                {isEn
+                  ? "This action permanently erases this archived condominium from the database along with ALL apartments, payments, expenses, loans, audit logs, and uploaded files. It cannot be undone."
+                  : "Ez a művelet véglegesen megsemmisíti az archivált társasházat az adatbázisból az ÖSSZES lakásával, befizetésével, kiadásával, hitelével, naplójával és feltöltött dokumentumával együtt. Nem állítható vissza."}
+              </p>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="block font-bold text-gray-700">
+                {isEn
+                  ? <>Type the condominium name <span className="font-mono text-rose-700">"{permanentDeleteTarget.name}"</span> to confirm:</>
+                  : <>A megerősítéshez gépeld be pontosan a társasház nevét: <span className="font-mono text-rose-700">„{permanentDeleteTarget.name}”</span></>}
+              </label>
+              <input
+                type="text"
+                autoFocus
+                disabled={isPermanentlyDeleting}
+                value={permanentDeleteInput}
+                onChange={(e) => setPermanentDeleteInput(e.target.value)}
+                placeholder={permanentDeleteTarget.name}
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs font-semibold text-gray-900 focus:outline-none focus:border-rose-600"
+              />
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isPermanentlyDeleting}
+                onClick={() => setPermanentDeleteTarget(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer"
+              >
+                {t.cancel || (isEn ? "Cancel" : "Mégse")}
+              </button>
+              <button
+                type="button"
+                disabled={
+                  isPermanentlyDeleting ||
+                  permanentDeleteInput.trim().toLowerCase() !== String(permanentDeleteTarget.name || '').trim().toLowerCase()
+                }
+                onClick={async () => {
+                  if (isPermanentlyDeleting) return;
+                  setIsPermanentlyDeleting(true);
+                  try {
+                    const ok = await permanentlyDeleteArchivedBuilding(
+                      permanentDeleteTarget.id,
+                      permanentDeleteInput.trim()
+                    );
+                    if (ok) {
+                      setPermanentDeleteTarget(null);
+                      setPermanentDeleteInput('');
+                    }
+                  } finally {
+                    setIsPermanentlyDeleting(false);
+                  }
+                }}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {isPermanentlyDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>{t.superadmin_permanent_delete_btn || (isEn ? "Delete Permanently" : "Végleges törlés")}</span>
               </button>
             </div>
           </div>

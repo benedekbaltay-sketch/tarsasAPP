@@ -3,6 +3,7 @@ import { getFirebaseInstance, IS_FIRESTORE_MODE, isCurrentTabSessionOnly } from 
 import { ref, set, get } from 'firebase/database';
 import {
   callProvisionBuilding,
+  callManageBuildingLifecycle,
   callManageUnitLifecycle,
   callManageEconomicAuditor,
   updateBuildingMetadata,
@@ -1209,7 +1210,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
   };
 
   // Delete Building — STRICTLY Organization Owner or SuperAdmin ONLY (NEVER staff!)
-  const deleteBuilding = (buildingId) => {
+  const deleteBuilding = async (buildingId) => {
     const targetB = (state.buildings || []).find(b => b.id === buildingId);
     if (!targetB || targetB.archived) return false;
     if (!canUserDeleteBuilding(state.currentUser, targetB, state.organizations, state.buildings)) {
@@ -1229,19 +1230,44 @@ export function createBuildingActions({ state, setState, persistState, showToast
       (o.ownerEmail && o.ownerEmail.trim().toLowerCase() === actorEmail)
     ));
 
-    // Soft-delete: Archive the building for SuperAdmin recovery/reassignment instead of permanent erasure
+    // In Cloud Firestore mode, commit atomically via server-side `manageBuildingLifecycle` Cloud Function
+    let serverRes = null;
+    if (IS_FIRESTORE_MODE) {
+      try {
+        serverRes = await callManageBuildingLifecycle({
+          action: 'archive',
+          buildingId,
+        });
+      } catch (err) {
+        console.error('manageBuildingLifecycle(archive) error:', err);
+        showToast(
+          state.currentLang === 'en'
+            ? `Failed to archive condominium: ${err?.message || 'Permission denied'}`
+            : `Nem sikerült a társasház archiválása: ${err?.message || 'Jogosultsági vagy hálózati hiba'}`,
+          'error'
+        );
+        return false;
+      }
+    }
+
+    const effectiveArchivedAt = serverRes?.archivedAt || nowIso;
+    const effectiveFromOrgId = serverRes?.archivedFromOrgId ?? (targetB.organizationId || actorOrg?.id || null);
+    const effectiveFromOwnerEmail = serverRes?.archivedFromOwnerEmail || actorOrg?.ownerEmail || targetB.email || state.currentUser?.email || '';
+    const effectiveFromOwnerName = serverRes?.archivedFromOwnerName || actorOrg?.ownerName || actorOrg?.name || targetB.repName || state.currentUser?.name || '';
+
+    // Soft-delete: Archive the building for SuperAdmin recovery/reassignment or permanent erasure
     persistState(s => {
       const nextBuildings = (s.buildings || []).map(b => {
         if (!b || b.id !== buildingId) return b;
         return {
           ...b,
           archived: true,
-          archivedAt: nowIso,
+          archivedAt: effectiveArchivedAt,
           archivedBy: state.currentUser?.email || '',
           archivedByName: state.currentUser?.name || '',
-          archivedFromOrgId: b.organizationId || actorOrg?.id || null,
-          archivedFromOwnerEmail: actorOrg?.ownerEmail || b.email || state.currentUser?.email || '',
-          archivedFromOwnerName: actorOrg?.ownerName || actorOrg?.name || b.repName || state.currentUser?.name || '',
+          archivedFromOrgId: effectiveFromOrgId,
+          archivedFromOwnerEmail: effectiveFromOwnerEmail,
+          archivedFromOwnerName: effectiveFromOwnerName,
           organizationId: null,
         };
       });
@@ -1277,7 +1303,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
             }
           : {}),
       };
-    }, true);
+    }, IS_FIRESTORE_MODE ? 'localOnly' : true);
 
     showToast(state.currentLang === 'en' ? "Condominium deleted and moved to archive." : "Társasház törölve (archívumba helyezve).");
     return true;
@@ -1287,7 +1313,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
    * SuperAdmin ONLY: Restores an archived condominium and assigns it to a target Owner / Organization
    * (either the original owner or a completely different owner).
    */
-  const restoreArchivedBuilding = (buildingId, targetOwnerRef = {}) => {
+  const restoreArchivedBuilding = async (buildingId, targetOwnerRef = {}) => {
     if (state.currentUser?.role !== 'superadmin') {
       showToast(
         state.currentLang === 'en'
@@ -1316,26 +1342,52 @@ export function createBuildingActions({ state, setState, persistState, showToast
       return false;
     }
 
+    let serverRes = null;
+    if (IS_FIRESTORE_MODE) {
+      try {
+        serverRes = await callManageBuildingLifecycle({
+          action: 'restore',
+          buildingId,
+          targetOrgId,
+          targetOwnerEmail: targetEmail,
+          targetOwnerName: targetName,
+        });
+      } catch (err) {
+        console.error('manageBuildingLifecycle(restore) error:', err);
+        showToast(
+          state.currentLang === 'en'
+            ? `Failed to restore condominium: ${err?.message || 'Unknown error'}`
+            : `Nem sikerült a társasház visszaállítása: ${err?.message || 'Ismeretlen hiba'}`,
+          'error'
+        );
+        return false;
+      }
+    }
+
+    const effectiveOrgId = serverRes?.organizationId || targetOrgId;
+    const effectiveOwnerEmail = serverRes?.ownerEmail || targetEmail;
+    const effectiveOwnerName = serverRes?.ownerName || targetName;
+
     persistState(s => {
       let nextOrgs = Array.isArray(s.organizations) ? [...s.organizations] : [];
-      let resolvedOrg = targetOrgId
-        ? nextOrgs.find(o => o && o.id === targetOrgId)
-        : nextOrgs.find(o => o && o.ownerEmail && o.ownerEmail.trim().toLowerCase() === targetEmail);
+      let resolvedOrg = effectiveOrgId
+        ? nextOrgs.find(o => o && o.id === effectiveOrgId)
+        : nextOrgs.find(o => o && o.ownerEmail && o.ownerEmail.trim().toLowerCase() === effectiveOwnerEmail);
 
       // If target owner doesn't have an explicit org record yet, create one cleanly
-      if (!resolvedOrg && targetEmail) {
-        const newOrgId = `org-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const resolvedName = targetName || targetEmail.split('@')[0];
+      if (!resolvedOrg && effectiveOwnerEmail) {
+        const newOrgId = effectiveOrgId || `org-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const resolvedName = effectiveOwnerName || effectiveOwnerEmail.split('@')[0];
         resolvedOrg = {
           id: newOrgId,
           name: resolvedName,
-          ownerEmail: targetEmail,
+          ownerEmail: effectiveOwnerEmail,
           ownerName: resolvedName,
           includeLegacyBuildings: false,
           taxNumber: '',
           centralContact: {
             name: resolvedName,
-            email: targetEmail,
+            email: effectiveOwnerEmail,
             phone: '',
             officeHours: '',
           },
@@ -1343,7 +1395,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
           members: [
             {
               id: `owner-${Date.now()}`,
-              email: targetEmail,
+              email: effectiveOwnerEmail,
               name: resolvedName,
               phone: '',
               orgRole: 'owner',
@@ -1381,7 +1433,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
           restoredAt: nowIso,
           restoredBy: state.currentUser?.email || '',
           restoredToOrgId: resolvedOrg.id,
-          restoredToOwnerEmail: resolvedOrg.ownerEmail || targetEmail,
+          restoredToOwnerEmail: resolvedOrg.ownerEmail || effectiveOwnerEmail,
         };
         delete restored.archivedAt;
         delete restored.archivedBy;
@@ -1394,12 +1446,84 @@ export function createBuildingActions({ state, setState, persistState, showToast
         organizations: nextOrgs,
         buildings: nextBuildings,
       };
-    }, true);
+    }, IS_FIRESTORE_MODE ? 'localOnly' : true);
 
     showToast(
       state.currentLang === 'en'
         ? `Condominium "${targetB.name}" restored and assigned successfully!`
         : `„${targetB.name}” sikeresen visszaállítva és átadva!`
+    );
+    return true;
+  };
+
+  /**
+   * SuperAdmin ONLY: Permanently and irreversibly deletes an archived condominium
+   * (including all units, transactions, loans, documents, memberships, and Cloud Storage files).
+   */
+  const permanentlyDeleteArchivedBuilding = async (buildingId, confirmBuildingName = '') => {
+    if (state.currentUser?.role !== 'superadmin') {
+      showToast(
+        state.currentLang === 'en'
+          ? "Only SuperAdmin can permanently delete archived condominiums."
+          : "Archivált társasházat kizárólag a Rendszergazda (SuperAdmin) törölhet véglegesen!",
+        "error"
+      );
+      return false;
+    }
+
+    const targetB = (state.buildings || []).find(b => b && b.id === buildingId);
+    if (!targetB) return false;
+    if (!targetB.archived) {
+      showToast(
+        state.currentLang === 'en'
+          ? "Only archived condominiums can be permanently deleted."
+          : "Véglegesen csak archivált társasház törölhető!",
+        "error"
+      );
+      return false;
+    }
+
+    const expected = String(targetB.name || '').trim().toLowerCase();
+    const provided = String(confirmBuildingName || '').trim().toLowerCase();
+    if (!expected || provided !== expected) {
+      showToast(
+        state.currentLang === 'en'
+          ? "Please enter the exact condominium name to confirm permanent deletion."
+          : "Kérjük, pontosan add meg a társasház nevét a végleges törléshez!",
+        "error"
+      );
+      return false;
+    }
+
+    if (IS_FIRESTORE_MODE) {
+      try {
+        await callManageBuildingLifecycle({
+          action: 'permanent_delete',
+          buildingId,
+          confirmBuildingName: String(confirmBuildingName || '').trim(),
+        });
+      } catch (err) {
+        console.error('manageBuildingLifecycle(permanent_delete) error:', err);
+        showToast(
+          state.currentLang === 'en'
+            ? `Failed to permanently delete condominium: ${err?.message || 'Unknown error'}`
+            : `Nem sikerült a társasház végleges törlése: ${err?.message || 'Ismeretlen hiba'}`,
+          "error"
+        );
+        return false;
+      }
+    }
+
+    persistState(s => ({
+      ...s,
+      buildings: (s.buildings || []).filter(b => b && b.id !== buildingId),
+      currentBuildingId: s.currentBuildingId === buildingId ? null : s.currentBuildingId,
+    }), IS_FIRESTORE_MODE ? 'localOnly' : true);
+
+    showToast(
+      state.currentLang === 'en'
+        ? `Condominium "${targetB.name}" permanently deleted.`
+        : `„${targetB.name}” véglegesen törölve az archívumból.`
     );
     return true;
   };
@@ -2267,6 +2391,7 @@ export function createBuildingActions({ state, setState, persistState, showToast
     addBuilding,
     deleteBuilding,
     restoreArchivedBuilding,
+    permanentlyDeleteArchivedBuilding,
     toggleGridEditMode,
     updateBuildingRepInfo,
     updateBuildingData,
