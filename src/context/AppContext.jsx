@@ -87,6 +87,7 @@ export function AppProvider({ children }) {
   const isCloudSyncingRef = useRef(false);
   const pendingCloudSyncFnRef = useRef(null);
   const txCursorRef = useRef(null);
+  const hydratedUidRef = useRef(null);
   const lastKnownCloudReservesRef = useRef(extractBuildingReservesMap(state.buildings || []));
   const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
 
@@ -246,19 +247,36 @@ export function AppProvider({ children }) {
     setHasMoreTransactions(Boolean(sessionData.txPagination?.hasMore));
 
     const userCopy = stripSensitiveUserFields(sessionData.currentUser);
+    hydratedUidRef.current = userCopy?.uid || null;
     const activeB = sessionData.activeBuilding || sessionData.buildings?.[0] || null;
     const isUserAdmin = userCopy.role === 'admin' || userCopy.role === 'superadmin';
     const isKkAdmin = userCopy.role === 'admin';
 
     setState(prev => {
+      const keepActiveImpersonation = Boolean(
+        prev.impersonatedFrom &&
+        userCopy?.uid &&
+        prev.impersonatedFrom.originalUser?.uid === userCopy.uid
+      );
+      const keepSwitchedProfile = Boolean(
+        !keepActiveImpersonation &&
+        prev.currentUser?.uid &&
+        userCopy?.uid &&
+        prev.currentUser.uid === userCopy.uid &&
+        prev.currentUser.role !== userCopy.role
+      );
+      const preserveCurrentView = keepActiveImpersonation || keepSwitchedProfile;
+
       const next = {
         ...prev,
         currentLang: sessionData.preferredLang || prev.currentLang || 'hu',
-        currentUser: userCopy,
-        impersonatedFrom: null,
-        activeRoleMode: isUserAdmin ? 'kk' : 'tenant',
-        isPortfolioView: isKkAdmin && (sessionData.buildings?.length || 0) > 1 ? true : false,
-        currentBuildingId: activeB ? activeB.id : null,
+        currentUser: preserveCurrentView ? prev.currentUser : userCopy,
+        impersonatedFrom: keepActiveImpersonation ? prev.impersonatedFrom : null,
+        activeRoleMode: preserveCurrentView ? prev.activeRoleMode : (isUserAdmin ? 'kk' : 'tenant'),
+        isPortfolioView: preserveCurrentView
+          ? prev.isPortfolioView
+          : (isKkAdmin && (sessionData.buildings?.length || 0) > 1 ? true : false),
+        currentBuildingId: preserveCurrentView ? prev.currentBuildingId : (activeB ? activeB.id : null),
         buildings: sessionData.buildings || [],
         users: sessionData.users || [],
         flats: activeB?.flats || [],
@@ -824,15 +842,27 @@ export function AppProvider({ children }) {
       const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
         if (isCancelled) return;
         if (firebaseUser) {
+          // If login() or an earlier auth callback already hydrated this exact UID,
+          // NEVER re-hydrate over the user's active profile or SuperAdmin impersonation!
+          if (hydratedUidRef.current === firebaseUser.uid) {
+            cloudInitialSyncDoneRef.current = true;
+            setIsInitialSyncDone(true);
+            setIsCloudSyncing(false);
+            return;
+          }
           setIsCloudSyncing(true);
           setCloudSyncStatus('syncing');
           try {
             const sessionData = await hydrateFirestoreSession(firebaseUser);
-            if (isCancelled) return;
+            if (isCancelled || hydratedUidRef.current === firebaseUser.uid) {
+              setIsCloudSyncing(false);
+              return;
+            }
             if (sessionData && sessionData.currentUser) {
               applyFirestoreSessionData(sessionData);
             } else {
               // Fail closed if user has no active Firestore membership
+              hydratedUidRef.current = null;
               try { await signOut(auth); } catch {}
               cloudInitialSyncDoneRef.current = true;
               setIsInitialSyncDone(true);
@@ -848,6 +878,7 @@ export function AppProvider({ children }) {
             setIsCloudSyncing(false);
           }
         } else {
+          hydratedUidRef.current = null;
           purgeSensitiveLocalStorage();
           try { sessionStorage.removeItem("tarsashaz_session_user"); } catch {}
           txCursorRef.current = null;

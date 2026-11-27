@@ -476,10 +476,19 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
 
     persistState(s => {
       const curB = (s.buildings || []).find(b => b.id === bId) || s.buildings?.[0];
+      const nextRoleMode = safeTarget.role === 'admin'
+        ? 'kk'
+        : safeTarget.role === 'szvb'
+        ? 'szvb'
+        : safeTarget.role === 'auditor'
+        ? 'auditor'
+        : 'tenant';
       return {
         ...s,
         currentUser: safeTarget,
         currentBuildingId: curB?.id || bId,
+        activeRoleMode: nextRoleMode,
+        isPortfolioView: safeTarget.role === 'admin' && !targetBuildingId,
         impersonatedFrom: {
           originalUser: JSON.parse(JSON.stringify(originalUser)),
           timestamp: Date.now()
