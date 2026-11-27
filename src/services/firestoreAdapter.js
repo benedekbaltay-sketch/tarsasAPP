@@ -148,6 +148,8 @@ export function firestoreUnitToUiFlat(unit) {
     customFees: fees.customFees ? { ...fees.customFees } : {},
     feeChangesKK: Array.isArray(fees.feeChangesKK) ? fees.feeChangesKK : [],
     feeChangesFA: Array.isArray(fees.feeChangesFA) ? fees.feeChangesFA : [],
+    cancelledDebits: Array.isArray(unit.cancelledDebits) ? unit.cancelledDebits : [],
+    debitComments: unit.debitComments && typeof unit.debitComments === 'object' ? { ...unit.debitComments } : {},
     initialBalance: Math.round(Number(bal.initialKK) || 0),
     initialRenovationBalance: Math.round(Number(bal.initialFA) || 0),
     customInitialBalances: bal.customInitial ? { ...bal.customInitial } : {},
@@ -288,15 +290,22 @@ export function firestoreBuildingToUiBuilding(buildingDoc, extras = {}) {
   const monthlyMap = {};
   for (const ms of (extras.monthlySummaries || [])) {
     if (ms && ms.yearMonth) {
+      const inflow = Math.round(Number(ms.totalInflowHuf ?? ms.inflow) || 0);
+      const outflow = Math.round(Number(ms.totalOutflowHuf ?? ms.outflow) || 0);
+      const margin = Math.round(Number(ms.netMarginHuf ?? ms.margin ?? (inflow - outflow)) || 0);
+      const kkInflow = Math.round(Number(ms.inflowByFund?.KK ?? ms.kkInflow) || 0);
+      const kkOutflow = Math.round(Number(ms.outflowByFund?.KK ?? ms.kkOutflow) || 0);
+      const faInflow = Math.round(Number(ms.inflowByFund?.FA ?? ms.faInflow) || 0);
+      const faOutflow = Math.round(Number(ms.outflowByFund?.FA ?? ms.faOutflow) || 0);
       monthlyMap[ms.yearMonth] = {
         yearMonth: ms.yearMonth,
-        inflow: Math.round(Number(ms.inflow) || 0),
-        outflow: Math.round(Number(ms.outflow) || 0),
-        margin: Math.round(Number(ms.margin ?? ((Number(ms.inflow) || 0) - (Number(ms.outflow) || 0))) || 0),
-        kkInflow: Math.round(Number(ms.kkInflow) || 0),
-        kkOutflow: Math.round(Number(ms.kkOutflow) || 0),
-        faInflow: Math.round(Number(ms.faInflow) || 0),
-        faOutflow: Math.round(Number(ms.faOutflow) || 0),
+        inflow,
+        outflow,
+        margin,
+        kkInflow,
+        kkOutflow,
+        faInflow,
+        faOutflow,
       };
     }
   }
@@ -559,7 +568,7 @@ export function uiFlatMasterToFirestoreUnitUpdate(safeUpdate = {}, existingFlat 
  */
 export async function hydrateFirestoreBuilding(
   buildingId,
-  { role = 'owner', uid = null, unitIds = [], accessFromDate = null, txPageSize = 50 } = {}
+  { role = 'owner', uid = null, unitIds = [], accessFromDate = null, txPageSize = 2000 } = {}
 ) {
   const fsRole = normalizeRoleForFirestore(role);
   const isPrivileged = fsRole === 'admin' || fsRole === 'superadmin' || fsRole === 'szvb' || fsRole === 'auditor';

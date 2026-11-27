@@ -11,7 +11,14 @@ import {
   getBuildingReserve,
   getBuildingRenovationFund,
   getBuildingAccountReserve,
+  getBuildingReserveAsOf,
+  getBuildingRenovationFundAsOf,
+  getMonthlyStats,
 } from '../src/utils/finances.js';
+import {
+  firestoreBuildingToUiBuilding,
+  firestoreUnitToUiFlat,
+} from '../src/services/firestoreAdapter.js';
 
 test('1. Regression: Portfolio View (currentBuildingId=null, top-level reserves=0) NEVER zeroes out buildings[0] reserves in createCloudPayload', () => {
   const stateInPortfolioView = {
@@ -206,4 +213,66 @@ test('4. finances.js getBuildingReserve & getBuildingRenovationFund strictly use
   assert.equal(getBuildingReserve(mixedState), 4_560_000);
   assert.equal(getBuildingRenovationFund(mixedState), 9_300_000);
   assert.equal(getBuildingAccountReserve('c1', mixedState), 775_000);
+});
+
+test('5. Firestore adapter maps monthlySummaries (totalInflowHuf/inflowByFund) and unit cancelledDebits accurately', () => {
+  const uiBuilding = firestoreBuildingToUiBuilding(
+    {
+      id: 'b-fs',
+      name: 'Teszt Ház',
+      initialReserves: { KK: 1_000_000, FA: 500_000, custom: {} },
+      balances: { KK: 1_200_000, FA: 600_000, custom: {} },
+    },
+    {
+      monthlySummaries: [
+        {
+          yearMonth: '2026-10',
+          totalInflowHuf: 500_000,
+          totalOutflowHuf: 300_000,
+          netMarginHuf: 200_000,
+          inflowByFund: { KK: 350_000, FA: 150_000 },
+          outflowByFund: { KK: 200_000, FA: 100_000 },
+        },
+        {
+          yearMonth: '2026-11',
+          totalInflowHuf: 120_000,
+          totalOutflowHuf: 210_000,
+          netMarginHuf: -90_000,
+          inflowByFund: { KK: 90_000, FA: 30_000 },
+          outflowByFund: { KK: 210_000, FA: 0 },
+        },
+      ],
+    }
+  );
+
+  const fsState = {
+    currentBuildingId: 'b-fs',
+    buildings: [uiBuilding],
+  };
+
+  const oct = getMonthlyStats(2026, 10, fsState);
+  assert.equal(oct.inflow, 500_000);
+  assert.equal(oct.outflow, 300_000);
+  assert.equal(oct.margin, 200_000);
+
+  const nov = getMonthlyStats(2026, 11, fsState);
+  assert.equal(nov.inflow, 120_000);
+  assert.equal(nov.outflow, 210_000);
+  assert.equal(nov.margin, -90_000);
+
+  // As of 2026-10-31: initial + Oct inflow - Oct outflow (excludes Nov!)
+  assert.equal(getBuildingReserveAsOf('2026-10-31', fsState), 1_150_000);
+  assert.equal(getBuildingRenovationFundAsOf('2026-10-31', fsState), 550_000);
+
+  // Unit cancelledDebits & debitComments preserved cleanly
+  const uiFlat = firestoreUnitToUiFlat({
+    id: 'fsz-2',
+    unitCode: 'Fsz 2',
+    cancelledDebits: ['2026-07-01_Közös Költség'],
+    debitComments: { '2026-08-01_Közös Költség': 'Kedvezmény' },
+    fees: { startDateKK: '2026-07-01', startDateFA: '2026-06-01', monthlyFeeKK: 15000, monthlyFeeFA: 5000 },
+    balances: { initialKK: 0, initialFA: 0, KK: 0, FA: -1284 },
+  });
+  assert.deepEqual(uiFlat.cancelledDebits, ['2026-07-01_Közös Költség']);
+  assert.equal(uiFlat.debitComments['2026-08-01_Közös Költség'], 'Kedvezmény');
 });

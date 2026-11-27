@@ -608,6 +608,8 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
         },
         balances: initBalances,
         activeLoanShares,
+        cancelledDebits: Array.isArray(flat.cancelledDebits) ? flat.cancelledDebits : [],
+        debitComments: flat.debitComments && typeof flat.debitComments === 'object' ? flat.debitComments : {},
         createdAt: nowIso,
         updatedAt: nowIso,
         lastAuditLogId: migrationAuditId,
