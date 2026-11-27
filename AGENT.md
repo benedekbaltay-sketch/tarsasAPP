@@ -336,7 +336,7 @@ Minden egyes társasháznak külön banki számlája és egyedi banki API hozzá
   - Megszűnt a feleslegesen sok helyet foglaló külön kártyasor.
 - **Alapértelmezett Lista Nézet (`viewMode: 'list'`)**:
   - Nagyobb, 100+ társasházat kezelő cégeknél a csempés nézet helyett a kompakt, sűrű táblázatos lista nézet az alapértelmezett.
-  - Oszlopok: Társasház / Cím, Adószám, Lakások száma, Számlavezető bank, Összesített tartalékok (KK és FA bontással), Lakói hátraléki státusz, Műveleti gombok (Megnyitás, Naptár, Beállítások).
+  - Oszlopok: Társasház neve (nagyban) és alatta a címe, Adószám és alatta a hivatalos név, Lakások száma, Lakói hátraléki státusz, Műveleti gombok (Törlés tulajdonosnak, Megnyitás).
   - Sorra kattintva vagy Entert nyomva közvetlenül megnyílik az adott épület.
 - **Nézetváltó kapcsoló**:
   - A keresősáv mellett elérhető a `[ ☰ Lista ]` és `[ ⊞ Csempe ]` kapcsoló, így a felhasználó bármikor visszaválthat a kártyás megjelenítésre is.

@@ -303,8 +303,8 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50/90 text-gray-500 uppercase font-semibold border-b border-gray-200 text-[10px] tracking-wider">
                 <tr>
-                  <th className="py-3 px-4">{t.portfolio_col_building || (isEn ? "Address / Official Name" : "Cím / Hivatalos név")}</th>
-                  <th className="py-3 px-3">{t.portfolio_col_tax || (isEn ? "Tax ID" : "Adószám")}</th>
+                  <th className="py-3 px-4">{t.portfolio_col_building || (isEn ? "Condominium / Address" : "Társasház / Cím")}</th>
+                  <th className="py-3 px-3">{t.portfolio_col_tax || (isEn ? "Tax ID / Official Name" : "Adószám / Hivatalos név")}</th>
                   <th className="py-3 px-3 text-center">{t.portfolio_col_flats || (isEn ? "Flats" : "Lakások")}</th>
                   <th className="py-3 px-4">{t.portfolio_col_arrears || (isEn ? "Arrears Status" : "Hátralék státusz")}</th>
                   <th className="py-3 px-4 text-right">{t.portfolio_col_actions || (isEn ? "Actions" : "Műveletek")}</th>
@@ -355,7 +355,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                       }`}
                       title={isHu ? "Kattintson duplán vagy a Megnyitás gombra a belépéshez" : "Double-click or click Open to enter"}
                     >
-                      {/* 1. Address (Primary) & Official Name (Sub) */}
+                      {/* 1. Building Name (Primary, Large) & Address (Sub) */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <div className="relative w-8 h-8 rounded-lg bg-blue-50 text-[#1E3A8A] flex items-center justify-center font-bold flex-shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
@@ -371,8 +371,8 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors font-display block truncate">
-                                {b.address || b.name || t.building_address}
+                              <span className="text-sm font-bold text-gray-900 group-hover:text-[#1E3A8A] transition-colors font-display block truncate">
+                                {b.name || b.address || t.building_address}
                               </span>
                               {(!canUserManageBuilding(currentUser, b, organizations, buildings) || isUserBuildingViewer(currentUser, b, organizations, buildings)) && (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold">
@@ -381,22 +381,31 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                                 </span>
                               )}
                             </div>
-                            <span className="text-[11px] text-gray-500 block truncate">
-                              {b.officialName || b.name}
-                            </span>
+                            {b.address && (
+                              <span className="text-[11px] text-gray-500 block truncate">
+                                {b.address}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
 
-                      {/* 2. Tax Number */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        {b.taxNumber ? (
-                          <span className="font-mono text-gray-700 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200">
-                            {formatTaxNumber(b.taxNumber)}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-[11px]">—</span>
-                        )}
+                      {/* 2. Tax Number & Official Name underneath */}
+                      <td className="py-3 px-3">
+                        <div className="flex flex-col items-start min-w-0">
+                          {b.taxNumber ? (
+                            <span className="font-mono text-gray-700 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 whitespace-nowrap">
+                              {formatTaxNumber(b.taxNumber)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-[11px]">—</span>
+                          )}
+                          {b.officialName && (
+                            <span className="text-[11px] text-gray-500 mt-1 truncate max-w-[240px]" title={b.officialName}>
+                              {b.officialName}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* 3. Flat Count */}
@@ -528,21 +537,28 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-end gap-1.5">
-                      {(!canUserManageBuilding(currentUser, b, organizations, buildings) || isUserBuildingViewer(currentUser, b, organizations, buildings)) && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                          <Eye className="w-3 h-3 text-amber-700" />
-                          <span>{t.team_viewer_badge || (isEn ? "Viewer" : "Csak megtekintő")}</span>
+                    <div className="flex flex-col items-end gap-1 min-w-0 max-w-[70%]">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        {(!canUserManageBuilding(currentUser, b, organizations, buildings) || isUserBuildingViewer(currentUser, b, organizations, buildings)) && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            <Eye className="w-3 h-3 text-amber-700" />
+                            <span>{t.team_viewer_badge || (isEn ? "Viewer" : "Csak megtekintő")}</span>
+                          </span>
+                        )}
+                        {b.taxNumber && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                            {isEn ? "Tax:" : "Adószám:"} {formatTaxNumber(b.taxNumber)}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-[#1E3A8A] border border-blue-200">
+                          {flatCount} {isEn ? "flats" : "lakás"}
+                        </span>
+                      </div>
+                      {b.officialName && (
+                        <span className="text-[10px] text-gray-500 truncate max-w-full" title={b.officialName}>
+                          {b.officialName}
                         </span>
                       )}
-                      {b.taxNumber && (
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
-                          {isEn ? "Tax:" : "Adószám:"} {formatTaxNumber(b.taxNumber)}
-                        </span>
-                      )}
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-[#1E3A8A] border border-blue-200">
-                        {flatCount} {isEn ? "flats" : "lakás"}
-                      </span>
                     </div>
                   </div>
 
