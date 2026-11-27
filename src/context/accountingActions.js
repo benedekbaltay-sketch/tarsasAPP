@@ -14,7 +14,7 @@ import {
 } from '../services/firestoreAdapter';
 import { canUserManageBuilding } from '../utils/teamPermissions';
 
-export function createAccountingActions({ state, persistState, showToast, t, copiedTx, setCopiedTx, ensureFirebaseAuth, reloadCurrentBuilding }) {
+export function createAccountingActions({ state, persistState, showToast, t, copiedTx, setCopiedTx, ensureFirebaseAuth, reloadCurrentBuilding, refreshBuildingFinancials }) {
   const isAdmin = () => Boolean(
     state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'superadmin')
   );
@@ -50,8 +50,39 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
     };
   };
 
+  // Strip cached Firestore balance snapshots on the active building & flats so optimistic local mutations
+  // recompute exact live balances immediately (0ms latency) before the lightweight server reconciliation returns.
+  const applyOptimisticState = (updaterFn) => {
+    const activeBId = state.currentBuildingId || state.buildings?.[0]?.id;
+    persistState((s) => {
+      const next = updaterFn(s);
+      const nextFlats = (next.flats || []).map((f) => {
+        if (!f || !f.firestoreBalances) return f;
+        const { firestoreBalances, ...rest } = f;
+        return rest;
+      });
+      const nextBuildings = (next.buildings || []).map((b) => {
+        if (!b || b.id !== activeBId) return b;
+        const { firestoreBalances, firestoreMonthlySummaries, ...rest } = b;
+        return {
+          ...rest,
+          flats: nextFlats,
+          transactions: next.transactions || [],
+          expenses: next.expenses || [],
+          manualDebits: next.manualDebits || [],
+        };
+      });
+      return {
+        ...next,
+        flats: nextFlats,
+        buildings: nextBuildings,
+      };
+    }, 'localOnly');
+  };
+
   // Option A Firestore atomic helper: uploads any Base64 attachments to Cloud Storage, then executes mutateTransaction
-  const executeFirestoreTxMutation = async ({ action, uiItem, kindHint, txId = null }) => {
+  // Uses lightweight 3-read refreshBuildingFinancials instead of full 11-collection reloadCurrentBuilding!
+  const executeFirestoreTxMutation = async ({ action, uiItem, kindHint, txId = null, skipRefresh = false }) => {
     const { buildingId, flats, customAccounts } = getActiveBuildingContext();
     if (!buildingId) throw new Error('No active building selected.');
 
@@ -76,8 +107,12 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
       payload,
     });
 
-    if (typeof reloadCurrentBuilding === 'function') {
-      await reloadCurrentBuilding(buildingId);
+    if (!skipRefresh) {
+      if (typeof refreshBuildingFinancials === 'function') {
+        refreshBuildingFinancials(buildingId).catch(() => {});
+      } else if (typeof reloadCurrentBuilding === 'function') {
+        reloadCurrentBuilding(buildingId).catch(() => {});
+      }
     }
     return result;
   };
@@ -86,20 +121,38 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   const addTransaction = (newTx) => {
     if (!requireAdmin()) return;
     if (IS_FIRESTORE_MODE) {
-      executeFirestoreTxMutation({ action: 'create', uiItem: newTx, kindHint: 'payment' })
-        .then((res) => {
-          const createdId = res?.txId || newTx?.id;
-          const handleUndo = () => {
-            executeFirestoreTxMutation({ action: 'delete', txId: createdId })
-              .then(() => showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info"))
-              .catch(() => showToast(state.currentLang === 'en' ? "Undo failed." : "Visszavonás sikertelen.", "error"));
-          };
-          showToast(state.currentLang === 'en' ? "Payment saved!" : "Befizetés mentve!", 'success', handleUndo);
-        })
+      const { buildingId } = getActiveBuildingContext();
+      const txId = newTx.id || `tx-${Date.now()}`;
+      const optimisticTx = { ...newTx, id: txId, lastUpdated: newTx.lastUpdated || Date.now() };
+      applyOptimisticState((s) => ({
+        ...s,
+        transactions: [optimisticTx, ...(s.transactions || []).filter((t) => t.id !== txId)],
+      }));
+
+      const createPromise = executeFirestoreTxMutation({ action: 'create', uiItem: optimisticTx, kindHint: 'payment', txId })
         .catch((err) => {
           console.warn('Firestore addTransaction error:', err.message);
+          if (typeof reloadCurrentBuilding === 'function' && buildingId) {
+            reloadCurrentBuilding(buildingId).catch(() => {});
+          }
           showToast(state.currentLang === 'en' ? "Failed to save payment." : "Nem sikerült rögzíteni a befizetést.", "error");
+          return null;
         });
+
+      const handleUndo = () => {
+        applyOptimisticState((s) => ({
+          ...s,
+          transactions: (s.transactions || []).filter((t) => t.id !== txId),
+        }));
+        showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info");
+        createPromise
+          .then((res) => executeFirestoreTxMutation({ action: 'delete', txId: res?.txId || txId }))
+          .catch(() => {
+            if (typeof reloadCurrentBuilding === 'function' && buildingId) reloadCurrentBuilding(buildingId).catch(() => {});
+            showToast(state.currentLang === 'en' ? "Undo failed." : "Visszavonás sikertelen.", "error");
+          });
+      };
+      showToast(state.currentLang === 'en' ? "Payment saved!" : "Befizetés mentve!", 'success', handleUndo);
       return;
     }
 
@@ -123,20 +176,38 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   const addExpense = (newExpense) => {
     if (!requireAdmin()) return;
     if (IS_FIRESTORE_MODE) {
-      executeFirestoreTxMutation({ action: 'create', uiItem: newExpense, kindHint: 'expense' })
-        .then((res) => {
-          const createdId = res?.txId || newExpense?.id;
-          const handleUndo = () => {
-            executeFirestoreTxMutation({ action: 'delete', txId: createdId })
-              .then(() => showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info"))
-              .catch(() => showToast(state.currentLang === 'en' ? "Undo failed." : "Visszavonás sikertelen.", "error"));
-          };
-          showToast(state.currentLang === 'en' ? "Expense saved!" : "Kiadás mentve!", 'success', handleUndo);
-        })
+      const { buildingId } = getActiveBuildingContext();
+      const expId = newExpense.id || `exp-${Date.now()}`;
+      const optimisticExp = { ...newExpense, id: expId, lastUpdated: newExpense.lastUpdated || Date.now() };
+      applyOptimisticState((s) => ({
+        ...s,
+        expenses: [optimisticExp, ...(s.expenses || []).filter((e) => e.id !== expId)],
+      }));
+
+      const createPromise = executeFirestoreTxMutation({ action: 'create', uiItem: optimisticExp, kindHint: 'expense', txId: expId })
         .catch((err) => {
           console.warn('Firestore addExpense error:', err.message);
+          if (typeof reloadCurrentBuilding === 'function' && buildingId) {
+            reloadCurrentBuilding(buildingId).catch(() => {});
+          }
           showToast(state.currentLang === 'en' ? "Failed to save expense." : "Nem sikerült rögzíteni a kiadást.", "error");
+          return null;
         });
+
+      const handleUndo = () => {
+        applyOptimisticState((s) => ({
+          ...s,
+          expenses: (s.expenses || []).filter((e) => e.id !== expId),
+        }));
+        showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info");
+        createPromise
+          .then((res) => executeFirestoreTxMutation({ action: 'delete', txId: res?.txId || expId }))
+          .catch(() => {
+            if (typeof reloadCurrentBuilding === 'function' && buildingId) reloadCurrentBuilding(buildingId).catch(() => {});
+            showToast(state.currentLang === 'en' ? "Undo failed." : "Visszavonás sikertelen.", "error");
+          });
+      };
+      showToast(state.currentLang === 'en' ? "Expense saved!" : "Kiadás mentve!", 'success', handleUndo);
       return;
     }
 
@@ -160,20 +231,38 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   const addManualDebit = (newDebit) => {
     if (!requireAdmin()) return;
     if (IS_FIRESTORE_MODE) {
-      executeFirestoreTxMutation({ action: 'create', uiItem: newDebit, kindHint: 'debit' })
-        .then((res) => {
-          const createdId = res?.txId || newDebit?.id;
-          const handleUndo = () => {
-            executeFirestoreTxMutation({ action: 'delete', txId: createdId })
-              .then(() => showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info"))
-              .catch(() => showToast(state.currentLang === 'en' ? "Undo failed." : "Visszavonás sikertelen.", "error"));
-          };
-          showToast(state.currentLang === 'en' ? "Debit item saved!" : "Terhelés rögzítve!", 'success', handleUndo);
-        })
+      const { buildingId } = getActiveBuildingContext();
+      const debId = newDebit.id || `deb-${Date.now()}`;
+      const optimisticDeb = { ...newDebit, id: debId, lastUpdated: newDebit.lastUpdated || Date.now() };
+      applyOptimisticState((s) => ({
+        ...s,
+        manualDebits: [optimisticDeb, ...(s.manualDebits || []).filter((d) => d.id !== debId)],
+      }));
+
+      const createPromise = executeFirestoreTxMutation({ action: 'create', uiItem: optimisticDeb, kindHint: 'debit', txId: debId })
         .catch((err) => {
           console.warn('Firestore addManualDebit error:', err.message);
+          if (typeof reloadCurrentBuilding === 'function' && buildingId) {
+            reloadCurrentBuilding(buildingId).catch(() => {});
+          }
           showToast(state.currentLang === 'en' ? "Failed to save debit." : "Nem sikerült rögzíteni a terhelést.", "error");
+          return null;
         });
+
+      const handleUndo = () => {
+        applyOptimisticState((s) => ({
+          ...s,
+          manualDebits: (s.manualDebits || []).filter((d) => d.id !== debId),
+        }));
+        showToast(state.currentLang === 'en' ? "Recording undone!" : "Rögzítés visszavonva!", "info");
+        createPromise
+          .then((res) => executeFirestoreTxMutation({ action: 'delete', txId: res?.txId || debId }))
+          .catch(() => {
+            if (typeof reloadCurrentBuilding === 'function' && buildingId) reloadCurrentBuilding(buildingId).catch(() => {});
+            showToast(state.currentLang === 'en' ? "Undo failed." : "Visszavonás sikertelen.", "error");
+          });
+      };
+      showToast(state.currentLang === 'en' ? "Debit item saved!" : "Terhelés rögzítve!", 'success', handleUndo);
       return;
     }
 
@@ -199,16 +288,38 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
     if (IS_FIRESTORE_MODE) {
       const { buildingId, flats, customAccounts } = getActiveBuildingContext();
       if (!buildingId) return;
+      const now = Date.now();
+      const optTxs = (transactions || []).filter(Boolean).map((t, idx) => ({ ...t, id: t.id || `tx-${now}-${idx}`, lastUpdated: t.lastUpdated || now }));
+      const optExps = (expenses || []).filter(Boolean).map((e, idx) => ({ ...e, id: e.id || `exp-${now}-${idx}`, lastUpdated: e.lastUpdated || now }));
+      const optDebs = (debits || []).filter(Boolean).map((d, idx) => ({ ...d, id: d.id || `deb-${now}-${idx}`, lastUpdated: d.lastUpdated || now }));
+
+      // Apply instant optimistic update so user sees all items & balances immediately
+      applyOptimisticState((s) => {
+        const existingTxIds = new Set((s.transactions || []).map((t) => t.id));
+        const existingExpIds = new Set((s.expenses || []).map((e) => e.id));
+        const existingDebIds = new Set((s.manualDebits || []).map((d) => d.id));
+        return {
+          ...s,
+          transactions: [...optTxs.filter((t) => !existingTxIds.has(t.id)), ...(s.transactions || [])],
+          expenses: [...optExps.filter((e) => !existingExpIds.has(e.id)), ...(s.expenses || [])],
+          manualDebits: [...optDebs.filter((d) => !existingDebIds.has(d.id)), ...(s.manualDebits || [])],
+        };
+      });
+
+      const allJobs = [
+        ...optTxs.map((item) => ({ item, kindHint: 'payment' })),
+        ...optExps.map((item) => ({ item, kindHint: 'expense' })),
+        ...optDebs.map((item) => ({ item, kindHint: 'debit' })),
+      ];
+      const totalCount = allJobs.length;
+      const msg = state.currentLang === 'en'
+        ? (totalCount > 1 ? `${totalCount} items saved successfully!` : "Item saved successfully!")
+        : (totalCount > 1 ? `${totalCount} tétel sikeresen rögzítve!` : "Tétel sikeresen rögzítve!");
+      showToast(msg, 'success');
+
       (async () => {
-        const createdIds = [];
         try {
-          const allJobs = [
-            ...(transactions || []).map(item => ({ item, kindHint: 'payment' })),
-            ...(expenses || []).map(item => ({ item, kindHint: 'expense' })),
-            ...(debits || []).map(item => ({ item, kindHint: 'debit' })),
-          ];
           for (const job of allJobs) {
-            if (!job.item) continue;
             const prepared = uiItemToFirestoreTxPayload(job.item, job.kindHint, { flats, customAccounts });
             const targetId = prepared.id || `tx-${Date.now()}`;
             if (Array.isArray(prepared.attachments) && prepared.attachments.length > 0) {
@@ -218,24 +329,23 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
                 prepared.attachments
               );
             }
-            const res = await callMutateTransaction({
+            await callMutateTransaction({
               action: 'create',
               buildingId,
               txId: prepared.id || null,
               payload: prepared,
             });
-            if (res?.txId && !res.duplicate) createdIds.push(res.txId);
           }
-          if (typeof reloadCurrentBuilding === 'function') {
-            await reloadCurrentBuilding(buildingId);
+          if (typeof refreshBuildingFinancials === 'function') {
+            refreshBuildingFinancials(buildingId).catch(() => {});
+          } else if (typeof reloadCurrentBuilding === 'function') {
+            reloadCurrentBuilding(buildingId).catch(() => {});
           }
-          const totalCount = allJobs.length;
-          const msg = state.currentLang === 'en'
-            ? (totalCount > 1 ? `${totalCount} items saved successfully!` : "Item saved successfully!")
-            : (totalCount > 1 ? `${totalCount} tétel sikeresen rögzítve!` : "Tétel sikeresen rögzítve!");
-          showToast(msg, 'success');
         } catch (err) {
           console.warn('Firestore addMultipleItems error:', err.message);
+          if (typeof reloadCurrentBuilding === 'function') {
+            reloadCurrentBuilding(buildingId).catch(() => {});
+          }
           showToast(state.currentLang === 'en' ? "Failed to save items." : "Nem sikerült rögzíteni a tételeket.", "error");
         }
       })();
@@ -420,6 +530,7 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
   const editItem = (id, type, updatedFields, flatNumHint = null) => {
     if (!requireAdmin()) return;
     if (IS_FIRESTORE_MODE) {
+      const { buildingId } = getActiveBuildingContext();
       const existingExp = (state.expenses || []).find(e => e.id === id);
       const existingDeb = (state.manualDebits || []).find(d => d.id === id);
       const existingTx = (state.transactions || []).find(t => t.id === id);
@@ -434,19 +545,40 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
         ...currentItem,
         ...updatedFields,
         flatNum: updatedFields.flatNum !== undefined ? updatedFields.flatNum : (currentItem.flatNum || flatNumHint),
+        lastUpdated: Date.now(),
       };
       const isRecurringVirtual = id && typeof id === 'string' && id.startsWith('d-') && !existingDeb && !existingTx && !existingExp;
+      const newVirtualId = isRecurringVirtual ? `deb-${Date.now()}` : id;
+
+      // Instant optimistic update in local state
+      applyOptimisticState((s) => {
+        const cleanAmount = Number(mergedItem.amount || 0);
+        let nextTxs = (s.transactions || []).filter((t) => t.id !== id);
+        let nextExps = (s.expenses || []).filter((e) => e.id !== id);
+        let nextDebs = (s.manualDebits || []).filter((d) => d.id !== id);
+        if (targetKindHint === 'expense') {
+          nextExps = [{ ...mergedItem, id: newVirtualId, amount: Math.abs(cleanAmount) }, ...nextExps];
+        } else if (targetKindHint === 'debit') {
+          nextDebs = [{ ...mergedItem, id: newVirtualId, amount: Math.abs(cleanAmount) }, ...nextDebs];
+        } else {
+          nextTxs = [{ ...mergedItem, id: newVirtualId, amount: cleanAmount }, ...nextTxs];
+        }
+        return { ...s, transactions: nextTxs, expenses: nextExps, manualDebits: nextDebs };
+      });
+      showToast(state.currentLang === 'en' ? "Item updated!" : "Tétel módosítva!");
+
       executeFirestoreTxMutation({
         action: isRecurringVirtual ? 'create' : 'update',
-        uiItem: isRecurringVirtual ? { ...mergedItem, id: `deb-${Date.now()}` } : mergedItem,
+        uiItem: isRecurringVirtual ? { ...mergedItem, id: newVirtualId } : mergedItem,
         kindHint: targetKindHint,
-        txId: isRecurringVirtual ? null : id,
-      })
-        .then(() => showToast(state.currentLang === 'en' ? "Item updated!" : "Tétel módosítva!"))
-        .catch((err) => {
-          console.warn('Firestore editItem error:', err.message);
-          showToast(state.currentLang === 'en' ? "Failed to update item." : "Nem sikerült módosítani a tételt.", "error");
-        });
+        txId: isRecurringVirtual ? newVirtualId : id,
+      }).catch((err) => {
+        console.warn('Firestore editItem error:', err.message);
+        if (typeof reloadCurrentBuilding === 'function' && buildingId) {
+          reloadCurrentBuilding(buildingId).catch(() => {});
+        }
+        showToast(state.currentLang === 'en' ? "Failed to update item." : "Nem sikerült módosítani a tételt.", "error");
+      });
       return;
     }
 
@@ -629,13 +761,22 @@ export function createAccountingActions({ state, persistState, showToast, t, cop
     if (!requireAdmin()) return;
     if (IS_FIRESTORE_MODE) {
       if (!id) return;
+      const { buildingId } = getActiveBuildingContext();
+      applyOptimisticState((s) => ({
+        ...s,
+        transactions: (s.transactions || []).filter((t) => t.id !== id),
+        expenses: (s.expenses || []).filter((e) => e.id !== id),
+        manualDebits: (s.manualDebits || []).filter((d) => d.id !== id),
+      }));
+      const isEn = state.currentLang === 'en';
+      showToast(isEn ? "Item deleted successfully!" : "Tétel sikeresen törölve!", 'success');
+
       executeFirestoreTxMutation({ action: 'delete', txId: id })
-        .then(() => {
-          const isEn = state.currentLang === 'en';
-          showToast(isEn ? "Item deleted successfully!" : "Tétel sikeresen törölve!", 'success');
-        })
         .catch((err) => {
           console.warn('Firestore deleteItem error:', err.message);
+          if (typeof reloadCurrentBuilding === 'function' && buildingId) {
+            reloadCurrentBuilding(buildingId).catch(() => {});
+          }
           showToast(state.currentLang === 'en' ? "Failed to delete item." : "Nem sikerült törölni a tételt.", "error");
         });
       return;

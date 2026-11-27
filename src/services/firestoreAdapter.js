@@ -685,6 +685,33 @@ export async function hydrateFirestoreBuilding(
 }
 
 /**
+ * Lightweight background financial reconciler: fetches ONLY building root balances,
+ * unit balances, and monthlySummaries (3 tiny reads instead of 11 heavy subcollections)
+ * to reconcile optimistic UI mutations with authoritative server totals.
+ */
+export async function hydrateFirestoreBuildingFinancials(buildingId, { role = 'owner', uid = null } = {}) {
+  const fsRole = normalizeRoleForFirestore(role);
+  const [buildingDoc, unitDocs, monthlySummaries] = await Promise.all([
+    fetchBuildingRoot(buildingId),
+    fetchScopedUnits(buildingId, fsRole, uid).catch(() => []),
+    fetchMonthlySummaries(buildingId, 24).catch(() => []),
+  ]);
+  if (!buildingDoc) return null;
+
+  const uiBuildingMeta = firestoreBuildingToUiBuilding(buildingDoc, { monthlySummaries });
+  const flats = unitDocs.map(firestoreUnitToUiFlat).filter(Boolean);
+  return {
+    firestoreBalances: uiBuildingMeta.firestoreBalances,
+    initialReserves: uiBuildingMeta.initialReserves,
+    buildingInitialReserveCommon: uiBuildingMeta.buildingInitialReserveCommon,
+    buildingInitialReserveRenovation: uiBuildingMeta.buildingInitialReserveRenovation,
+    aggregates: uiBuildingMeta.aggregates,
+    firestoreMonthlySummaries: uiBuildingMeta.firestoreMonthlySummaries,
+    flats,
+  };
+}
+
+/**
  * Hydrates the full authenticated user session from Cloud Firestore (zero RTDB, zero localStorage PII).
  */
 export async function hydrateFirestoreSession(firebaseUser) {

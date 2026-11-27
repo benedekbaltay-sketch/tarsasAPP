@@ -26,6 +26,7 @@ import {
 import {
   hydrateFirestoreSession,
   hydrateFirestoreBuilding,
+  hydrateFirestoreBuildingFinancials,
   firestoreTransactionsToUiCollections,
   purgeSensitiveLocalStorage,
   normalizeRoleForFirestore,
@@ -343,6 +344,59 @@ export function AppProvider({ children }) {
       return null;
     } finally {
       setIsCloudSyncing(false);
+    }
+  };
+
+  // Lightweight background reconciler (3 tiny reads: building root + units + monthlySummaries)
+  // so optimistic financial edits feel 0ms-instant while converging cleanly to authoritative server totals.
+  const refreshBuildingFinancials = async (targetBuildingId = null) => {
+    if (!IS_FIRESTORE_MODE) return null;
+    const { auth } = getFirebaseInstance();
+    const uid = auth?.currentUser?.uid || state.currentUser?.uid;
+    const bId = targetBuildingId || state.currentBuildingId || state.buildings?.[0]?.id;
+    if (!uid || !bId) return null;
+
+    try {
+      const membership = state.currentUser?.memberships?.[bId];
+      const fin = await hydrateFirestoreBuildingFinancials(bId, {
+        role: state.currentUser?.role || membership?.role || 'owner',
+        uid,
+      });
+      if (!fin) return null;
+
+      setState(prev => {
+        const updatedBuildings = (prev.buildings || []).map(b => {
+          if (!b || b.id !== bId) return b;
+          return {
+            ...b,
+            firestoreBalances: fin.firestoreBalances,
+            initialReserves: fin.initialReserves,
+            buildingInitialReserveCommon: fin.buildingInitialReserveCommon,
+            buildingInitialReserveRenovation: fin.buildingInitialReserveRenovation,
+            aggregates: fin.aggregates,
+            firestoreMonthlySummaries: fin.firestoreMonthlySummaries,
+            flats: fin.flats.length > 0 ? fin.flats : (b.flats || []),
+          };
+        });
+        const isCurrent = prev.currentBuildingId === bId || (!prev.currentBuildingId && updatedBuildings[0]?.id === bId);
+        const next = {
+          ...prev,
+          buildings: updatedBuildings,
+          ...(isCurrent ? {
+            flats: fin.flats.length > 0 ? fin.flats : prev.flats,
+            buildingInitialReserveCommon: fin.buildingInitialReserveCommon,
+            buildingInitialReserveRenovation: fin.buildingInitialReserveRenovation,
+          } : {}),
+        };
+        recalculateFlatBalances(next);
+        return next;
+      });
+      setCloudSyncStatus('synced');
+      setLastSyncTime(new Date());
+      return fin;
+    } catch (err) {
+      console.warn('Firestore refreshBuildingFinancials warning:', err?.message);
+      return null;
     }
   };
 
@@ -1283,6 +1337,7 @@ export function AppProvider({ children }) {
     setCopiedTx,
     ensureFirebaseAuth,
     reloadCurrentBuilding,
+    refreshBuildingFinancials,
   });
   const buildingActions = createBuildingActions({
     state,

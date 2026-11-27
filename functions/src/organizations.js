@@ -64,9 +64,9 @@ async function resolveUidByEmail(email) {
  * Preserves existing unitIds (if the staff member also owns a flat) and never locks them
  * out of their personal apartment when suspended/removed from staff!
  */
-async function syncStaffBuildingMemberships(db, { orgId, targetUid, targetEmail, memberObj, isRemoved = false }) {
+async function syncStaffBuildingMemberships(db, { orgId, targetUid, targetEmail, memberObj, isRemoved = false, buildingsSnap = null }) {
   if (!targetUid) return;
-  const bSnap = await db.collection('buildings').where('organizationId', '==', orgId).get();
+  const bSnap = buildingsSnap || await db.collection('buildings').where('organizationId', '==', orgId).get();
   if (bSnap.empty) return;
 
   const isActiveStaff = !isRemoved && memberObj && memberObj.active !== false && memberObj.status !== 'suspended';
@@ -75,14 +75,19 @@ async function syncStaffBuildingMemberships(db, { orgId, targetUid, targetEmail,
   const assignments = memberObj?.buildingAssignments || {};
   const perms = normalizeStaffPermissions(memberObj?.permissions || memberObj);
 
+  const memberSnaps = await Promise.all(
+    bSnap.docs.map((bDoc) => db.doc(`buildings/${bDoc.id}/members/${targetUid}`).get())
+  );
+
   const batch = db.batch();
   const userMembershipsPatch = {};
 
-  for (const bDoc of bSnap.docs) {
+  for (let i = 0; i < bSnap.docs.length; i++) {
+    const bDoc = bSnap.docs[i];
     const bId = bDoc.id;
     const bData = bDoc.data() || {};
     const mRef = db.doc(`buildings/${bId}/members/${targetUid}`);
-    const mSnap = await mRef.get();
+    const mSnap = memberSnaps[i];
     const existing = mSnap.exists ? mSnap.data() : null;
     const existingUnitIds = Array.isArray(existing?.unitIds) ? existing.unitIds : [];
 
@@ -655,50 +660,8 @@ export const manageOrganizationMember = onCall({ region: REGION }, async (reques
       return m;
     });
 
-    await actor.orgRef.update({
-      members: nextMembers,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    if (targetRef && resolvedUid) {
-      await targetRef.set(
-        {
-          uid: resolvedUid,
-          email: resolvedEmail || normalizeEmail(targetMember.email),
-          name: cleanName,
-          phone: cleanPhone,
-          orgRole: targetMember.orgRole || 'staff',
-          active: targetMember.active !== false,
-          status: targetMember.status || 'active',
-          buildingScope: cleanScope,
-          buildingIds: cleanBuildingIds,
-          buildingAssignments: cleanAssignments,
-          permissions: safePerms,
-          canCreateBuildings: safePerms.canCreateBuildings,
-          canManageTeam: safePerms.canManageTeam,
-          canEditBankAccounts: safePerms.canEditBankAccounts,
-          canDeleteBuildings: false,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-      await syncStaffBuildingMemberships(db, {
-        orgId,
-        targetUid: resolvedUid,
-        targetEmail: resolvedEmail,
-        memberObj: updatedMemberObj || {
-          ...targetMember,
-          name: cleanName,
-          buildingScope: cleanScope,
-          buildingIds: cleanBuildingIds,
-          buildingAssignments: cleanAssignments,
-          permissions: safePerms,
-        },
-      });
-    }
-
-    // Sync resident contact mode on affected org buildings
     const bSnap = await db.collection('buildings').where('organizationId', '==', orgId).get();
+
     const contactBatch = db.batch();
     let hasContactWrites = false;
     bSnap.forEach((bDoc) => {
@@ -737,12 +700,64 @@ export const manageOrganizationMember = onCall({ region: REGION }, async (reques
         hasContactWrites = true;
       }
     });
-    if (hasContactWrites) await contactBatch.commit();
+
+    const parallelWrites = [
+      actor.orgRef.update({
+        members: nextMembers,
+        updatedAt: FieldValue.serverTimestamp(),
+      }),
+    ];
+
+    if (targetRef && resolvedUid) {
+      parallelWrites.push(
+        targetRef.set(
+          {
+            uid: resolvedUid,
+            email: resolvedEmail || normalizeEmail(targetMember.email),
+            name: cleanName,
+            phone: cleanPhone,
+            orgRole: targetMember.orgRole || 'staff',
+            active: targetMember.active !== false,
+            status: targetMember.status || 'active',
+            buildingScope: cleanScope,
+            buildingIds: cleanBuildingIds,
+            buildingAssignments: cleanAssignments,
+            permissions: safePerms,
+            canCreateBuildings: safePerms.canCreateBuildings,
+            canManageTeam: safePerms.canManageTeam,
+            canEditBankAccounts: safePerms.canEditBankAccounts,
+            canDeleteBuildings: false,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        ),
+        syncStaffBuildingMemberships(db, {
+          orgId,
+          targetUid: resolvedUid,
+          targetEmail: resolvedEmail,
+          buildingsSnap: bSnap,
+          memberObj: updatedMemberObj || {
+            ...targetMember,
+            name: cleanName,
+            buildingScope: cleanScope,
+            buildingIds: cleanBuildingIds,
+            buildingAssignments: cleanAssignments,
+            permissions: safePerms,
+          },
+        })
+      );
+    }
+
+    if (hasContactWrites) {
+      parallelWrites.push(contactBatch.commit());
+    }
 
     // Deliver bilingual team permission change notification to the colleague's Firestore inbox
     if (notification && resolvedUid) {
-      await writeNotifToUid(resolvedUid, notification);
+      parallelWrites.push(writeNotifToUid(resolvedUid, notification));
     }
+
+    await Promise.all(parallelWrites);
 
     return { success: true, notified: Boolean(notification && resolvedUid) };
   }

@@ -617,32 +617,39 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       });
     }
 
+    const prevOrgsSnapshot = state.organizations;
+    const prevBuildingsSnapshot = state.buildings;
+    const prevNotifsSnapshot = state.notifications;
+
     if (IS_FIRESTORE_MODE) {
-      try {
-        await callManageOrganizationMember({
-          orgId: actorCtx.org.id,
-          action: 'update',
-          memberId,
-          targetUid: target.uid || null,
-          targetEmail: target.email,
-          name: targetName,
-          phone: cleanPhone,
-          buildingScope: cleanScope,
-          buildingIds: cleanBuildingIds,
-          permissions: normalizedPerms,
-          buildingAssignments: cleanBuildingAssignments,
-          notification: updateNotif,
-        });
-      } catch (err) {
+      callManageOrganizationMember({
+        orgId: actorCtx.org.id,
+        action: 'update',
+        memberId,
+        targetUid: target.uid || null,
+        targetEmail: target.email,
+        name: targetName,
+        phone: cleanPhone,
+        buildingScope: cleanScope,
+        buildingIds: cleanBuildingIds,
+        permissions: normalizedPerms,
+        buildingAssignments: cleanBuildingAssignments,
+        notification: updateNotif,
+      }).catch((err) => {
         console.error('Firestore manageOrganizationMember (update) error:', err);
+        persistState((s) => ({
+          ...s,
+          organizations: prevOrgsSnapshot,
+          buildings: prevBuildingsSnapshot,
+          notifications: prevNotifsSnapshot,
+        }), 'localOnly');
         showToast(
           isEn()
             ? `Failed to save permission changes: ${err?.message || 'Permission denied'}`
             : `Nem sikerült elmenteni a jogosultságmódosítást: ${err?.message || 'Hozzáférés megtagadva'}`,
           'error'
         );
-        return false;
-      }
+      });
     }
 
     persistState((s) => {

@@ -39,6 +39,7 @@ import { TransactionFilterBar } from '../components/TransactionFilterBar';
 import { initialFilterState, applyTransactionFilters, getActiveFilterCount } from '../utils/filterUtils';
 import { StickyMonthSection } from '../components/StickyMonthGroup';
 import { groupItemsByMonth } from '../utils/dateGrouping';
+import { canUserEditBankAccountNumbers } from '../utils/teamPermissions';
 
 export function AdminView({
   onBackToPortfolio,
@@ -74,6 +75,12 @@ export function AdminView({
     isAuditorMode ||
     !onOpenAddTransaction ||
     (currentBuilding && canUserManageBuilding && !canUserManageBuilding(currentBuilding?.id || currentBuilding))
+  );
+  const canEditBankAcc = canUserEditBankAccountNumbers(
+    state.currentUser,
+    currentBuilding,
+    state.organizations,
+    state.buildings
   );
 
   // Automatically reset flat grid edit mode and transaction edit mode if viewing in read-only mode
@@ -291,7 +298,7 @@ export function AdminView({
               <Scale className="w-3.5 h-3.5 text-[#1E3A8A]" />
               <span>{t.kpi_reserves_title || (isEn ? "Bank Accounts & Reserves" : "Folyószámlák és Tartalékok")}</span>
             </span>
-            {!isEffectiveReadOnly && onOpenGlobalBalances && (
+            {!isEffectiveReadOnly && canEditBankAcc && onOpenGlobalBalances && (
               <button
                 onClick={onOpenGlobalBalances}
                 className="p-1.5 px-2.5 rounded-lg border border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold shadow-2xs"
