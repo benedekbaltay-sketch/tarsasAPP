@@ -166,13 +166,46 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
     setNotes(flat.notes || '');
 
     // Owners (hydrating authoritative SZVB member / chairperson role from targetBuilding.szvb)
+    const hasCanonicalBuildingSzvb = Boolean(
+      targetBuilding && targetBuilding.szvb && typeof targetBuilding.szvb === 'object'
+    );
+    const canonicalSzvb = hasCanonicalBuildingSzvb ? normalizeBuildingSzvb(targetBuilding) : null;
+    const resolveOwnerLiveSzvbRole = (ownerEmail, ownerName, unitCode) => {
+      if (!targetBuilding) return null;
+      const emailRole = ownerEmail
+        ? getUserBuildingSzvbRole({ email: ownerEmail, name: ownerName || '' }, targetBuilding)
+        : null;
+      if (emailRole) return emailRole;
+      if (!canonicalSzvb) return null;
+
+      // Exact fallback for SZVB members recorded without an email (matched by normalized name + unit)
+      const normEmail = normalizeEmail(ownerEmail);
+      const normName = String(ownerName || '').trim().toLowerCase();
+      const normUnit = String(unitCode || '').trim().toLowerCase();
+      const matchesSzvbEntry = (entry) => {
+        if (!entry) return false;
+        const entryEmail = normalizeEmail(entry.email);
+        if (normEmail && entryEmail) return normEmail === entryEmail;
+        if (!normEmail && !entryEmail && normName) {
+          const entryName = String(entry.name || '').trim().toLowerCase();
+          const entryFlat = String(entry.flatNum || '').trim().toLowerCase();
+          return entryName === normName && (!entryFlat || !normUnit || entryFlat === normUnit);
+        }
+        return false;
+      };
+
+      if (matchesSzvbEntry(canonicalSzvb.chairperson)) return 'chairperson';
+      if ((canonicalSzvb.members || []).some(matchesSzvbEntry)) return 'member';
+      return null;
+    };
+
     if (flat.owners && Array.isArray(flat.owners) && flat.owners.length > 0) {
       setOwners(flat.owners.map((o, idx) => {
         const ownerEmail = o.email || (Array.isArray(o.emails) ? o.emails[0] : '') || '';
-        const liveSzvbRole = targetBuilding
-          ? getUserBuildingSzvbRole({ email: ownerEmail, name: o.name || '' }, targetBuilding)
-          : null;
-        const resolvedIsBoard = Boolean(liveSzvbRole || o.isBoardMember);
+        const liveSzvbRole = resolveOwnerLiveSzvbRole(ownerEmail, o.name || '', flat.flatNum || '');
+        const resolvedIsBoard = hasCanonicalBuildingSzvb
+          ? Boolean(liveSzvbRole)
+          : Boolean(liveSzvbRole || o.isBoardMember);
         const resolvedBoardRole = resolvedIsBoard
           ? (liveSzvbRole || (o.boardRole === 'chairperson' ? 'chairperson' : 'member'))
           : null;
@@ -195,14 +228,12 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
       }));
     } else {
       const fallbackEmail = flat.email || '';
-      const liveSzvbRole = targetBuilding
-        ? getUserBuildingSzvbRole({ email: fallbackEmail, name: flat.ownerName || '' }, targetBuilding)
-        : null;
+      const liveSzvbRole = resolveOwnerLiveSzvbRole(fallbackEmail, flat.ownerName || '', flat.flatNum || '');
       setOwners([{
         id: `owner-0-${Date.now()}`,
         role: 'owner',
         name: flat.ownerName || '',
-        share: flat.ownershipShare ? `${flat.ownershipShare}%` : '',
+        share: '100%',
         email: fallbackEmail,
         phone: formatPhoneNumber(flat.phone || ''),
         postalCode: flat.postalCode || '',
@@ -999,7 +1030,16 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
                   {totalOccupantsCount}
                 </span>
                 {totalOwnerSharePercent > 0 && totalOwnerSharePercent !== 100 && (
-                  <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" title="A tulajdoni hányadok összege nem 100%!" />
+                  <span
+                    className="inline-flex items-center shrink-0"
+                    title={
+                      isEn
+                        ? `The sum of ownership shares is ${totalOwnerSharePercent}% instead of 100%!`
+                        : `A tulajdoni hányadok összege ${totalOwnerSharePercent}%, nem 100%!`
+                    }
+                  >
+                    <AlertTriangle className="w-3 h-3 text-amber-500" />
+                  </span>
                 )}
               </button>
             )}

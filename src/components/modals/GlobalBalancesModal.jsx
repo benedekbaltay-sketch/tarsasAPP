@@ -798,7 +798,10 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                 hrsz: buildingHrsz.trim(),
                 totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000,
               } : {}),
-              ...(saveSzvb && nextSzvbPayload ? { szvb: nextSzvbPayload } : {}),
+              ...(saveSzvb && nextSzvbPayload ? {
+                szvb: nextSzvbPayload,
+                flats: syncSzvbToBuildingFlats(b.flats || [], nextSzvbPayload),
+              } : {}),
               ...(saveSzvb && nextAuditorPayload ? { economicAuditor: nextAuditorPayload } : {}),
               ...(saveApi ? {
                 bankApi: {
@@ -819,7 +822,11 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
               } : {}),
             };
           });
-          return { ...s, buildings: updatedBuildings };
+          const nextTopFlats =
+            saveSzvb && nextSzvbPayload && s.currentBuildingId === targetBuildingId
+              ? syncSzvbToBuildingFlats(s.flats || [], nextSzvbPayload)
+              : s.flats;
+          return { ...s, buildings: updatedBuildings, flats: nextTopFlats };
         }, 'localOnly');
 
         if (saveMaster) setIsEditingMasterData(false);
