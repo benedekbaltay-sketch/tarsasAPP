@@ -334,12 +334,12 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                       tabIndex={0}
                       role="button"
                       onClick={() => {
-                        // Allow text selection and copying with mouse without triggering navigation
+                        // Allow text selection and copying with mouse; single click only selects
                         const sel = window.getSelection();
                         if (sel && sel.toString().length > 0) return;
                         setSelectedBuildingId(b.id);
-                        onSelectBuilding(b.id);
                       }}
+                      onDoubleClick={() => onSelectBuilding(b.id)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           if (e.target.tagName !== 'BUTTON') {
@@ -353,7 +353,7 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                           ? 'bg-blue-50/90 border-l-4 border-l-[#1E3A8A]'
                           : 'hover:bg-blue-50/40 border-l-4 border-l-transparent'
                       }`}
-                      title={isHu ? "Kattintson a társasház megnyitásához" : "Click to open condominium"}
+                      title={isHu ? "Kattintson duplán vagy a Megnyitás gombra a belépéshez" : "Double-click or click Open to enter"}
                     >
                       {/* 1. Address (Primary) & Official Name (Sub) */}
                       <td className="py-3 px-4">
@@ -495,12 +495,13 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
                 tabIndex={0}
                 role="button"
                 aria-label={`${b.name} - ${t.portfolio_manage_building || (isEn ? "Manage Building" : "Társasház kezelése")}`}
-                title={isHu ? "Kattintson vagy nyomjon Entert a megnyitáshoz" : "Click or press Enter to open"}
+                title={isHu ? "Kattintson duplán vagy nyomjon Entert a megnyitáshoz" : "Double-click or press Enter to open"}
                 onClick={() => {
                   const sel = window.getSelection();
                   if (sel && sel.toString().length > 0) return;
-                  onSelectBuilding(b.id);
+                  setSelectedBuildingId(b.id);
                 }}
+                onDoubleClick={() => onSelectBuilding(b.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     if (e.target.tagName !== 'BUTTON') {
