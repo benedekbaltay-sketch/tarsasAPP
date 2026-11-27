@@ -132,11 +132,156 @@ export function groupNotificationsByThread(tabList = [], allProfileNotifs = []) 
     return {
       key,
       latest,
+      tabItemIds: items.map((n) => n.id).filter(Boolean),
       threadCount: fullChain.length,
       fullChain,
       hasUnread,
     };
   });
+}
+
+/**
+ * Resolves a message sender's human profile name, email address, and role label
+ * by cross-referencing the message metadata with organizations, buildings/flats, users, and currentUser.
+ * Ensures every in-app letter clearly displays both the sender's profile name AND email address.
+ */
+export function resolveMailSenderInfo(
+  msg,
+  { organizations = [], buildings = [], users = [], currentUser = null, isEn = false } = {}
+) {
+  if (!msg) {
+    return { name: '', email: '', roleLabel: '', hasSender: false };
+  }
+
+  const rawActorName = String(msg.actorName || '').trim();
+  const rawActorEmail = normalizeEmail(msg.actorEmail || msg.meta?.senderEmail || '');
+  const email = rawActorEmail || (rawActorName.includes('@') ? normalizeEmail(rawActorName) : '');
+  const actorNameIsHuman = Boolean(rawActorName && !rawActorName.includes('@'));
+
+  let profileName = '';
+  if (email) {
+    // 1. Check organizations (prefer individual member/owner profile name before company name)
+    for (const org of organizations || []) {
+      if (!org) continue;
+      if (Array.isArray(org.members)) {
+        const m = org.members.find((mem) => mem && normalizeEmail(mem.email) === email);
+        const cand = String(m?.name || '').trim();
+        if (cand && !cand.includes('@')) {
+          profileName = cand;
+          break;
+        }
+      }
+      if (normalizeEmail(org.ownerEmail) === email) {
+        const cand = String(org.ownerName || org.name || '').trim();
+        if (cand && !cand.includes('@')) {
+          profileName = cand;
+          break;
+        }
+      }
+    }
+
+    // 2. Check buildings (economic auditor, SZVB, flat owners, repContact)
+    if (!profileName) {
+      for (const b of buildings || []) {
+        if (!b) continue;
+        if (b.economicAuditor?.email && normalizeEmail(b.economicAuditor.email) === email) {
+          const cand = String(b.economicAuditor.name || '').trim();
+          if (cand && !cand.includes('@')) {
+            profileName = cand;
+            break;
+          }
+        }
+        if (b.szvb?.chairperson && normalizeEmail(b.szvb.chairperson.email) === email) {
+          const cand = String(b.szvb.chairperson.name || '').trim();
+          if (cand && !cand.includes('@')) {
+            profileName = cand;
+            break;
+          }
+        }
+        if (Array.isArray(b.szvb?.members)) {
+          const sm = b.szvb.members.find((x) => x && normalizeEmail(x.email) === email);
+          const cand = String(sm?.name || '').trim();
+          if (cand && !cand.includes('@')) {
+            profileName = cand;
+            break;
+          }
+        }
+        if (Array.isArray(b.flats)) {
+          for (const f of b.flats) {
+            if (!f) continue;
+            if (Array.isArray(f.owners)) {
+              const ownerMatch = f.owners.find(
+                (o) =>
+                  o &&
+                  (normalizeEmail(o.email) === email ||
+                    (Array.isArray(o.emails) && o.emails.some((em) => normalizeEmail(em) === email)))
+              );
+              const cand = String(ownerMatch?.name || '').trim();
+              if (cand && !cand.includes('@')) {
+                profileName = cand;
+                break;
+              }
+            }
+            if (normalizeEmail(f.email) === email) {
+              const cand = String(f.ownerName || '').trim();
+              if (cand && !cand.includes('@')) {
+                profileName = cand;
+                break;
+              }
+            }
+          }
+          if (profileName) break;
+        }
+        if (normalizeEmail(b.email) === email) {
+          const cand = String(b.repName || '').trim();
+          if (cand && !cand.includes('@')) {
+            profileName = cand;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. Check users list & currentUser
+    if (!profileName) {
+      const uMatch = (users || []).find((u) => u && normalizeEmail(u.email) === email);
+      const cand = String(uMatch?.name || '').trim();
+      if (cand && !cand.includes('@')) profileName = cand;
+    }
+    if (!profileName && currentUser && normalizeEmail(currentUser.email) === email) {
+      const cand = String(currentUser.name || '').trim();
+      if (cand && !cand.includes('@')) profileName = cand;
+    }
+  }
+
+  const name = profileName || (actorNameIsHuman ? rawActorName : '');
+
+  let roleLabel = isEn
+    ? String(msg.meta?.senderRoleLabelEn || '').trim()
+    : String(msg.meta?.senderRoleLabelHu || '').trim();
+
+  if (!roleLabel) {
+    const spType = msg.meta?.senderProfile?.type || msg.meta?.senderRole || '';
+    if (spType === 'kk' || spType === 'admin' || spType === 'superadmin') {
+      roleLabel = isEn ? 'Common Representative' : 'Közös Képviselő';
+    } else if (spType === 'szvb') {
+      roleLabel = 'SZVB';
+    } else if (spType === 'auditor') {
+      roleLabel = isEn ? 'Financial Auditor' : 'Gazdasági ellenőr';
+    } else if (spType === 'owner' || spType === 'Owner') {
+      const fNum = msg.meta?.senderFlatNum || msg.meta?.senderProfile?.flatNum || '';
+      roleLabel = fNum
+        ? (isEn ? `Flat ${fNum}` : `${fNum}. lakás`)
+        : (isEn ? 'Resident' : 'Lakó');
+    }
+  }
+
+  return {
+    name,
+    email,
+    roleLabel,
+    hasSender: Boolean(name || email || roleLabel),
+  };
 }
 
 /**

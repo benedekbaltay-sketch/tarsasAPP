@@ -69,6 +69,7 @@ import {
   resolveBuildingSzvbRecipients,
   resolveBuildingResidentRecipients,
   resolveResidentProfileEmail,
+  resolveMailSenderInfo,
   getConversationThreadMessages,
   groupNotificationsByThread,
 } from '../../utils/directMessaging.js';
@@ -591,7 +592,84 @@ export function CommunicationCenterModal({
     showToast(isEn ? 'Message restored from archive.' : 'Levél visszaállítva az archívumból.', 'info');
   };
 
-  const [pendingDeleteMail, setPendingDeleteMail] = useState(null); // { notifId, closeViewer, label }
+  const [pendingDeleteMail, setPendingDeleteMail] = useState(null); // { notifIds: string[], closeViewer, label }
+  const [selectedMailIds, setSelectedMailIds] = useState([]);
+
+  // Clear selection whenever user switches tabs, changes building filter, or searches
+  // so Select All strictly applies ONLY to the currently visible tab (e.g. Archive only).
+  useEffect(() => {
+    setSelectedMailIds([]);
+  }, [activeTab, filterBuildingId, searchQuery, isOpen]);
+
+  const selectedMailIdSet = useMemo(() => new Set(selectedMailIds), [selectedMailIds]);
+
+  const toggleSelectMailIds = (ids = []) => {
+    const cleanIds = ids.filter(Boolean);
+    if (cleanIds.length === 0) return;
+    setSelectedMailIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = cleanIds.every((id) => next.has(id));
+      if (allSelected) {
+        cleanIds.forEach((id) => next.delete(id));
+      } else {
+        cleanIds.forEach((id) => next.add(id));
+      }
+      return Array.from(next);
+    });
+  };
+
+  const toggleSelectAllForTab = (tabIds = []) => {
+    const cleanIds = Array.from(new Set(tabIds.filter(Boolean)));
+    if (cleanIds.length === 0) return;
+    setSelectedMailIds((prev) => {
+      const prevSet = new Set(prev);
+      const allSelected = cleanIds.every((id) => prevSet.has(id));
+      return allSelected ? [] : cleanIds;
+    });
+  };
+
+  const handleBulkArchiveSelected = (tabIds = []) => {
+    const tabSet = new Set(tabIds);
+    const idsToArchive = selectedMailIds.filter((id) => tabSet.has(id));
+    if (idsToArchive.length === 0) return;
+    if (typeof archiveNotification === 'function') {
+      archiveNotification(idsToArchive);
+    }
+    setSelectedMailIds([]);
+    showToast(
+      isEn
+        ? `${idsToArchive.length} message(s) archived.`
+        : `${idsToArchive.length} levél archiválva.`,
+      'info'
+    );
+  };
+
+  const handleBulkRestoreSelected = (tabIds = []) => {
+    const tabSet = new Set(tabIds);
+    const idsToRestore = selectedMailIds.filter((id) => tabSet.has(id));
+    if (idsToRestore.length === 0 || typeof unarchiveNotification !== 'function') return;
+    unarchiveNotification(idsToRestore);
+    setSelectedMailIds([]);
+    showToast(
+      isEn
+        ? `${idsToRestore.length} message(s) restored from archive.`
+        : `${idsToRestore.length} levél visszaállítva az archívumból.`,
+      'info'
+    );
+  };
+
+  const handleBulkDeleteSelected = (tabIds = []) => {
+    const tabSet = new Set(tabIds);
+    const idsToDelete = selectedMailIds.filter((id) => tabSet.has(id));
+    if (idsToDelete.length === 0 || typeof deleteNotification !== 'function') return;
+    setPendingDeleteMail({
+      notifIds: idsToDelete,
+      closeViewer: false,
+      label: isEn
+        ? `${idsToDelete.length} selected message(s)`
+        : `${idsToDelete.length} kijelölt levél`,
+    });
+  };
 
   const handleDeleteItem = (notifId, closeViewer = false) => {
     if (!notifId || typeof deleteNotification !== 'function') return;
@@ -599,16 +677,91 @@ export function CommunicationCenterModal({
     const label = found
       ? ((isEn ? (found.titleEn || found.titleHu) : (found.titleHu || found.titleEn)) || '')
       : '';
-    setPendingDeleteMail({ notifId, closeViewer, label });
+    setPendingDeleteMail({ notifIds: [notifId], closeViewer, label });
   };
 
   const confirmDeleteItem = () => {
-    if (!pendingDeleteMail) return;
-    const { notifId, closeViewer } = pendingDeleteMail;
+    if (!pendingDeleteMail || !Array.isArray(pendingDeleteMail.notifIds) || pendingDeleteMail.notifIds.length === 0) return;
+    const { notifIds, closeViewer } = pendingDeleteMail;
     setPendingDeleteMail(null);
-    deleteNotification(notifId);
+    deleteNotification(notifIds);
+    setSelectedMailIds((prev) => prev.filter((id) => !notifIds.includes(id)));
     if (closeViewer) setViewingNotification(null);
-    showToast(isEn ? 'Message deleted.' : 'Levél törölve.', 'info');
+    showToast(
+      notifIds.length > 1
+        ? (isEn ? `${notifIds.length} messages deleted.` : `${notifIds.length} levél törölve.`)
+        : (isEn ? 'Message deleted.' : 'Levél törölve.'),
+      'info'
+    );
+  };
+
+  const getSenderBadgeInfo = (msg) =>
+    resolveMailSenderInfo(msg, {
+      organizations,
+      buildings,
+      users,
+      currentUser,
+      isEn,
+    });
+
+  const renderBulkSelectionBar = ({ tabIds = [], showArchive = false, showRestore = false }) => {
+    const uniqueTabIds = Array.from(new Set(tabIds.filter(Boolean)));
+    if (uniqueTabIds.length === 0) return null;
+    const selectedInTab = uniqueTabIds.filter((id) => selectedMailIdSet.has(id));
+    const allSelected = selectedInTab.length === uniqueTabIds.length;
+    const someSelected = selectedInTab.length > 0;
+
+    return (
+      <div className="px-4 py-2.5 bg-gray-50/90 border-b border-gray-200/80 flex flex-wrap items-center justify-between gap-2">
+        <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={() => toggleSelectAllForTab(uniqueTabIds)}
+            className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+          />
+          <span>{isEn ? 'Select all' : 'Összes kijelölése'}</span>
+          <span className="text-[11px] font-semibold text-gray-400">
+            {someSelected
+              ? (isEn ? `(${selectedInTab.length} / ${uniqueTabIds.length} selected)` : `(${selectedInTab.length} / ${uniqueTabIds.length} kijelölve)`)
+              : `(${uniqueTabIds.length})`}
+          </span>
+        </label>
+
+        {someSelected && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {showArchive && (
+              <button
+                type="button"
+                onClick={() => handleBulkArchiveSelected(uniqueTabIds)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-gray-700 hover:text-[#1E3A8A] text-[11px] font-bold transition-colors cursor-pointer"
+              >
+                <Archive className="w-3.5 h-3.5" />
+                <span>{isEn ? `Archive (${selectedInTab.length})` : `Archiválás (${selectedInTab.length})`}</span>
+              </button>
+            )}
+            {showRestore && (
+              <button
+                type="button"
+                onClick={() => handleBulkRestoreSelected(uniqueTabIds)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-gray-700 hover:text-[#1E3A8A] text-[11px] font-bold transition-colors cursor-pointer"
+              >
+                <ArchiveRestore className="w-3.5 h-3.5" />
+                <span>{isEn ? `Restore (${selectedInTab.length})` : `Visszaállítás (${selectedInTab.length})`}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => handleBulkDeleteSelected(uniqueTabIds)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white text-[11px] font-bold transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{isEn ? `Delete (${selectedInTab.length})` : `Törlés (${selectedInTab.length})`}</span>
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const handleOpenDirectCompose = ({ replyTo = null } = {}) => {
@@ -1293,19 +1446,29 @@ export function CommunicationCenterModal({
                   </p>
                 </div>
               ) : (
-                inboxThreads.map((thread) => {
+                <>
+                  {renderBulkSelectionBar({
+                    tabIds: inboxThreads.flatMap((th) => th.tabItemIds || [th.latest?.id]),
+                    showArchive: true,
+                  })}
+                  {inboxThreads.map((thread) => {
                   const notif = thread.latest;
+                  const rowIds = thread.tabItemIds && thread.tabItemIds.length > 0 ? thread.tabItemIds : [notif.id];
+                  const isRowSelected = rowIds.every((id) => selectedMailIdSet.has(id));
                   const isUnread = thread.hasUnread || !notif.read;
                   const isCritical = notif.severity === 'critical';
                   const title = isEn ? (notif.titleEn || notif.titleHu) : (notif.titleHu || notif.titleEn);
                   const message = isEn ? (notif.messageEn || notif.messageHu) : (notif.messageHu || notif.messageEn);
+                  const sender = getSenderBadgeInfo(notif);
 
                   return (
                     <div
                       key={thread.key}
                       onClick={() => openThreadViewer(notif, thread.fullChain)}
                       className={`p-4 transition-colors cursor-pointer relative group border-l-4 flex items-start justify-between gap-4 ${
-                        isCritical
+                        isRowSelected
+                          ? 'bg-indigo-50/70 hover:bg-indigo-50 border-l-[#1E3A8A]'
+                          : isCritical
                           ? !isUnread
                             ? 'bg-red-50/50 hover:bg-red-50/70 border-l-red-400'
                             : 'bg-red-50/90 hover:bg-red-100/70 border-l-red-500'
@@ -1314,7 +1477,19 @@ export function CommunicationCenterModal({
                           : 'bg-blue-50/40 hover:bg-blue-50/70 border-l-blue-500'
                       }`}
                     >
-                      <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div
+                          className="pt-2 shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isRowSelected}
+                            onChange={() => toggleSelectMailIds(rowIds)}
+                            aria-label={isEn ? 'Select message' : 'Levél kijelölése'}
+                            className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                          />
+                        </div>
                         <div
                           className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-2xs ${
                             isCritical
@@ -1353,13 +1528,16 @@ export function CommunicationCenterModal({
                                 {isEn ? 'Audit Observation' : 'Ellenőri észrevétel'}
                               </span>
                             )}
-                            {(notif.actorName || notif.actorEmail || notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn) && (
-                              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-bold">
-                                👤 {isEn ? 'From:' : 'Feladó:'}{' '}
-                                {notif.actorName || notif.actorEmail}
-                                {(notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn)
-                                  ? ` · ${isEn ? notif.meta.senderRoleLabelEn : notif.meta.senderRoleLabelHu}`
-                                  : ''}
+                            {sender.hasSender && (
+                              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-bold inline-flex items-center gap-1 flex-wrap">
+                                <span>👤 {isEn ? 'From:' : 'Feladó:'}</span>
+                                {sender.name && <span>{sender.name}</span>}
+                                {sender.email && (
+                                  <span className="font-mono font-normal text-blue-800/80">
+                                    {sender.name ? `(${sender.email})` : sender.email}
+                                  </span>
+                                )}
+                                {sender.roleLabel && <span>· {sender.roleLabel}</span>}
                               </span>
                             )}
                             {notif.buildingName && (
@@ -1455,7 +1633,8 @@ export function CommunicationCenterModal({
                       </div>
                     </div>
                   );
-                })
+                })}
+                </>
               )}
             </div>
           )}
@@ -1621,8 +1800,14 @@ export function CommunicationCenterModal({
                       {isEn ? "Direct Replies & Messages Sent" : "Elküldött közvetlen levelek & válaszok"} ({sentThreads.length})
                     </div>
                   )}
+                  {renderBulkSelectionBar({
+                    tabIds: sentThreads.flatMap((th) => th.tabItemIds || [th.latest?.id]),
+                    showArchive: true,
+                  })}
                   {sentThreads.map((thread) => {
                     const msg = thread.latest;
+                    const rowIds = thread.tabItemIds && thread.tabItemIds.length > 0 ? thread.tabItemIds : [msg.id];
+                    const isRowSelected = rowIds.every((id) => selectedMailIdSet.has(id));
                     const title = isEn ? (msg.titleEn || msg.titleHu) : (msg.titleHu || msg.titleEn);
                     const body = isEn ? (msg.messageEn || msg.messageHu) : (msg.messageHu || msg.messageEn);
                     const recSummary = (isEn ? msg.meta?.recipientSummaryEn : msg.meta?.recipientSummaryHu) || '';
@@ -1630,9 +1815,20 @@ export function CommunicationCenterModal({
                       <div
                         key={thread.key}
                         onClick={() => openThreadViewer(msg, thread.fullChain)}
-                        className="p-4 hover:bg-gray-50/80 transition-colors cursor-pointer flex items-start justify-between gap-4 group"
+                        className={`p-4 transition-colors cursor-pointer flex items-start justify-between gap-4 group ${
+                          isRowSelected ? 'bg-indigo-50/70 hover:bg-indigo-50' : 'hover:bg-gray-50/80'
+                        }`}
                       >
                         <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <div className="pt-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isRowSelected}
+                              onChange={() => toggleSelectMailIds(rowIds)}
+                              aria-label={isEn ? 'Select message' : 'Levél kijelölése'}
+                              className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                            />
+                          </div>
                           <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
                             msg.meta?.isOfficialOpinion ? 'bg-teal-100 text-teal-700' : 'bg-blue-50 text-[#1E3A8A]'
                           }`}>
@@ -1838,18 +2034,36 @@ export function CommunicationCenterModal({
                   </p>
                 </div>
               ) : (
-                filteredArchivedNotifications.map((notif) => {
+                <>
+                  {renderBulkSelectionBar({
+                    tabIds: filteredArchivedNotifications.map((n) => n.id),
+                    showRestore: true,
+                  })}
+                  {filteredArchivedNotifications.map((notif) => {
+                  const isRowSelected = selectedMailIdSet.has(notif.id);
                   const title = isEn ? (notif.titleEn || notif.titleHu) : (notif.titleHu || notif.titleEn);
                   const message = isEn ? (notif.messageEn || notif.messageHu) : (notif.messageHu || notif.messageEn);
                   const isSentCopy = Boolean(notif.meta?.isSenderCopy);
+                  const sender = getSenderBadgeInfo(notif);
 
                   return (
                     <div
                       key={notif.id}
                       onClick={() => setViewingNotification(notif)}
-                      className="p-4 bg-white hover:bg-gray-50/80 transition-colors cursor-pointer flex items-start justify-between gap-4 group"
+                      className={`p-4 transition-colors cursor-pointer flex items-start justify-between gap-4 group ${
+                        isRowSelected ? 'bg-indigo-50/70 hover:bg-indigo-50' : 'bg-white hover:bg-gray-50/80'
+                      }`}
                     >
-                      <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div className="pt-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isRowSelected}
+                            onChange={() => toggleSelectMailIds([notif.id])}
+                            aria-label={isEn ? 'Select message' : 'Levél kijelölése'}
+                            className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                          />
+                        </div>
                         <div className="w-9 h-9 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center shrink-0">
                           <Archive className="w-4 h-4" />
                         </div>
@@ -1859,13 +2073,16 @@ export function CommunicationCenterModal({
                             <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 text-[10px] font-bold">
                               {isSentCopy ? (isEn ? 'Sent' : 'Elküldött') : (isEn ? 'Received' : 'Beérkezett')}
                             </span>
-                            {!isSentCopy && (notif.actorName || notif.actorEmail || notif.meta?.senderRoleLabelHu) && (
-                              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-bold">
-                                👤 {isEn ? 'From:' : 'Feladó:'}{' '}
-                                {notif.actorName || notif.actorEmail}
-                                {(notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn)
-                                  ? ` · ${isEn ? notif.meta.senderRoleLabelEn : notif.meta.senderRoleLabelHu}`
-                                  : ''}
+                            {sender.hasSender && (
+                              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#1E3A8A] text-[10px] font-bold inline-flex items-center gap-1 flex-wrap">
+                                <span>👤 {isEn ? 'From:' : 'Feladó:'}</span>
+                                {sender.name && <span>{sender.name}</span>}
+                                {sender.email && (
+                                  <span className="font-mono font-normal text-blue-800/80">
+                                    {sender.name ? `(${sender.email})` : sender.email}
+                                  </span>
+                                )}
+                                {sender.roleLabel && <span>· {sender.roleLabel}</span>}
                               </span>
                             )}
                             {notif.buildingName && (
@@ -1917,7 +2134,8 @@ export function CommunicationCenterModal({
                       </div>
                     </div>
                   );
-                })
+                })}
+                </>
               )}
             </div>
           )}
@@ -2687,8 +2905,9 @@ export function CommunicationCenterModal({
                     msg.meta?.isSenderCopy ||
                     (msg.actorEmail && normalizeEmail(msg.actorEmail) === normalizeEmail(currentUser?.email))
                   );
+                  const sender = getSenderBadgeInfo(msg);
                   const recSummary = (isEn ? msg.meta?.recipientSummaryEn : msg.meta?.recipientSummaryHu) || '';
-                  const senderRoleLabel = isEn ? msg.meta?.senderRoleLabelEn : msg.meta?.senderRoleLabelHu;
+                  const senderRoleLabel = sender.roleLabel;
                   const rawBody = (() => {
                     const text = isEn
                       ? (msg.messageEn || msg.messageHu || '')
@@ -2716,7 +2935,7 @@ export function CommunicationCenterModal({
                             : 'bg-gray-50/80 border-gray-100'
                         }`}
                       >
-                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold shrink-0 ${
                               isMine
@@ -2724,8 +2943,15 @@ export function CommunicationCenterModal({
                                 : 'bg-gray-200 text-gray-800'
                             }`}
                           >
-                            {isMine ? (isEn ? 'Me' : 'Én') : (msg.actorName || msg.actorEmail || (isEn ? 'System' : 'Rendszer'))}
+                            {isMine
+                              ? (sender.name ? `${isEn ? 'Me' : 'Én'} · ${sender.name}` : (isEn ? 'Me' : 'Én'))
+                              : (sender.name || sender.email || (isEn ? 'System' : 'Rendszer'))}
                           </span>
+                          {sender.email && (
+                            <span className="font-mono text-[10px] text-gray-600 bg-white px-1.5 py-0.5 rounded border border-gray-200/80 truncate max-w-[220px]">
+                              {sender.email}
+                            </span>
+                          )}
                           {!isMine && senderRoleLabel && (
                             <span className="px-1.5 py-0.5 rounded bg-blue-50 text-[#1E3A8A] text-[10px] font-bold">
                               {senderRoleLabel}
@@ -3648,12 +3874,20 @@ export function CommunicationCenterModal({
 
       <ConfirmDialog
         isOpen={Boolean(pendingDeleteMail)}
-        title={isEn ? "Delete Message" : "Levél törlése"}
+        title={
+          (pendingDeleteMail?.notifIds?.length || 0) > 1
+            ? (isEn ? "Delete Selected Messages" : "Kijelölt levelek törlése")
+            : (isEn ? "Delete Message" : "Levél törlése")
+        }
         message={
-          t.mail_delete_confirm ||
-          (isEn
-            ? "Are you sure you want to permanently delete this message?"
-            : "Biztosan véglegesen törlöd ezt a levelet?")
+          (pendingDeleteMail?.notifIds?.length || 0) > 1
+            ? (isEn
+                ? `Are you sure you want to permanently delete the ${pendingDeleteMail.notifIds.length} selected messages?`
+                : `Biztosan véglegesen törlöd a kijelölt ${pendingDeleteMail.notifIds.length} levelet?`)
+            : (t.mail_delete_confirm ||
+                (isEn
+                  ? "Are you sure you want to permanently delete this message?"
+                  : "Biztosan véglegesen törlöd ezt a levelet?"))
         }
         itemLabel={pendingDeleteMail?.label || ''}
         confirmLabel={t.delete || (isEn ? "Delete" : "Törlés")}

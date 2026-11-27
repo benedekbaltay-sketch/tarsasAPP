@@ -1191,64 +1191,76 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     }), 'notificationsOnly');
   };
 
-  const archiveNotification = (notifId) => {
-    if (!notifId || !state.currentUser) return;
+  const archiveNotification = (notifIdOrIds) => {
+    const ids = (Array.isArray(notifIdOrIds) ? notifIdOrIds : [notifIdOrIds]).filter(Boolean);
+    if (ids.length === 0 || !state.currentUser) return;
+    const idSet = new Set(ids);
     const nowIso = new Date().toISOString();
     const nowTs = Date.now();
     if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
-      updateUserNotification(state.currentUser.uid, notifId, {
-        read: true,
-        archived: true,
-        dismissed: false,
-        archivedAt: nowIso,
-        archivedUpdatedAt: nowTs,
-      }).catch(() => {});
+      for (const id of idSet) {
+        updateUserNotification(state.currentUser.uid, id, {
+          read: true,
+          archived: true,
+          dismissed: false,
+          archivedAt: nowIso,
+          archivedUpdatedAt: nowTs,
+        }).catch(() => {});
+      }
     }
     persistState((s) => ({
       ...s,
       notifications: (s.notifications || []).map((n) =>
-        n && n.id === notifId
+        n && idSet.has(n.id)
           ? { ...n, read: true, archived: true, dismissed: false, archivedAt: nowIso, archivedUpdatedAt: nowTs }
           : n
       ),
     }), 'notificationsOnly');
   };
 
-  const unarchiveNotification = (notifId) => {
-    if (!notifId || !state.currentUser) return;
+  const unarchiveNotification = (notifIdOrIds) => {
+    const ids = (Array.isArray(notifIdOrIds) ? notifIdOrIds : [notifIdOrIds]).filter(Boolean);
+    if (ids.length === 0 || !state.currentUser) return;
+    const idSet = new Set(ids);
     const nowTs = Date.now();
     if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
-      updateUserNotification(state.currentUser.uid, notifId, {
-        archived: false,
-        dismissed: false,
-        archivedAt: null,
-        archivedUpdatedAt: nowTs,
-      }).catch(() => {});
+      for (const id of idSet) {
+        updateUserNotification(state.currentUser.uid, id, {
+          archived: false,
+          dismissed: false,
+          archivedAt: null,
+          archivedUpdatedAt: nowTs,
+        }).catch(() => {});
+      }
     }
     persistState((s) => ({
       ...s,
       notifications: (s.notifications || []).map((n) =>
-        n && n.id === notifId
+        n && idSet.has(n.id)
           ? { ...n, archived: false, dismissed: false, archivedAt: null, archivedUpdatedAt: nowTs }
           : n
       ),
     }), 'notificationsOnly');
   };
 
-  const deleteNotification = (notifId) => {
-    if (!notifId || !state.currentUser) return;
+  const deleteNotification = (notifIdOrIds) => {
+    const ids = (Array.isArray(notifIdOrIds) ? notifIdOrIds : [notifIdOrIds]).filter(Boolean);
+    if (ids.length === 0 || !state.currentUser) return;
+    const idSet = new Set(ids);
     const nowIso = new Date().toISOString();
     if (IS_FIRESTORE_MODE && state.currentUser?.uid) {
-      updateUserNotification(state.currentUser.uid, notifId, {
-        read: true,
-        deleted: true,
-        deletedAt: nowIso,
-      }).catch(() => {});
+      for (const id of idSet) {
+        updateUserNotification(state.currentUser.uid, id, {
+          read: true,
+          deleted: true,
+          deletedAt: nowIso,
+        }).catch(() => {});
+      }
     }
     persistState((s) => ({
       ...s,
       notifications: (s.notifications || []).map((n) =>
-        n && n.id === notifId
+        n && idSet.has(n.id)
           ? { ...n, read: true, deleted: true, deletedAt: nowIso }
           : n
       ),

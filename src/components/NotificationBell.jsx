@@ -5,6 +5,7 @@ import { isUserBuildingSzvb } from '../utils/szvb';
 import { isUserBuildingEconomicAuditor } from '../utils/economicAuditor';
 import { resolveUserProfiles, getNotificationsForActiveProfile } from '../utils/userProfiles';
 import { isSafeDownloadUrl } from '../utils/fileSecurity';
+import { resolveMailSenderInfo } from '../utils/directMessaging';
 import { ConfirmDialog } from './ConfirmDialog';
 
 function formatNotifTime(iso, isEn) {
@@ -295,17 +296,30 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                           )}
                         </div>
 
-                        {(notif.actorName || notif.actorEmail || notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn) && (
-                          <div className="flex items-center gap-1.5 flex-wrap mt-1 text-[10px]">
-                            <span className="font-bold text-[#1E3A8A] bg-blue-50 px-1.5 py-0.2 rounded">
-                              👤 {isEn ? 'From:' : 'Feladó:'}{' '}
-                              {notif.actorName || notif.actorEmail}
-                              {(notif.meta?.senderRoleLabelHu || notif.meta?.senderRoleLabelEn)
-                                ? ` · ${isEn ? notif.meta.senderRoleLabelEn : notif.meta.senderRoleLabelHu}`
-                                : ''}
-                            </span>
-                          </div>
-                        )}
+                        {(() => {
+                          const sender = resolveMailSenderInfo(notif, {
+                            organizations,
+                            buildings,
+                            users,
+                            currentUser,
+                            isEn,
+                          });
+                          if (!sender.hasSender) return null;
+                          return (
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1 text-[10px]">
+                              <span className="font-bold text-[#1E3A8A] bg-blue-50 px-1.5 py-0.5 rounded inline-flex items-center gap-1 flex-wrap">
+                                <span>👤 {isEn ? 'From:' : 'Feladó:'}</span>
+                                {sender.name && <span>{sender.name}</span>}
+                                {sender.email && (
+                                  <span className="font-mono font-normal text-blue-800/80">
+                                    {sender.name ? `(${sender.email})` : sender.email}
+                                  </span>
+                                )}
+                                {sender.roleLabel && <span>· {sender.roleLabel}</span>}
+                              </span>
+                            </div>
+                          );
+                        })()}
 
                         <p
                           className={`text-[11px] mt-1 leading-relaxed break-words ${
@@ -484,19 +498,34 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
                   <h4 className="font-extrabold text-gray-900 text-base leading-snug">
                     {isEn ? (selectedNotification.titleEn || selectedNotification.titleHu) : (selectedNotification.titleHu || selectedNotification.titleEn)}
                   </h4>
-                  {(selectedNotification.actorName || selectedNotification.actorEmail || selectedNotification.meta?.senderRoleLabelHu || selectedNotification.meta?.senderRoleLabelEn) && (
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px] text-gray-600">
-                      <span>{isEn ? "From:" : "Feladó:"}</span>
-                      <strong className="text-gray-900">
-                        {selectedNotification.actorName || selectedNotification.actorEmail}
-                      </strong>
-                      {(selectedNotification.meta?.senderRoleLabelHu || selectedNotification.meta?.senderRoleLabelEn) && (
-                        <span className="px-1.5 py-0.2 rounded bg-blue-50 text-[#1E3A8A] text-[10px] font-bold">
-                          {isEn ? selectedNotification.meta.senderRoleLabelEn : selectedNotification.meta.senderRoleLabelHu}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                  {(() => {
+                    const sender = resolveMailSenderInfo(selectedNotification, {
+                      organizations,
+                      buildings,
+                      users,
+                      currentUser,
+                      isEn,
+                    });
+                    if (!sender.hasSender) return null;
+                    return (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px] text-gray-600">
+                        <span>{isEn ? "From:" : "Feladó:"}</span>
+                        {sender.name && (
+                          <strong className="text-gray-900">{sender.name}</strong>
+                        )}
+                        {sender.email && (
+                          <span className="font-mono text-[10px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200/80">
+                            {sender.email}
+                          </span>
+                        )}
+                        {sender.roleLabel && (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-50 text-[#1E3A8A] text-[10px] font-bold">
+                            {sender.roleLabel}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
                 {selectedNotification.buildingName && (
                   <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold shrink-0">

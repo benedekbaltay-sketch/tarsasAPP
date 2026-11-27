@@ -8,6 +8,7 @@ import {
   resolveBuildingSzvbRecipients,
   resolveBuildingAuditorRecipient,
   resolveResidentProfileEmail,
+  resolveMailSenderInfo,
   resolveMessageThreadId,
   getConversationThreadMessages,
   groupNotificationsByThread,
@@ -388,4 +389,44 @@ test('6. Full 7-direction communication matrix: SZVB -> All Residents (bypassing
   });
   assert.equal(auditorReplyToResident.ok, false);
   assert.equal(auditorReplyToResident.error, 'auditor-kk-szvb-only');
+});
+
+test('7. resolveMailSenderInfo resolves profile name + email + role, and groupNotificationsByThread exposes tab-scoped tabItemIds', () => {
+  const { building, organizations, users } = makeFixtures();
+
+  // Case A: Server notification where actorName was stored as raw email -> resolves real owner name + email
+  const fromEmailOnly = resolveMailSenderInfo(
+    {
+      id: 'n1',
+      actorName: 'kk@example.com',
+      actorEmail: 'kk@example.com',
+      meta: { senderProfile: { type: 'kk' } },
+    },
+    { organizations, buildings: [building], users, isEn: false }
+  );
+  assert.equal(fromEmailOnly.name, 'Fő KK');
+  assert.equal(fromEmailOnly.email, 'kk@example.com');
+  assert.equal(fromEmailOnly.roleLabel, 'Közös Képviselő');
+  assert.equal(fromEmailOnly.hasSender, true);
+
+  // Case B: Resident sender -> resolves flat owner's profile name + email + flat role label
+  const fromResident = resolveMailSenderInfo(
+    {
+      id: 'n2',
+      actorEmail: 'lako1@example.com',
+      meta: { senderProfile: { type: 'owner', flatNum: '1' } },
+    },
+    { organizations, buildings: [building], users, isEn: false }
+  );
+  assert.equal(fromResident.name, 'Lakó Egy');
+  assert.equal(fromResident.email, 'lako1@example.com');
+  assert.equal(fromResident.roleLabel, '1. lakás');
+
+  // Case C: groupNotificationsByThread returns strictly tab-scoped tabItemIds (archive vs inbox isolation)
+  const inboxMsg = { id: 'm-inbox', threadId: 't-1', createdAt: '2026-10-01T10:00:00Z', read: false };
+  const sentMsg = { id: 'm-sent', threadId: 't-1', createdAt: '2026-10-01T10:05:00Z', read: true, meta: { isSenderCopy: true } };
+  const threads = groupNotificationsByThread([inboxMsg], [inboxMsg, sentMsg]);
+  assert.equal(threads.length, 1);
+  assert.deepEqual(threads[0].tabItemIds, ['m-inbox']);
+  assert.equal(threads[0].threadCount, 2);
 });
