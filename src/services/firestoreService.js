@@ -440,6 +440,71 @@ export async function deleteBuildingCalendarEvent(buildingId, eventId) {
   await deleteDoc(doc(db, 'buildings', buildingId, 'calendarEvents', eventId));
 }
 
+export async function fetchOrganization(orgId) {
+  if (!orgId) return null;
+  const db = requireFirestore();
+  const snap = await getDoc(doc(db, 'organizations', orgId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function fetchBuildingEmailRules(buildingId) {
+  if (!buildingId) return [];
+  const db = requireFirestore();
+  const snap = await getDocs(collection(db, 'buildings', buildingId, 'emailRules'));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function saveBuildingEmailRule(buildingId, ruleId, ruleData) {
+  if (!buildingId || !ruleId) return;
+  const db = requireFirestore();
+  await setDoc(
+    doc(db, 'buildings', buildingId, 'emailRules', ruleId),
+    {
+      ...stripUndefinedDeep(ruleData),
+      id: ruleId,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function deleteBuildingEmailRule(buildingId, ruleId) {
+  if (!buildingId || !ruleId) return;
+  const db = requireFirestore();
+  await deleteDoc(doc(db, 'buildings', buildingId, 'emailRules', ruleId));
+}
+
+export async function fetchBuildingEmailOutbox(buildingId, maxCount = 200) {
+  if (!buildingId) return [];
+  const db = requireFirestore();
+  const snap = await getDocs(
+    query(collection(db, 'buildings', buildingId, 'emailOutbox'), limit(maxCount))
+  );
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => String(b.queuedAt || '').localeCompare(String(a.queuedAt || '')));
+}
+
+export async function saveBuildingEmailOutboxItem(buildingId, itemId, itemData) {
+  if (!buildingId || !itemId) return;
+  const db = requireFirestore();
+  await setDoc(
+    doc(db, 'buildings', buildingId, 'emailOutbox', itemId),
+    {
+      ...stripUndefinedDeep(itemData),
+      id: itemId,
+    },
+    { merge: true }
+  );
+}
+
+export async function clearBuildingEmailOutbox(buildingId) {
+  if (!buildingId) return;
+  const db = requireFirestore();
+  const snap = await getDocs(collection(db, 'buildings', buildingId, 'emailOutbox'));
+  await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+}
+
 // =============================================================================
 // 5. IMMUTABLE AUDIT LOGS VIEWER (Admin & SZVB ONLY)
 // =============================================================================

@@ -172,10 +172,41 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
   const legacyCalendarEvents = Array.isArray(rtdbSnapshot?.calendarEvents)
     ? rtdbSnapshot.calendarEvents
     : Object.values(rtdbSnapshot?.calendarEvents || {});
+  const legacyOrganizations = Array.isArray(rtdbSnapshot?.organizations)
+    ? rtdbSnapshot.organizations
+    : Object.values(rtdbSnapshot?.organizations || {});
+  const legacyNotifications = Array.isArray(rtdbSnapshot?.notifications)
+    ? rtdbSnapshot.notifications
+    : Object.values(rtdbSnapshot?.notifications || {});
+  const legacyEmailRules = Array.isArray(rtdbSnapshot?.emailRules)
+    ? rtdbSnapshot.emailRules
+    : Object.values(rtdbSnapshot?.emailRules || {});
+  const legacyEmailOutbox = Array.isArray(rtdbSnapshot?.emailOutbox)
+    ? rtdbSnapshot.emailOutbox
+    : Object.values(rtdbSnapshot?.emailOutbox || {});
 
   const usersDocs = {};        // uid -> UserDoc
-  const buildingsPlan = {};    // buildingId -> { buildingDoc, members, units, categories, transactions, monthlySummaries, loans, documents, infoSections, calendarEvents, auditLogs }
+  const userNotifications = {}; // uid -> { notifId -> NotifDoc }
+  const organizationsPlan = {}; // orgId -> { orgDoc, members, invites }
+  const buildingsPlan = {};    // buildingId -> { buildingDoc, members, units, categories, transactions, monthlySummaries, loans, documents, infoSections, calendarEvents, emailRules, emailOutbox, auditLogs }
   const storageUploads = [];   // { storagePath, base64DataUrl, mimeType, fileName }
+
+  const sanitizeGlobalSettings = (rawGs) => {
+    const base = rawGs && typeof rawGs === 'object'
+      ? JSON.parse(JSON.stringify(rawGs))
+      : {
+          soundEffectsEnabled: true,
+          rememberMe: true,
+          notifications: { bankErrors: true, expiringLoans: true, upcomingAssemblies: true },
+        };
+    if (base.bankApi && typeof base.bankApi === 'object') {
+      delete base.bankApi.apiKey;
+      delete base.bankApi.clientSecret;
+      delete base.bankApi.secretKey;
+    }
+    return base;
+  };
+  const safeGlobalSettings = sanitizeGlobalSettings(rtdbSnapshot?.globalSettings);
 
   const ensureUserDoc = (uid, email, displayName = '', isSuperAdmin = false, phone = '') => {
     if (!uid) return null;
@@ -184,9 +215,11 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
         uid,
         email: String(email || '').toLowerCase().trim(),
         displayName: String(displayName || ''),
+        name: String(displayName || ''),
         phone: String(phone || ''),
         isSuperAdmin: Boolean(isSuperAdmin),
         preferredLang: rtdbSnapshot?.currentLang === 'en' ? 'en' : 'hu',
+        orgIds: [],
         memberships: {},
         repProfile: rtdbSnapshot?.repProfile || {
           companyName: '',
@@ -196,11 +229,7 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
           address: '',
           officeHours: '',
         },
-        globalSettings: rtdbSnapshot?.globalSettings || {
-          soundEffectsEnabled: true,
-          rememberMe: true,
-          notifications: { bankErrors: true, expiringLoans: true, upcomingAssemblies: true },
-        },
+        globalSettings: safeGlobalSettings,
         createdAt: nowIso,
         updatedAt: nowIso,
       };
@@ -209,6 +238,97 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
     }
     return usersDocs[uid];
   };
+
+  // Pre-seed organizations & org members
+  for (const org of legacyOrganizations) {
+    if (!org || !org.id) continue;
+    const orgId = String(org.id).trim();
+    const orgMembers = {};
+    const orgInvites = {};
+    const rawMembers = Array.isArray(org.members) ? org.members : [];
+    const ownerEmail = String(org.ownerEmail || '').toLowerCase().trim();
+    const ownerUid = resolveUid(ownerEmail);
+    if (ownerUid) {
+      const uDoc = ensureUserDoc(ownerUid, ownerEmail, org.ownerName || org.name || ownerEmail, false);
+      if (uDoc && !uDoc.orgIds.includes(orgId)) uDoc.orgIds.push(orgId);
+      orgMembers[ownerUid] = {
+        uid: ownerUid,
+        email: ownerEmail,
+        name: String(org.ownerName || org.name || ownerEmail),
+        orgRole: 'owner',
+        active: true,
+        status: 'active',
+        buildingScope: 'all',
+        buildingIds: [],
+        canCreateBuildings: true,
+        canManageTeam: true,
+        canEditBankAccounts: true,
+        canDeleteBuildings: true,
+        updatedAt: nowIso,
+      };
+    }
+    for (const m of rawMembers) {
+      if (!m || !m.email) continue;
+      const mEmail = String(m.email).toLowerCase().trim();
+      const mUid = resolveUid(mEmail);
+      if (mUid) {
+        const uDoc = ensureUserDoc(mUid, mEmail, m.name || mEmail, false, m.phone || '');
+        if (uDoc && !uDoc.orgIds.includes(orgId)) uDoc.orgIds.push(orgId);
+        const isOrgOwn = m.orgRole === 'owner' || mEmail === ownerEmail;
+        orgMembers[mUid] = {
+          uid: mUid,
+          email: mEmail,
+          name: String(m.name || mEmail),
+          phone: String(m.phone || ''),
+          orgRole: isOrgOwn ? 'owner' : 'staff',
+          active: m.active !== false && m.status !== 'suspended',
+          status: m.status || (m.active === false ? 'suspended' : 'active'),
+          buildingScope: m.buildingScope || (isOrgOwn ? 'all' : 'selected'),
+          buildingIds: Array.isArray(m.buildingIds) ? m.buildingIds : [],
+          buildingPermissions: m.buildingPermissions || {},
+          permissions: m.permissions || {},
+          canCreateBuildings: isOrgOwn ? true : Boolean(m.permissions?.canCreateBuildings),
+          canManageTeam: isOrgOwn ? true : Boolean(m.permissions?.canManageTeam),
+          canEditBankAccounts: isOrgOwn ? true : Boolean(m.permissions?.canEditBankAccounts),
+          canDeleteBuildings: isOrgOwn,
+          updatedAt: nowIso,
+        };
+      }
+    }
+    for (const inv of (Array.isArray(org.invites) ? org.invites : [])) {
+      if (!inv || !inv.id) continue;
+      orgInvites[String(inv.id)] = { ...inv, orgId, updatedAt: nowIso };
+    }
+    organizationsPlan[orgId] = {
+      orgDoc: {
+        ...org,
+        id: orgId,
+        ownerEmail,
+        updatedAt: nowIso,
+      },
+      members: orgMembers,
+      invites: orgInvites,
+    };
+  }
+
+  // Pre-seed user notifications (Inbox, Sent, Archive, Deleted tombstones)
+  for (const n of legacyNotifications) {
+    if (!n || !n.id) continue;
+    const targetEmail = n.meta?.isSenderCopy
+      ? (n.actorEmail || n.recipientEmail || '')
+      : (n.recipientEmail || '');
+    const uid = resolveUid(targetEmail);
+    if (!uid) continue;
+    if (!userNotifications[uid]) userNotifications[uid] = {};
+    const cleanNotif = {
+      ...n,
+      id: String(n.id),
+      attachments: Array.isArray(n.attachments)
+        ? n.attachments.map(({ fileData: _omit, data: _omit2, inlineData: _omit3, ...rest }) => rest)
+        : [],
+    };
+    userNotifications[uid][String(n.id)] = cleanNotif;
+  }
 
   // Pre-seed superadmins from legacy users
   for (const u of legacyUsers) {
@@ -494,7 +614,7 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
       };
     }
 
-    // Register building Admins & SZVB users from top-level users array
+    // Register building Admins & SZVB users from top-level users array, organizations, and b.szvb
     for (const u of legacyUsers) {
       if (!u || !u.email) continue;
       if (u.role === 'admin' || u.role === 'szvb') {
@@ -505,6 +625,7 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
             members[uid] = {
               uid,
               email: String(u.email).toLowerCase().trim(),
+              name: String(u.name || u.email),
               role: u.role,
               unitIds: members[uid]?.unitIds || [],
               active: true,
@@ -516,6 +637,60 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
           }
         }
       }
+    }
+
+    // Register Organization Owner & active Staff members as building admins if org manages this building
+    const linkedOrg = b.organizationId ? organizationsPlan[b.organizationId] : null;
+    if (linkedOrg) {
+      for (const [orgUid, orgMem] of Object.entries(linkedOrg.members || {})) {
+        if (!orgMem || !orgMem.active) continue;
+        const canAccess =
+          orgMem.orgRole === 'owner' ||
+          orgMem.buildingScope === 'all' ||
+          (Array.isArray(orgMem.buildingIds) && orgMem.buildingIds.includes(buildingId));
+        if (!canAccess) continue;
+        const bPerm = orgMem.buildingPermissions?.[buildingId] || {};
+        members[orgUid] = {
+          ...(members[orgUid] || {}),
+          uid: orgUid,
+          email: orgMem.email,
+          name: orgMem.name || orgMem.email,
+          role: 'admin',
+          orgRole: orgMem.orgRole,
+          canEditBankAccounts: orgMem.orgRole === 'owner' || Boolean(bPerm.canEditBankAccounts ?? orgMem.canEditBankAccounts),
+          unitIds: members[orgUid]?.unitIds || [],
+          active: true,
+          accessFromDate: null,
+          grantedBy: 'system:migration',
+          grantedAt: members[orgUid]?.grantedAt || nowIso,
+          updatedAt: nowIso,
+        };
+      }
+    }
+
+    // Register explicit SZVB chairperson & members from b.szvb (without downgrading existing admins)
+    const explicitSzvbPeople = [
+      b.szvb?.chairperson,
+      ...(Array.isArray(b.szvb?.members) ? b.szvb.members : []),
+    ].filter((p) => p && p.email);
+    for (const sp of explicitSzvbPeople) {
+      const spEmail = String(sp.email).toLowerCase().trim();
+      const spUid = resolveUid(spEmail);
+      if (!spUid) continue;
+      ensureUserDoc(spUid, spEmail, sp.name || spEmail, false);
+      const existingMem = members[spUid];
+      members[spUid] = {
+        ...(existingMem || {}),
+        uid: spUid,
+        email: spEmail,
+        name: sp.name || existingMem?.name || spEmail,
+        role: existingMem?.role === 'admin' ? 'admin' : 'szvb',
+        unitIds: existingMem?.unitIds || [],
+        active: true,
+        grantedBy: 'system:migration',
+        grantedAt: existingMem?.grantedAt || nowIso,
+        updatedAt: nowIso,
+      };
     }
 
     // Mirror memberships into users/{uid}.memberships
@@ -1134,6 +1309,29 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
       },
     };
 
+    // 10. Email Dunning Rules & Outbox Logs scoped to this building
+    const emailRules = {};
+    for (const r of legacyEmailRules) {
+      if (!r || !r.id) continue;
+      if (!r.buildingId || r.buildingId === 'all' || r.buildingId === buildingId) {
+        emailRules[String(r.id)] = { ...r, id: String(r.id), updatedAt: nowIso };
+      }
+    }
+
+    const emailOutbox = {};
+    for (const item of legacyEmailOutbox) {
+      if (!item || !item.id) continue;
+      if (!item.buildingId || item.buildingId === buildingId) {
+        emailOutbox[String(item.id)] = {
+          ...item,
+          id: String(item.id),
+          attachments: Array.isArray(item.attachments)
+            ? item.attachments.map(({ fileData: _omit, data: _omit2, inlineData: _omit3, ...rest }) => rest)
+            : [],
+        };
+      }
+    }
+
     buildingsPlan[buildingId] = {
       buildingDoc,
       members,
@@ -1145,12 +1343,16 @@ export function transformRtdbSnapshotToFirestore(rtdbSnapshot, options = {}) {
       documents,
       infoSections,
       calendarEvents,
+      emailRules,
+      emailOutbox,
       auditLogs,
     };
   }
 
   return {
     users: usersDocs,
+    userNotifications,
+    organizations: organizationsPlan,
     buildings: buildingsPlan,
     storageUploads,
   };

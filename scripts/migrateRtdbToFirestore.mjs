@@ -173,6 +173,22 @@ async function main() {
     }
   }
 
+  for (const [uid, notifMap] of Object.entries(plan.userNotifications || {})) {
+    for (const [notifId, notifData] of Object.entries(notifMap || {})) {
+      ops.push({ ref: db.doc(`users/${uid}/notifications/${notifId}`), data: notifData });
+    }
+  }
+
+  for (const [orgId, orgPlan] of Object.entries(plan.organizations || {})) {
+    ops.push({ ref: db.doc(`organizations/${orgId}`), data: orgPlan.orgDoc });
+    for (const [uid, mDoc] of Object.entries(orgPlan.members || {})) {
+      ops.push({ ref: db.doc(`organizations/${orgId}/members/${uid}`), data: mDoc });
+    }
+    for (const [invId, invDoc] of Object.entries(orgPlan.invites || {})) {
+      ops.push({ ref: db.doc(`organizations/${orgId}/invites/${invId}`), data: invDoc });
+    }
+  }
+
   for (const [bId, bPlan] of Object.entries(plan.buildings)) {
     ops.push({ ref: db.doc(`buildings/${bId}`), data: bPlan.buildingDoc });
 
@@ -186,6 +202,8 @@ async function main() {
       ['documents', bPlan.documents],
       ['infoSections', bPlan.infoSections],
       ['calendarEvents', bPlan.calendarEvents],
+      ['emailRules', bPlan.emailRules || {}],
+      ['emailOutbox', bPlan.emailOutbox || {}],
       ['auditLogs', bPlan.auditLogs],
     ];
 

@@ -19,6 +19,10 @@ import {
   uploadBase64ToStorage,
   getSecureStorageDownloadUrl,
   callSendDirectMail,
+  saveBuildingEmailRule,
+  deleteBuildingEmailRule,
+  saveBuildingEmailOutboxItem,
+  clearBuildingEmailOutbox,
 } from '../services/firestoreService.js';
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
 import { sanitizeMailAttachments, buildDirectMessagePayload } from '../utils/directMessaging.js';
@@ -93,6 +97,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       }
     } catch (e) {}
 
+    let savedRuleForFirestore = null;
     const updater = (prev) => {
       const currentRules = Array.isArray(prev.emailRules) && prev.emailRules.length > 0 
         ? prev.emailRules 
@@ -105,21 +110,19 @@ export function createEmailActions(optionsOrState, maybeSetState) {
                                oldRule.checkDayOfMonth !== ruleData.checkDayOfMonth ||
                                oldRule.enabled !== ruleData.enabled;
 
-        // If schedule changed:
-        // - If the new time has ALREADY PASSED today (e.g. at 14:25 user sets 08:00 today),
-        //   lock lastAutoDispatchedDate to today so it does NOT fire today in the past!
-        // - If the new time is in the future today or another day, reset to null to allow future dispatch.
         let resolvedLastDispatched = oldRule.lastAutoDispatchedDate || null;
         if (scheduleChanged) {
           resolvedLastDispatched = isTargetTimePastToday ? todayScheduleStr : null;
         }
 
-        updatedRules = currentRules.map((r, idx) => (idx === existingIdx ? { 
-          ...r, 
-          ...ruleData, 
+        const mergedRule = {
+          ...oldRule,
+          ...ruleData,
           lastAutoDispatchedDate: resolvedLastDispatched,
-          updatedAt: getServerIsoString() 
-        } : r));
+          updatedAt: getServerIsoString()
+        };
+        savedRuleForFirestore = mergedRule;
+        updatedRules = currentRules.map((r, idx) => (idx === existingIdx ? mergedRule : r));
       } else {
         const newRule = {
           ...ruleData,
@@ -127,7 +130,12 @@ export function createEmailActions(optionsOrState, maybeSetState) {
           lastAutoDispatchedDate: isTargetTimePastToday ? todayScheduleStr : null,
           createdAt: getServerIsoString()
         };
+        savedRuleForFirestore = newRule;
         updatedRules = [newRule, ...currentRules];
+      }
+      if (IS_FIRESTORE_MODE && savedRuleForFirestore) {
+        const fsBId = prev.currentBuildingId || prev.buildings?.[0]?.id;
+        if (fsBId) saveBuildingEmailRule(fsBId, savedRuleForFirestore.id, savedRuleForFirestore).catch(() => {});
       }
       return {
         ...prev,
@@ -171,6 +179,10 @@ export function createEmailActions(optionsOrState, maybeSetState) {
 
     const updater = (prev) => {
       const rules = Array.isArray(prev.emailRules) ? prev.emailRules : [];
+      if (IS_FIRESTORE_MODE) {
+        const fsBId = prev.currentBuildingId || prev.buildings?.[0]?.id;
+        if (fsBId) deleteBuildingEmailRule(fsBId, ruleId).catch(() => {});
+      }
       return {
         ...prev,
         emailRules: rules.filter((r) => r.id !== ruleId),
@@ -209,9 +221,21 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       const rules = Array.isArray(prev.emailRules) && prev.emailRules.length > 0 
         ? prev.emailRules 
         : JSON.parse(JSON.stringify(DEFAULT_DUNNING_RULES));
+      let toggled = null;
+      const nextRules = rules.map((r) => {
+        if (r.id === ruleId) {
+          toggled = { ...r, enabled: !r.enabled };
+          return toggled;
+        }
+        return r;
+      });
+      if (IS_FIRESTORE_MODE && toggled) {
+        const fsBId = prev.currentBuildingId || prev.buildings?.[0]?.id;
+        if (fsBId) saveBuildingEmailRule(fsBId, toggled.id, toggled).catch(() => {});
+      }
       return {
         ...prev,
-        emailRules: rules.map((r) => (r.id === ruleId ? { ...r, enabled: !r.enabled } : r)),
+        emailRules: nextRules,
         lastUpdated: Date.now(),
         revision: (prev.revision || 0) + 1
       };
@@ -235,6 +259,12 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         status: it.status || 'simulated',
         queuedAt: getServerIsoString()
       }));
+      if (IS_FIRESTORE_MODE) {
+        const fsBId = prev.currentBuildingId || prev.buildings?.[0]?.id;
+        if (fsBId) {
+          newItems.forEach((it) => saveBuildingEmailOutboxItem(fsBId, it.id, it).catch(() => {}));
+        }
+      }
       return {
         ...prev,
         emailOutbox: [...newItems, ...currentOutbox].slice(0, 500),
@@ -257,12 +287,18 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       }
       return false;
     }
-    const updater = (prev) => ({
-      ...prev,
-      emailOutbox: [],
-      lastUpdated: Date.now(),
-      revision: (prev.revision || 0) + 1
-    });
+    const updater = (prev) => {
+      if (IS_FIRESTORE_MODE) {
+        const fsBId = (buildingId && buildingId !== 'all' ? buildingId : null) || prev.currentBuildingId || prev.buildings?.[0]?.id;
+        if (fsBId) clearBuildingEmailOutbox(fsBId).catch(() => {});
+      }
+      return {
+        ...prev,
+        emailOutbox: [],
+        lastUpdated: Date.now(),
+        revision: (prev.revision || 0) + 1
+      };
+    };
 
     if (typeof persistState === 'function') {
       persistState(updater, true);

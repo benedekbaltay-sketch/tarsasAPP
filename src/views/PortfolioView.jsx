@@ -109,7 +109,8 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
 
     accessibleBuildings.forEach(b => {
       const flats = b.flats || [];
-      totalFlats += flats.length;
+      const useAgg = flats.length === 0 && b.aggregates;
+      totalFlats += useAgg ? (Number(b.aggregates.totalUnitCount) || 0) : flats.length;
       totalResidents += flats.reduce((acc, f) => acc + (f.tenantCount || 1), 0);
 
       const bCommon = getBuildingReserve({ ...b, buildingInitialReserveCommon: b.buildingInitialReserveCommon || 0 });
@@ -117,13 +118,18 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
       totalCommonReserve += bCommon;
       totalRenovationReserve += bRenov;
 
-      flats.forEach(f => {
-        const bal = (f.balance || 0) + (f.renovationBalance || 0);
-        if (bal < 0) {
-          totalArrears += Math.abs(bal);
-          totalFlatsInArrears++;
-        }
-      });
+      if (useAgg) {
+        totalArrears += Number(b.aggregates.totalArrearsHuf) || 0;
+        totalFlatsInArrears += Number(b.aggregates.debtorUnitCount) || 0;
+      } else {
+        flats.forEach(f => {
+          const bal = (f.balance || 0) + (f.renovationBalance || 0);
+          if (bal < 0) {
+            totalArrears += Math.abs(bal);
+            totalFlatsInArrears++;
+          }
+        });
+      }
     });
 
     return {
@@ -471,22 +477,25 @@ export function PortfolioView({ onSelectBuilding, onOpenAddBuilding, onOpenCalen
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredBuildings.map(b => {
             const flats = b.flats || [];
-            const flatCount = flats.length;
+            const useAgg = flats.length === 0 && b.aggregates;
+            const flatCount = useAgg ? (Number(b.aggregates.totalUnitCount) || 0) : flats.length;
 
             const bCommon = getBuildingReserve({ ...b, buildingInitialReserveCommon: b.buildingInitialReserveCommon || 0 });
             const bRenov = getBuildingRenovationFund({ ...b, buildingInitialReserveRenovation: b.buildingInitialReserveRenovation || 0 });
             const totalReserves = bCommon + bRenov;
             const buildingAlerts = getBuildingAlerts(b, { user: currentUser, organizations, buildings });
 
-            let buildingArrears = 0;
-            let flatsInArrearsCount = 0;
-            flats.forEach(f => {
-              const bal = (f.balance || 0) + (f.renovationBalance || 0);
-              if (bal < 0) {
-                buildingArrears += Math.abs(bal);
-                flatsInArrearsCount++;
-              }
-            });
+            let buildingArrears = useAgg ? (Number(b.aggregates.totalArrearsHuf) || 0) : 0;
+            let flatsInArrearsCount = useAgg ? (Number(b.aggregates.debtorUnitCount) || 0) : 0;
+            if (!useAgg) {
+              flats.forEach(f => {
+                const bal = (f.balance || 0) + (f.renovationBalance || 0);
+                if (bal < 0) {
+                  buildingArrears += Math.abs(bal);
+                  flatsInArrearsCount++;
+                }
+              });
+            }
 
             return (
               <div

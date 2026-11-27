@@ -629,8 +629,9 @@ export function getBuildingReserve(state) {
   const currentBuilding = Array.isArray(state.buildings)
     ? (state.buildings.find(b => b.id === state.currentBuildingId) || state.buildings[0])
     : null;
-  if (currentBuilding?.firestoreBalances && typeof currentBuilding.firestoreBalances.KK === 'number') {
-    return currentBuilding.firestoreBalances.KK;
+  const fsBal = currentBuilding?.firestoreBalances || state.firestoreBalances;
+  if (fsBal && typeof fsBal.KK === 'number') {
+    return fsBal.KK;
   }
 
   const initCommon = (currentBuilding && currentBuilding.buildingInitialReserveCommon !== undefined)
@@ -660,8 +661,9 @@ export function getBuildingRenovationFund(state) {
   const currentBuilding = Array.isArray(state.buildings)
     ? (state.buildings.find(b => b.id === state.currentBuildingId) || state.buildings[0])
     : null;
-  if (currentBuilding?.firestoreBalances && typeof currentBuilding.firestoreBalances.FA === 'number') {
-    return currentBuilding.firestoreBalances.FA;
+  const fsBal = currentBuilding?.firestoreBalances || state.firestoreBalances;
+  if (fsBal && typeof fsBal.FA === 'number') {
+    return fsBal.FA;
   }
 
   const initRenov = (currentBuilding && currentBuilding.buildingInitialReserveRenovation !== undefined)

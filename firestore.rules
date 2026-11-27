@@ -181,10 +181,10 @@ service cloud.firestore {
     match /organizations/{orgId} {
       allow read: if isSuperAdmin() || isActiveOrgMember(orgId);
 
-      // Only the Organization Owner may update company name & central contact info
+      // Only the Organization Owner may update company name, taxNumber & central contact info
       allow update: if isOrgOwner(orgId)
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['name', 'centralContact', 'updatedAt']);
+             .hasOnly(['name', 'taxNumber', 'centralContact', 'showCentralContactToResidents', 'updatedAt']);
 
       allow create, delete: if false; // Managed strictly via Cloud Functions
 
@@ -335,6 +335,17 @@ service cloud.firestore {
         allow read: if isBuildingAdminOrSzvb(buildingId)
           || (hasActiveMembership(buildingId) && resource.data.visibility == 'building');
         allow create, update, delete: if isBuildingAdmin(buildingId);
+      }
+
+      // -----------------------------------------------------------------------
+      // AUTOMATED DUNNING RULES & OUTBOX LOGS (Admin ONLY)
+      // -----------------------------------------------------------------------
+      match /emailRules/{ruleId} {
+        allow read, write: if isBuildingAdmin(buildingId);
+      }
+
+      match /emailOutbox/{outboxId} {
+        allow read, write: if isBuildingAdmin(buildingId);
       }
     }
 

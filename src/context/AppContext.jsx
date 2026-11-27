@@ -264,6 +264,8 @@ export function AppProvider({ children }) {
         calendarEvents: sessionData.calendarEvents || [],
         organizations: sessionData.organizations || prev.organizations || [],
         notifications: sessionData.notifications || prev.notifications || [],
+        emailRules: Array.isArray(sessionData.emailRules) && sessionData.emailRules.length > 0 ? sessionData.emailRules : prev.emailRules,
+        emailOutbox: Array.isArray(sessionData.emailOutbox) ? sessionData.emailOutbox : (prev.emailOutbox || []),
         buildingInitialReserveCommon: activeB?.buildingInitialReserveCommon || 0,
         buildingInitialReserveRenovation: activeB?.buildingInitialReserveRenovation || 0,
         repProfile: sessionData.repProfile ? { ...prev.repProfile, ...sessionData.repProfile } : prev.repProfile,

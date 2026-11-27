@@ -10,6 +10,9 @@
 import {
   fetchUserProfile,
   fetchUserNotifications,
+  fetchOrganization,
+  fetchBuildingEmailRules,
+  fetchBuildingEmailOutbox,
   fetchBuildingMember,
   fetchBuildingMembers,
   fetchBuildingRoot,
@@ -741,14 +744,30 @@ export async function hydrateFirestoreSession(firebaseUser) {
 
   const primaryBuildingId = primaryMembership?.buildingId || buildingRootDocs[0]?.id || null;
 
-  // Fetch active member record (for accessFromDate on owners) & user notifications
+  // Fetch active member record (for accessFromDate on owners), notifications, orgs & admin email rules/outbox
   let accessFromDate = null;
-  const [memberDoc, userNotifications] = await Promise.all([
+  const candidateOrgIds = Array.from(
+    new Set([
+      ...(Array.isArray(userProfile?.orgIds) ? userProfile.orgIds : []),
+      ...buildingRootDocs.map((b) => b?.organizationId).filter(Boolean),
+    ])
+  );
+  const isAdminOrSuper = primaryRole === 'admin' || primaryRole === 'superadmin';
+
+  const [memberDoc, userNotifications, orgDocs, emailRules, emailOutbox] = await Promise.all([
     primaryBuildingId && !isSuperAdmin
       ? fetchBuildingMember(primaryBuildingId, uid).catch(() => null)
       : Promise.resolve(null),
     fetchUserNotifications(uid, 200).catch(() => []),
+    Promise.all(candidateOrgIds.map((oid) => fetchOrganization(oid).catch(() => null))),
+    isAdminOrSuper && primaryBuildingId
+      ? fetchBuildingEmailRules(primaryBuildingId).catch(() => [])
+      : Promise.resolve([]),
+    isAdminOrSuper && primaryBuildingId
+      ? fetchBuildingEmailOutbox(primaryBuildingId, 200).catch(() => [])
+      : Promise.resolve([]),
   ]);
+  const organizations = orgDocs.filter(Boolean);
   if (memberDoc?.accessFromDate) {
     accessFromDate = memberDoc.accessFromDate;
   }
@@ -797,7 +816,10 @@ export async function hydrateFirestoreSession(firebaseUser) {
     buildings,
     activeBuilding: hydratedActive?.building || buildings[0] || null,
     users: hydratedActive?.users || [],
+    organizations,
     notifications: userNotifications,
+    emailRules,
+    emailOutbox,
     calendarEvents: hydratedActive?.calendarEvents || [],
     txPagination: hydratedActive?.txPagination || { cursorDoc: null, hasMore: false },
     repProfile: userProfile?.repProfile || null,
