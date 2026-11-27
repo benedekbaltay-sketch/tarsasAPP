@@ -809,20 +809,39 @@ export async function hydrateFirestoreSession(firebaseUser) {
   }
 
   // Hydrate the active building's scoped subcollections
-  const hydratedActive = primaryBuildingId
-    ? await hydrateFirestoreBuilding(primaryBuildingId, {
-        role: primaryRole,
-        uid,
-        unitIds: primaryMembership?.unitIds || [],
-        accessFromDate,
-      })
-    : null;
+  // For SuperAdmin, also fetch lightweight unit lists across all other active buildings in parallel
+  // so SuperAdminView displays every condominium's flats, owners, emails, and "Act as resident" buttons!
+  const otherActiveRootsForSuper = isSuperAdmin
+    ? buildingRootDocs.filter((bDoc) => bDoc && bDoc.id !== primaryBuildingId && bDoc.archived !== true)
+    : [];
+
+  const [hydratedActive, otherUnitLists] = await Promise.all([
+    primaryBuildingId
+      ? hydrateFirestoreBuilding(primaryBuildingId, {
+          role: primaryRole,
+          uid,
+          unitIds: primaryMembership?.unitIds || [],
+          accessFromDate,
+        })
+      : Promise.resolve(null),
+    otherActiveRootsForSuper.length > 0
+      ? Promise.all(
+          otherActiveRootsForSuper.map(async (bDoc) => {
+            const uDocs = await fetchScopedUnits(bDoc.id, 'superadmin', uid).catch(() => []);
+            return [bDoc.id, uDocs.map(firestoreUnitToUiFlat).filter(Boolean)];
+          })
+        )
+      : Promise.resolve([]),
+  ]);
+
+  const superUnitsByBuildingId = new Map(otherUnitLists);
 
   const buildings = buildingRootDocs.map((bDoc) => {
     if (hydratedActive && bDoc.id === hydratedActive.building.id) {
       return hydratedActive.building;
     }
-    return firestoreBuildingToUiBuilding(bDoc, { hydrated: false });
+    const preloadedFlats = superUnitsByBuildingId.get(bDoc.id) || [];
+    return firestoreBuildingToUiBuilding(bDoc, { flats: preloadedFlats, hydrated: false });
   });
 
   const firstOwnedFlat = hydratedActive?.building?.flats?.[0] || null;

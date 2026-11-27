@@ -320,7 +320,10 @@ export function AppProvider({ children }) {
     try {
       const membership = state.currentUser?.memberships?.[bId];
       const isSuperSession = Boolean(
-        state.currentUser?.role === 'superadmin' || state.currentUser?.isSuperAdmin === true
+        state.currentUser?.role === 'superadmin' ||
+        state.currentUser?.isSuperAdmin === true ||
+        state.impersonatedFrom?.originalUser?.role === 'superadmin' ||
+        state.impersonatedFrom?.originalUser?.isSuperAdmin === true
       );
       const effectiveReadRole = isSuperSession
         ? 'superadmin'
@@ -387,8 +390,14 @@ export function AppProvider({ children }) {
 
     try {
       const membership = state.currentUser?.memberships?.[bId];
+      const isSuperSession = Boolean(
+        state.currentUser?.role === 'superadmin' ||
+        state.currentUser?.isSuperAdmin === true ||
+        state.impersonatedFrom?.originalUser?.role === 'superadmin' ||
+        state.impersonatedFrom?.originalUser?.isSuperAdmin === true
+      );
       const fin = await hydrateFirestoreBuildingFinancials(bId, {
-        role: state.currentUser?.role || membership?.role || 'owner',
+        role: isSuperSession ? 'superadmin' : (state.currentUser?.role || membership?.role || 'owner'),
         uid,
       });
       if (!fin) return null;
@@ -1396,6 +1405,7 @@ export function AppProvider({ children }) {
     ensureFirebaseAuth,
     getUserFlats,
     onFirestoreSessionHydrated: applyFirestoreSessionData,
+    reloadCurrentBuilding,
   });
   const accountingActions = createAccountingActions({
     state,

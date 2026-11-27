@@ -36,7 +36,7 @@ import {
 
 const MIN_PASSWORD_LENGTH = 10;
 
-export function createAuthActions({ state, setState, persistState, showToast, t, getUserFlats, onFirestoreSessionHydrated }) {
+export function createAuthActions({ state, setState, persistState, showToast, t, getUserFlats, onFirestoreSessionHydrated, reloadCurrentBuilding }) {
   // Auth: Strictly cloud-verified Firebase Authentication login (zero plaintext fallback, zero client self-signup)
   const login = async (email, pass, rememberMe = false) => {
     const trimmedEmail = (email || "").trim().toLowerCase();
@@ -474,6 +474,8 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
     const safeTarget = stripSensitiveUserFields(JSON.parse(JSON.stringify(targetUser)));
     const bId = targetBuildingId || safeTarget.buildingId || state.currentBuildingId || state.buildings?.[0]?.id || null;
 
+    const existingTargetBuilding = (state.buildings || []).find(b => b && b.id === bId) || null;
+
     persistState(s => {
       const curB = (s.buildings || []).find(b => b.id === bId) || s.buildings?.[0];
       const nextRoleMode = safeTarget.role === 'admin'
@@ -505,6 +507,11 @@ export function createAuthActions({ state, setState, persistState, showToast, t,
         buildingInitialReserveRenovation: curB ? (Number(curB.buildingInitialReserveRenovation) || 0) : undefined
       };
     }, 'localOnly');
+
+    // Hydrate full subcollections (transactions, expenses, docs, loans, flats) in background if not yet hydrated
+    if (IS_FIRESTORE_MODE && bId && !existingTargetBuilding?.hydrated && typeof reloadCurrentBuilding === 'function') {
+      reloadCurrentBuilding(bId, { roleOverride: 'superadmin' }).catch(() => {});
+    }
 
     showToast(
       state.currentLang === 'en'
