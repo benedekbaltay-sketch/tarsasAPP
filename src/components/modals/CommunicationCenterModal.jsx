@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { NavLogoButton } from '../NavLogoButton';
 import { ImpersonationBanner } from '../ImpersonationBanner';
+import { ConfirmDialog } from '../ConfirmDialog';
 import { EditEmailRuleModal } from './EditEmailRuleModal';
 import { 
   DEFAULT_DUNNING_RULES, 
@@ -590,12 +591,21 @@ export function CommunicationCenterModal({
     showToast(isEn ? 'Message restored from archive.' : 'Levél visszaállítva az archívumból.', 'info');
   };
 
+  const [pendingDeleteMail, setPendingDeleteMail] = useState(null); // { notifId, closeViewer, label }
+
   const handleDeleteItem = (notifId, closeViewer = false) => {
     if (!notifId || typeof deleteNotification !== 'function') return;
-    const confirmMsg = t.mail_delete_confirm || (isEn
-      ? 'Are you sure you want to permanently delete this message?'
-      : 'Biztosan véglegesen törlöd ezt a levelet?');
-    if (!window.confirm(confirmMsg)) return;
+    const found = (notifications || []).find((n) => n && n.id === notifId);
+    const label = found
+      ? ((isEn ? (found.titleEn || found.titleHu) : (found.titleHu || found.titleEn)) || '')
+      : '';
+    setPendingDeleteMail({ notifId, closeViewer, label });
+  };
+
+  const confirmDeleteItem = () => {
+    if (!pendingDeleteMail) return;
+    const { notifId, closeViewer } = pendingDeleteMail;
+    setPendingDeleteMail(null);
     deleteNotification(notifId);
     if (closeViewer) setViewingNotification(null);
     showToast(isEn ? 'Message deleted.' : 'Levél törölve.', 'info');
@@ -3635,6 +3645,23 @@ export function CommunicationCenterModal({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={Boolean(pendingDeleteMail)}
+        title={isEn ? "Delete Message" : "Levél törlése"}
+        message={
+          t.mail_delete_confirm ||
+          (isEn
+            ? "Are you sure you want to permanently delete this message?"
+            : "Biztosan véglegesen törlöd ezt a levelet?")
+        }
+        itemLabel={pendingDeleteMail?.label || ''}
+        confirmLabel={t.delete || (isEn ? "Delete" : "Törlés")}
+        cancelLabel={t.cancel || (isEn ? "Cancel" : "Mégse")}
+        variant="danger"
+        onConfirm={confirmDeleteItem}
+        onCancel={() => setPendingDeleteMail(null)}
+      />
 
     </div>
   );

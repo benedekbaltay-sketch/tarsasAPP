@@ -5,6 +5,7 @@ import { isUserBuildingSzvb } from '../utils/szvb';
 import { isUserBuildingEconomicAuditor } from '../utils/economicAuditor';
 import { resolveUserProfiles, getNotificationsForActiveProfile } from '../utils/userProfiles';
 import { isSafeDownloadUrl } from '../utils/fileSecurity';
+import { ConfirmDialog } from './ConfirmDialog';
 
 function formatNotifTime(iso, isEn) {
   if (!iso) return '';
@@ -51,14 +52,22 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [downloadingAttId, setDownloadingAttId] = useState(null);
+  const [pendingDeleteNotif, setPendingDeleteNotif] = useState(null); // { notifId, closeModal, label }
   const panelRef = useRef(null);
 
   const handleDeleteNotif = (notifId, closeModal = false) => {
     if (!notifId || typeof deleteNotification !== 'function') return;
-    const confirmMsg = t.mail_delete_confirm || (isEn
-      ? 'Are you sure you want to permanently delete this message?'
-      : 'Biztosan véglegesen törlöd ezt a levelet?');
-    if (!window.confirm(confirmMsg)) return;
+    const found = (notifications || []).find((n) => n && n.id === notifId);
+    const label = found
+      ? ((isEn ? (found.titleEn || found.titleHu) : (found.titleHu || found.titleEn)) || '')
+      : '';
+    setPendingDeleteNotif({ notifId, closeModal, label });
+  };
+
+  const confirmDeleteNotif = () => {
+    if (!pendingDeleteNotif) return;
+    const { notifId, closeModal } = pendingDeleteNotif;
+    setPendingDeleteNotif(null);
     deleteNotification(notifId);
     if (closeModal) setSelectedNotification(null);
     if (typeof showToast === 'function') {
@@ -93,11 +102,13 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
   useEffect(() => {
     if (!isOpen) return;
     const handleOutside = (e) => {
+      if (pendingDeleteNotif) return;
       if (panelRef.current && !panelRef.current.contains(e.target)) {
         setIsOpen(false);
       }
     };
     const handleKey = (e) => {
+      if (pendingDeleteNotif) return;
       if (e.key === 'Escape') setIsOpen(false);
     };
     document.addEventListener('mousedown', handleOutside);
@@ -106,7 +117,7 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
       document.removeEventListener('mousedown', handleOutside);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [isOpen]);
+  }, [isOpen, pendingDeleteNotif]);
 
   const allUserProfiles = useMemo(
     () =>
@@ -704,6 +715,23 @@ export function NotificationBell({ onOpenCommunicationCenter }) {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={Boolean(pendingDeleteNotif)}
+        title={isEn ? "Delete Message" : "Levél törlése"}
+        message={
+          t.mail_delete_confirm ||
+          (isEn
+            ? "Are you sure you want to permanently delete this message?"
+            : "Biztosan véglegesen törlöd ezt a levelet?")
+        }
+        itemLabel={pendingDeleteNotif?.label || ''}
+        confirmLabel={t.delete || (isEn ? "Delete" : "Törlés")}
+        cancelLabel={t.cancel || (isEn ? "Cancel" : "Mégse")}
+        variant="danger"
+        onConfirm={confirmDeleteNotif}
+        onCancel={() => setPendingDeleteNotif(null)}
+      />
     </div>
   );
 }
