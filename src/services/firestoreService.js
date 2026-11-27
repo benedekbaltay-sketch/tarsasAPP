@@ -26,6 +26,7 @@ import { httpsCallable } from 'firebase/functions';
 import {
   ref as storageRef,
   uploadBytes,
+  getBlob,
   getDownloadURL,
   deleteObject,
 } from 'firebase/storage';
@@ -698,5 +699,16 @@ export async function deleteFromStorage(storagePath) {
 export async function getSecureStorageDownloadUrl(storagePath) {
   if (!storagePath) return null;
   const storage = requireStorage();
-  return getDownloadURL(storageRef(storage, storagePath));
+  const refObj = storageRef(storage, storagePath);
+  try {
+    // Authenticate directly with Firebase Auth + storage.rules and return a same-origin blob: URL
+    // so both <a download> and in-app PDF/Image/XLSX/DOCX previews work cleanly without CORS/cross-origin issues.
+    const blob = await getBlob(refObj);
+    if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      return URL.createObjectURL(blob);
+    }
+  } catch (blobErr) {
+    console.warn('Cloud Storage getBlob fallback to downloadURL:', blobErr?.code || blobErr?.message);
+  }
+  return getDownloadURL(refObj);
 }

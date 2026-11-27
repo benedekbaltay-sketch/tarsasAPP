@@ -316,6 +316,7 @@ export function isSafeImagePreview(attOrUrl) {
   const lower = url.trim().toLowerCase();
 
   if (lower.startsWith('data:image/svg')) return false;
+  if (lower.startsWith('blob:')) return true;
   if (SAFE_IMAGE_DATA_PREFIXES.some((prefix) => lower.startsWith(prefix))) {
     return true;
   }
