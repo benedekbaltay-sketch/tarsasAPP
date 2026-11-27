@@ -306,3 +306,86 @@ test('5. Recipient resolvers deduplicate KK, SZVB, and active Financial Auditor 
   assert.equal(payload.recipientNotifications[0].meta.deliveryChannel, 'both');
   assert.equal(payload.senderCopyNotification.meta.deliveryChannel, 'both');
 });
+
+test('6. Full 7-direction communication matrix: SZVB -> All Residents (bypassing KK) allowed, Auditor -> Resident strictly blocked', () => {
+  const { building, organizations, users } = makeFixtures();
+  building.flats.push({
+    flatNum: '2',
+    ownerName: 'Második Lakó',
+    email: 'lako2@example.com',
+    owners: [{ name: 'Második Lakó', email: 'lako2@example.com' }],
+  });
+
+  const szvbUser = { email: 'szvb@example.com', name: 'SZVB Elnök', role: 'szvb', buildingId: 'b-mail', flatNum: '1' };
+  const auditorUser = { email: 'anna@audit.hu', name: 'Dr. Könyvvizsgáló Anna', role: 'auditor', buildingId: 'b-mail' };
+
+  // 1) SZVB -> All Residents bypassing KK (committee annual report) -> ALLOWED, targets owner profiles individually!
+  const szvbToResidents = buildDirectMessagePayload({
+    actorUser: szvbUser,
+    building,
+    organizations,
+    users,
+    recipientMode: 'custom',
+    includeKk: false,
+    includeAuditor: false,
+    includeResidents: true,
+    subject: 'Éves SZVB ellenőrzési jelentés',
+    body: 'A bizottság elvégezte az éves ellenőrzést.',
+    deliveryChannel: 'both',
+  });
+  assert.equal(szvbToResidents.ok, true);
+  assert.equal(szvbToResidents.recipientNotifications.length, 3);
+  assert.ok(szvbToResidents.recipientNotifications.every((n) => n.targetProfile?.type === 'owner'));
+  assert.ok(!szvbToResidents.recipientNotifications.some((n) => n.recipientEmail === 'kk@example.com'));
+
+  // 2) SZVB -> KK + Auditor simultaneously -> ALLOWED
+  const szvbToKkAndAuditor = buildDirectMessagePayload({
+    actorUser: szvbUser,
+    building,
+    organizations,
+    users,
+    recipientMode: 'custom',
+    includeKk: true,
+    includeAuditor: true,
+    includeResidents: false,
+    subject: 'Egyeztetés az iratátadásról',
+    body: 'Kérjük a főkönyvi kivonatokat.',
+    deliveryChannel: 'both',
+  });
+  assert.equal(szvbToKkAndAuditor.ok, true);
+  assert.equal(szvbToKkAndAuditor.recipientNotifications.length, 2);
+  assert.ok(szvbToKkAndAuditor.recipientNotifications.some((n) => n.recipientEmail === 'kk@example.com'));
+  assert.ok(szvbToKkAndAuditor.recipientNotifications.some((n) => n.recipientEmail === 'anna@audit.hu'));
+
+  // 3) Financial Auditor -> Residents directly -> STRICTLY BLOCKED!
+  const auditorToResidents = buildDirectMessagePayload({
+    actorUser: auditorUser,
+    building,
+    organizations,
+    users,
+    recipientMode: 'residents',
+    includeResidents: true,
+    subject: 'Közvetlen levél lakóknak',
+    body: 'Tiltott irány.',
+  });
+  assert.equal(auditorToResidents.ok, false);
+  assert.equal(auditorToResidents.error, 'auditor-kk-szvb-only');
+
+  // 4) Financial Auditor replying to a Resident message -> STRICTLY BLOCKED!
+  const auditorReplyToResident = buildDirectMessagePayload({
+    actorUser: auditorUser,
+    building,
+    organizations,
+    users,
+    replyToNotif: {
+      id: 'n-res-1',
+      actorEmail: 'lako2@example.com',
+      actorName: 'Második Lakó',
+      meta: { senderProfile: { type: 'owner', buildingId: 'b-mail', flatNum: '2' } },
+    },
+    subject: 'Re: Kérdés',
+    body: 'Tiltott válasz.',
+  });
+  assert.equal(auditorReplyToResident.ok, false);
+  assert.equal(auditorReplyToResident.error, 'auditor-kk-szvb-only');
+});

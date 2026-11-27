@@ -260,12 +260,22 @@ export const sendTransactionalEmail = onCall(
     cors: true,
   },
   async (request) => {
-    const { to, subject, html, text, from, replyTo, reply_to, senderName } = request.data || {};
+    const { to, cc, subject, html, text, from, replyTo, reply_to, senderName } = request.data || {};
 
     const cleanTo = Array.isArray(to) ? to[0] : to;
     if (!cleanTo || typeof cleanTo !== 'string' || !cleanTo.includes('@')) {
       throw new HttpsError('invalid-argument', 'Érvénytelen címzett e-mail cím.');
     }
+
+    const cleanCc = Array.isArray(cc)
+      ? Array.from(
+          new Set(
+            cc
+              .map((addr) => String(addr || '').trim().toLowerCase())
+              .filter((addr) => addr && addr.includes('@') && addr !== cleanTo.trim().toLowerCase())
+          )
+        ).slice(0, 25)
+      : [];
 
     const resendKey = (process.env.RESEND_API_KEY || '').trim();
     if (!resendKey) {
@@ -284,6 +294,9 @@ export const sendTransactionalEmail = onCall(
       html: html || '',
       text: text || '',
     };
+    if (cleanCc.length > 0) {
+      payload.cc = cleanCc;
+    }
     const effectiveReplyTo = String(replyTo || reply_to || '').trim();
     if (effectiveReplyTo && effectiveReplyTo.includes('@')) {
       payload.reply_to = effectiveReplyTo;

@@ -264,6 +264,48 @@ export function resolveBuildingAuditorRecipient(building) {
 }
 
 /**
+ * Resolve all resident owner recipients across a building's flats (for SZVB announcements
+ * bypassing management, with strictly individual/private delivery — never exposing resident emails).
+ */
+export function resolveBuildingResidentRecipients(building) {
+  if (!building || !Array.isArray(building.flats)) return [];
+  const results = [];
+  const seen = new Set();
+  const add = (email, name, flatNum) => {
+    const clean = normalizeEmail(email);
+    if (!clean || !EMAIL_RE.test(clean)) return;
+    const fNum = flatNum ? String(flatNum) : null;
+    const key = `${clean}::${fNum || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push({
+      email: clean,
+      name: String(name || clean).trim(),
+      flatNum: fNum,
+      targetProfile: { type: 'owner', buildingId: building.id || null, flatNum: fNum },
+    });
+  };
+
+  for (const flat of building.flats) {
+    if (!flat) continue;
+    const fNum = flat.flatNum ? String(flat.flatNum) : null;
+    if (Array.isArray(flat.owners) && flat.owners.length > 0) {
+      for (const o of flat.owners) {
+        if (!o) continue;
+        if (o.email) add(o.email, o.name || flat.ownerName, fNum);
+        if (Array.isArray(o.emails)) {
+          o.emails.forEach((em) => add(em, o.name || flat.ownerName, fNum));
+        }
+      }
+    }
+    if (flat.email) {
+      add(flat.email, flat.ownerName || `${fNum || ''}. lakás`, fNum);
+    }
+  }
+  return results;
+}
+
+/**
  * Resolve sender profile metadata for the currently active user session.
  */
 export function resolveSenderProfile(actorUser, buildingId = null) {
@@ -302,6 +344,8 @@ export function buildDirectMessagePayload({
   recipientMode = 'kk',
   includeKk = true,
   includeSzvb = false,
+  includeAuditor = false,
+  includeResidents = false,
   selectedSzvbEmails = [],
   replyToNotif = null,
   subject = '',
@@ -338,11 +382,11 @@ export function buildDirectMessagePayload({
     return { ok: false, error: 'permission-denied' };
   }
 
-  // Residents MUST have a valid configured email in their profile to send via Email ('email' or 'both')
-  const senderProfileEmail = isResident
+  // Non-admin senders (Residents, SZVB, Auditor) MUST have a valid configured email to send via Email ('email' or 'both')
+  const senderProfileEmail = (isResident || isSzvb)
     ? resolveResidentProfileEmail(actorUser, building)
     : normalizeEmail(actorUser.email || actorUser.username || '');
-  if (isResident && (deliveryChannel === 'email' || deliveryChannel === 'both') && !senderProfileEmail) {
+  if ((isResident || isSzvb) && (deliveryChannel === 'email' || deliveryChannel === 'both') && !senderProfileEmail) {
     return { ok: false, error: 'sender-email-required' };
   }
 
@@ -383,7 +427,27 @@ export function buildDirectMessagePayload({
         recipientSummaryHu = 'Közös Képviselet (KK)';
         recipientSummaryEn = 'Common Representative (Management)';
       }
+    } else if (isAuditor) {
+      // STRICT RULE: Financial Auditor -> Residents is FORBIDDEN!
+      // Auditor may ONLY reply to KK or SZVB.
+      const kkRecs = resolveBuildingKkRecipients(building, organizations, users);
+      const szvbRecs = resolveBuildingSzvbRecipients(building);
+      const isTargetKk = kkRecs.some((r) => r.email === replyEmail) || replyProfile?.type === 'kk';
+      const isTargetSzvb = szvbRecs.some((r) => r.email === replyEmail) || replyProfile?.type === 'szvb';
+      if (!isTargetKk && !isTargetSzvb) {
+        return { ok: false, error: 'auditor-kk-szvb-only' };
+      }
+      if (isTargetSzvb && (replyProfile?.type === 'szvb' || !isTargetKk)) {
+        recipients = szvbRecs;
+        recipientSummaryHu = 'Számvizsgáló Bizottság (SZVB)';
+        recipientSummaryEn = 'Accounting Committee (SZVB)';
+      } else {
+        recipients = kkRecs.length > 0 ? kkRecs : [{ email: replyEmail, name: replyName, targetProfile: { type: 'kk', buildingId: building.id } }];
+        recipientSummaryHu = 'Közös Képviselet (KK)';
+        recipientSummaryEn = 'Common Representative (Management)';
+      }
     } else {
+      // SZVB & KK may reply to any valid sender (including individual residents, SZVB, Auditor, KK)
       recipients = [
         {
           email: replyEmail,
@@ -396,9 +460,12 @@ export function buildDirectMessagePayload({
       recipientSummaryEn = replyName;
     }
   } else if (isResident) {
-    // Resident -> KK and/or the ENTIRE SZVB committee of their own building (never individual cherry-picking or arbitrary residents)
+    // Resident -> KK and/or the ENTIRE SZVB committee of their own building (never individual cherry-picking, Auditor, or other Residents)
     const allowedResidentModes = ['kk', 'szvb', 'kk_and_szvb', 'custom'];
     if (recipientMode && !allowedResidentModes.includes(recipientMode)) {
+      return { ok: false, error: 'resident-kk-szvb-only' };
+    }
+    if (includeAuditor || includeResidents) {
       return { ok: false, error: 'resident-kk-szvb-only' };
     }
     const kkRecs = resolveBuildingKkRecipients(building, organizations, users);
@@ -432,37 +499,79 @@ export function buildDirectMessagePayload({
     recipientSummaryHu = summaryPartsHu.join(', ') || 'Közös Képviselet (KK)';
     recipientSummaryEn = summaryPartsEn.join(', ') || 'Common Representative (KK)';
   } else if (isSzvb) {
+    // SZVB -> KK, Financial Auditor, and/or All Residents (committee announcements bypassing KK with hidden/individual BCC delivery)
     const kkRecs = resolveBuildingKkRecipients(building, organizations, users);
     const audRec = resolveBuildingAuditorRecipient(building);
-    if (recipientMode === 'auditor') {
-      recipients = audRec ? [audRec] : [];
-      recipientSummaryHu = audRec ? `Gazdasági ellenőr (${audRec.name})` : 'Gazdasági ellenőr';
-      recipientSummaryEn = audRec ? `Financial Auditor (${audRec.name})` : 'Financial Auditor';
-    } else if (recipientMode === 'kk_and_auditor') {
-      recipients = [...kkRecs, ...(audRec ? [audRec] : [])];
-      recipientSummaryHu = audRec ? 'Közös Képviselet & Gazdasági ellenőr' : 'Közös Képviselet (KK)';
-      recipientSummaryEn = audRec ? 'Management & Financial Auditor' : 'Common Representative (Management)';
-    } else {
-      recipients = kkRecs;
-      recipientSummaryHu = 'Közös Képviselet (KK)';
-      recipientSummaryEn = 'Common Representative (Management)';
+    const residentRecs = resolveBuildingResidentRecipients(building);
+
+    const wantKk =
+      recipientMode === 'kk' ||
+      (recipientMode === 'kk_and_auditor' && includeKk !== false) ||
+      (recipientMode === 'custom' && Boolean(includeKk));
+    const wantAuditor =
+      recipientMode === 'auditor' ||
+      recipientMode === 'kk_and_auditor' ||
+      Boolean(includeAuditor);
+    const wantResidents =
+      recipientMode === 'residents' ||
+      recipientMode === 'all_owners' ||
+      Boolean(includeResidents);
+
+    recipients = [
+      ...(wantKk ? kkRecs : []),
+      ...(wantAuditor && audRec ? [audRec] : []),
+      ...(wantResidents ? residentRecs : []),
+    ];
+
+    const partsHu = [];
+    const partsEn = [];
+    if (wantKk && kkRecs.length > 0) {
+      partsHu.push('Közös Képviselet (KK)');
+      partsEn.push('Common Representative (KK)');
     }
+    if (wantAuditor && audRec) {
+      partsHu.push(`Gazdasági ellenőr (${audRec.name})`);
+      partsEn.push(`Financial Auditor (${audRec.name})`);
+    }
+    if (wantResidents && residentRecs.length > 0) {
+      partsHu.push(`Összes tulajdonos / Lakók (${residentRecs.length})`);
+      partsEn.push(`All Residents / Owners (${residentRecs.length})`);
+    }
+    recipientSummaryHu = partsHu.join(', ') || 'Közös Képviselet (KK)';
+    recipientSummaryEn = partsEn.join(', ') || 'Common Representative (KK)';
   } else if (isAuditor) {
+    // STRICT RULE: Financial Auditor -> ONLY KK and/or SZVB (NEVER Residents/Owners!)
+    const allowedAuditorModes = ['kk', 'szvb', 'kk_and_szvb', 'custom'];
+    if ((recipientMode && !allowedAuditorModes.includes(recipientMode)) || includeResidents) {
+      return { ok: false, error: 'auditor-kk-szvb-only' };
+    }
     const kkRecs = resolveBuildingKkRecipients(building, organizations, users);
     const szvbRecs = resolveBuildingSzvbRecipients(building);
-    if (recipientMode === 'kk') {
-      recipients = kkRecs;
-      recipientSummaryHu = 'Közös Képviselet (KK)';
-      recipientSummaryEn = 'Common Representative (Management)';
-    } else if (recipientMode === 'szvb') {
-      recipients = szvbRecs;
-      recipientSummaryHu = 'Számvizsgáló Bizottság (SZVB)';
-      recipientSummaryEn = 'Accounting Committee (SZVB)';
-    } else {
-      recipients = [...kkRecs, ...szvbRecs];
-      recipientSummaryHu = szvbRecs.length > 0 ? 'Közös Képviselet & SZVB' : 'Közös Képviselet (KK)';
-      recipientSummaryEn = szvbRecs.length > 0 ? 'Management & SZVB' : 'Common Representative (Management)';
+    const wantKk =
+      recipientMode === 'kk' ||
+      (recipientMode === 'kk_and_szvb' && includeKk !== false) ||
+      (recipientMode === 'custom' && Boolean(includeKk));
+    const wantSzvb =
+      recipientMode === 'szvb' ||
+      recipientMode === 'kk_and_szvb' ||
+      Boolean(includeSzvb);
+
+    recipients = [
+      ...(wantKk ? kkRecs : []),
+      ...(wantSzvb ? szvbRecs : []),
+    ];
+    const partsHu = [];
+    const partsEn = [];
+    if (wantKk && kkRecs.length > 0) {
+      partsHu.push('Közös Képviselet (KK)');
+      partsEn.push('Common Representative (KK)');
     }
+    if (wantSzvb && szvbRecs.length > 0) {
+      partsHu.push('Számvizsgáló Bizottság (SZVB)');
+      partsEn.push('Accounting Committee (SZVB)');
+    }
+    recipientSummaryHu = partsHu.join(', ') || 'Közös Képviselet (KK)';
+    recipientSummaryEn = partsEn.join(', ') || 'Common Representative (KK)';
   } else if (isAdmin) {
     const szvbRecs = resolveBuildingSzvbRecipients(building);
     const audRec = resolveBuildingAuditorRecipient(building);

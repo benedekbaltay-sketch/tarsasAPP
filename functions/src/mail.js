@@ -52,6 +52,8 @@ export const sendDirectMail = onCall(
       recipientMode = 'kk',
       includeKk = true,
       includeSzvb = false,
+      includeAuditor = false,
+      includeResidents = false,
       selectedSzvbEmails = [],
       replyToEmail = '',
       replyToProfileType = '',
@@ -175,33 +177,65 @@ export const sendDirectMail = onCall(
       }
     } else if (effectiveRole === 'szvb') {
       if (cleanReplyEmail) {
+        // SZVB may reply to KK, Financial Auditor, SZVB, or any Resident/Owner directly
         const matched = activeMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
         matched.forEach((m) => {
           const pType = replyToProfileType || (m.role === 'admin' ? 'kk' : m.role === 'auditor' ? 'auditor' : m.role === 'szvb' ? 'szvb' : 'owner');
           pushTargets([m], pType, replyToFlatNum || null);
         });
-      } else if (recipientMode === 'auditor') {
-        pushTargets(auditorMembers, 'auditor');
-      } else if (recipientMode === 'kk_and_auditor') {
-        pushTargets(adminMembers, 'kk');
-        pushTargets(auditorMembers, 'auditor');
       } else {
-        pushTargets(adminMembers, 'kk');
+        const wantKk =
+          recipientMode === 'kk' ||
+          (recipientMode === 'kk_and_auditor' && includeKk !== false) ||
+          (recipientMode === 'custom' && Boolean(includeKk));
+        const wantAuditor =
+          recipientMode === 'auditor' ||
+          recipientMode === 'kk_and_auditor' ||
+          Boolean(includeAuditor);
+        const wantResidents =
+          recipientMode === 'residents' ||
+          recipientMode === 'all_owners' ||
+          Boolean(includeResidents);
+
+        if (wantKk) pushTargets(adminMembers, 'kk');
+        if (wantAuditor) pushTargets(auditorMembers, 'auditor');
+        if (wantResidents) {
+          // Deliver individually to every active resident owner in the building (bypassing KK, GDPR-safe)
+          const ownerMembers = activeMembers.filter(
+            (m) => m.role === 'owner' || (Array.isArray(m.unitIds) && m.unitIds.length > 0)
+          );
+          pushTargets(ownerMembers, 'owner');
+        }
       }
     } else if (effectiveRole === 'auditor') {
+      // STRICT RULE: Financial Auditor -> Residents is FORBIDDEN!
+      // Auditor may ONLY message or reply to Management (KK) and/or SZVB.
       if (cleanReplyEmail) {
-        const matched = activeMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
-        matched.forEach((m) => {
-          const pType = replyToProfileType || (m.role === 'admin' ? 'kk' : m.role === 'szvb' ? 'szvb' : 'owner');
-          pushTargets([m], pType, replyToFlatNum || null);
-        });
-      } else if (recipientMode === 'szvb') {
-        pushTargets(szvbMembers, 'szvb');
-      } else if (recipientMode === 'kk_and_szvb') {
-        pushTargets(adminMembers, 'kk');
-        pushTargets(szvbMembers, 'szvb');
+        const isReplyKk = adminMembers.some((m) => normalizeEmail(m.email) === cleanReplyEmail) || replyToProfileType === 'kk';
+        const isReplySzvb = szvbMembers.some((m) => normalizeEmail(m.email) === cleanReplyEmail) || replyToProfileType === 'szvb';
+        if (isReplySzvb && (replyToProfileType === 'szvb' || !isReplyKk)) {
+          pushTargets(szvbMembers, 'szvb');
+        } else if (isReplyKk) {
+          pushTargets(adminMembers, 'kk');
+        }
+        if (targetEntries.length === 0) {
+          throw new HttpsError('permission-denied', 'Financial Auditors may only message or reply to Management (KK) or SZVB.');
+        }
       } else {
-        pushTargets(adminMembers, 'kk');
+        const allowedAuditorModes = ['kk', 'szvb', 'kk_and_szvb', 'custom'];
+        if (!allowedAuditorModes.includes(recipientMode) || includeResidents) {
+          throw new HttpsError('permission-denied', 'Financial Auditors may only message Management (KK) or SZVB.');
+        }
+        const wantKk =
+          recipientMode === 'kk' ||
+          (recipientMode === 'kk_and_szvb' && includeKk !== false) ||
+          (recipientMode === 'custom' && Boolean(includeKk));
+        const wantSzvb =
+          recipientMode === 'szvb' ||
+          recipientMode === 'kk_and_szvb' ||
+          Boolean(includeSzvb);
+        if (wantKk) pushTargets(adminMembers, 'kk');
+        if (wantSzvb) pushTargets(szvbMembers, 'szvb');
       }
     } else {
       // Admin / SuperAdmin
@@ -214,6 +248,9 @@ export const sendDirectMail = onCall(
       } else if (recipientMode === 'szvb') {
         pushTargets(szvbMembers, 'szvb');
       } else if (recipientMode === 'auditor') {
+        pushTargets(auditorMembers, 'auditor');
+      } else if (recipientMode === 'szvb_and_auditor') {
+        pushTargets(szvbMembers, 'szvb');
         pushTargets(auditorMembers, 'auditor');
       } else {
         pushTargets(adminMembers, 'kk');

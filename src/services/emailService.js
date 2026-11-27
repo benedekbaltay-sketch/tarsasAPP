@@ -64,6 +64,7 @@ export function resolveEffectiveEmailSettings(customSettings = {}) {
  */
 export async function sendTransactionalEmail({
   to,
+  cc = [],
   subject,
   html,
   text,
@@ -76,6 +77,16 @@ export async function sendTransactionalEmail({
   if (!cleanTo || !EMAIL_RE.test(cleanTo)) {
     return { success: false, error: 'invalid-recipient', message: 'Érvénytelen címzett e-mail cím.' };
   }
+
+  const cleanCc = Array.isArray(cc)
+    ? Array.from(
+        new Set(
+          cc
+            .map((e) => normalizeEmail(e))
+            .filter((e) => e && EMAIL_RE.test(e) && e !== cleanTo)
+        )
+      ).slice(0, 25)
+    : [];
 
   const cleanReplyTo = replyTo && EMAIL_RE.test(normalizeEmail(replyTo))
     ? normalizeEmail(replyTo)
@@ -93,6 +104,9 @@ export async function sendTransactionalEmail({
     html: html || '',
     text: text || '',
   };
+  if (cleanCc.length > 0) {
+    payload.cc = cleanCc;
+  }
   if (cleanReplyTo) {
     payload.reply_to = cleanReplyTo;
     payload.replyTo = cleanReplyTo;
@@ -265,6 +279,7 @@ export async function sendColleaguePermissionUpdateEmail({
  */
 export async function sendResidentCustomNoticeEmail({
   recipientEmail = '',
+  ccEmails = [],
   recipientName = '',
   flatNum = '',
   subject = '',
@@ -361,6 +376,7 @@ export async function sendResidentCustomNoticeEmail({
 
   return sendTransactionalEmail({
     to: recipientEmail,
+    cc: ccEmails,
     subject: subject || (isEn ? 'Notice from Property Management' : 'Közös képviseleti tájékoztató'),
     html: htmlBody,
     text: textBody,

@@ -917,16 +917,18 @@ export function createEmailActions(optionsOrState, maybeSetState) {
 
   /**
    * Sends a role-validated direct message (with optional document attachments & optional Official Audit Opinion sync):
-   *  - Resident -> Managing KK of their building
-   *  - SZVB -> Managing KK and/or active Financial Auditor
-   *  - Financial Auditor -> Managing KK and/or SZVB (+ optional Official Written Opinion Tht. 51/A. § sync)
-   *  - Managing KK -> Reply to any Resident / SZVB / Financial Auditor letter
+   *  - Resident -> Managing KK and/or entire SZVB committee (Reply-To: resident, CC: other SZVB members; Auditor & other Residents strictly forbidden)
+   *  - SZVB -> Managing KK, active Financial Auditor, and/or All Residents (individual/BCC private delivery bypassing KK)
+   *  - Financial Auditor -> Managing KK and/or SZVB ONLY (Residents strictly forbidden!)
+   *  - Managing KK -> Residents, SZVB, or Financial Auditor on managed buildings
    */
   const sendDirectMessage = async ({
     buildingId,
     recipientMode = 'kk',
     includeKk = true,
     includeSzvb = false,
+    includeAuditor = false,
+    includeResidents = false,
     selectedSzvbEmails = [],
     replyToNotif = null,
     subject = '',
@@ -984,6 +986,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       recipientMode,
       includeKk,
       includeSzvb,
+      includeAuditor,
+      includeResidents,
       selectedSzvbEmails,
       replyToNotif,
       subject,
@@ -1009,6 +1013,9 @@ export function createEmailActions(optionsOrState, maybeSetState) {
           'resident-kk-szvb-only': isEn()
             ? 'Residents can only send direct messages to the Common Representative (Management) or SZVB.'
             : 'Lakói profilból kizárólag a Közös Képviselet vagy az SZVB részére küldhető levél.',
+          'auditor-kk-szvb-only': isEn()
+            ? 'Financial Auditors may only message Management (KK) or SZVB (never directly to Residents).'
+            : 'A gazdasági ellenőr kizárólag a Közös Képviseletnek vagy az SZVB-nak írhat (lakóknak közvetlenül nem).',
           'no-recipients': isEn()
             ? 'No recipient with a valid email address was found for the selected target.'
             : 'A kiválasztott címzetthez nem található érvényes e-mail cím a rendszerben.',
@@ -1026,23 +1033,21 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     let emailsFailed = 0;
     let firstEmailError = '';
     if (sendEmail) {
-      const uniqueEmailRecipients = [];
-      const seenEmails = new Set();
-      (payload.recipients || []).forEach((r) => {
-        if (r?.email && !seenEmails.has(r.email)) {
-          seenEmails.add(r.email);
-          uniqueEmailRecipients.push(r);
-        }
-      });
-
       const isAdminSender = enrichedActor?.role === 'admin' || enrichedActor?.role === 'superadmin';
+      const isSzvbSender = enrichedActor?.role === 'szvb';
+      const isResidentSender = !isAdminSender && !isSzvbSender && enrichedActor?.role !== 'auditor';
+
       const senderEmailForReply = !isAdminSender
         ? (resolveResidentProfileEmail(enrichedActor, building) || enrichedActor?.email || '')
         : '';
       const senderLabel = isEn()
         ? (payload.senderCopyNotification?.meta?.senderRoleLabelEn || '')
         : (payload.senderCopyNotification?.meta?.senderRoleLabelHu || '');
-      const emailHeaderTitle = !isAdminSender
+      const emailHeaderTitle = isSzvbSender
+        ? (isEn()
+            ? `Supervisory Committee (SZVB) Notice — ${building.name || 'Condominium'}`
+            : `SZVB Közlemény — ${building.name || 'Társasház'}`)
+        : !isAdminSender
         ? (isEn()
             ? `Condominium Message — ${building.name || 'Condominium'}`
             : `Társasházi üzenet — ${building.name || 'Társasház'}`)
@@ -1053,13 +1058,51 @@ export function createEmailActions(optionsOrState, maybeSetState) {
             : `Feladó: ${enrichedActor.name || senderEmailForReply}${senderLabel ? ` (${senderLabel})` : ''}`)
         : '';
 
+      // Group Resident -> SZVB committee emails into 1 email with CC: all other SZVB members + Reply-To: resident
+      // while NEVER exposing SZVB emails to the resident.
+      // For SZVB -> Residents announcements, ALWAYS dispatch individually (ZERO CC, resident emails strictly hidden!).
+      const dispatchJobs = [];
+      const szvbGroup = [];
+      const otherRecipients = [];
+      const seenEmails = new Set();
+
+      (payload.recipients || []).forEach((r) => {
+        if (!r?.email) return;
+        if (isResidentSender && r.targetProfile?.type === 'szvb') {
+          if (!szvbGroup.some((x) => x.email === r.email)) {
+            szvbGroup.push(r);
+          }
+        } else if (!seenEmails.has(r.email)) {
+          seenEmails.add(r.email);
+          otherRecipients.push(r);
+        }
+      });
+
+      if (szvbGroup.length > 0) {
+        dispatchJobs.push({
+          recipientEmail: szvbGroup[0].email,
+          ccEmails: szvbGroup.slice(1).map((x) => x.email),
+          recipientName: szvbGroup[0].name || 'SZVB',
+          flatNum: '',
+        });
+      }
+      otherRecipients.forEach((r) => {
+        dispatchJobs.push({
+          recipientEmail: r.email,
+          ccEmails: [], // Strictly individual/BCC delivery — never expose other residents' email addresses!
+          recipientName: r.name || r.email,
+          flatNum: r.flatNum || '',
+        });
+      });
+
       await Promise.all(
-        uniqueEmailRecipients.map(async (r) => {
+        dispatchJobs.map(async (job) => {
           try {
             const sendRes = await sendResidentCustomNoticeEmail({
-              recipientEmail: r.email,
-              recipientName: r.name || r.email,
-              flatNum: r.flatNum || '',
+              recipientEmail: job.recipientEmail,
+              ccEmails: job.ccEmails,
+              recipientName: job.recipientName,
+              flatNum: job.flatNum,
               subject: subject.trim(),
               messageBody: body.trim(),
               category: category || 'general',
@@ -1075,7 +1118,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
               emailSettings: building.emailSettings || cur.emailSettings || {},
             });
             if (sendRes && sendRes.success) {
-              emailsSent += 1;
+              emailsSent += 1 + (job.ccEmails?.length || 0);
             } else {
               emailsFailed += 1;
               if (!firstEmailError) firstEmailError = sendRes?.message || '';
@@ -1129,6 +1172,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
           recipientMode: recipientMode || 'kk',
           includeKk: includeKk !== false,
           includeSzvb: Boolean(includeSzvb),
+          includeAuditor: Boolean(includeAuditor),
+          includeResidents: Boolean(includeResidents),
           selectedSzvbEmails: Array.isArray(selectedSzvbEmails) ? selectedSzvbEmails : [],
           replyToEmail: replyToNotif?.actorEmail || '',
           replyToProfileType: replyToNotif?.meta?.senderProfile?.type || '',

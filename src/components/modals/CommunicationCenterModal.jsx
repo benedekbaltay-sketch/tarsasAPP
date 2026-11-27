@@ -66,6 +66,7 @@ import {
 import {
   resolveBuildingAuditorRecipient,
   resolveBuildingSzvbRecipients,
+  resolveBuildingResidentRecipients,
   resolveResidentProfileEmail,
   getConversationThreadMessages,
   groupNotificationsByThread,
@@ -194,6 +195,8 @@ export function CommunicationCenterModal({
   const [directRecipientMode, setDirectRecipientMode] = useState('kk');
   const [directIncludeKk, setDirectIncludeKk] = useState(true);
   const [directIncludeSzvb, setDirectIncludeSzvb] = useState(false);
+  const [directIncludeAuditor, setDirectIncludeAuditor] = useState(false);
+  const [directIncludeResidents, setDirectIncludeResidents] = useState(false);
   const [directDeliveryChannel, setDirectDeliveryChannel] = useState('in_app'); // 'both' | 'in_app' | 'email'
   const [directSubject, setDirectSubject] = useState('');
   const [directBody, setDirectBody] = useState('');
@@ -232,12 +235,65 @@ export function CommunicationCenterModal({
     return canUserManageBuilding(currentUser, composeTargetBuildingId, state.organizations || [], buildings || []);
   }, [composeTargetBuildingId, composeTargetBuildings, currentUser, state.organizations, buildings]);
 
+  const anyComposeTargetHasAuditor = useMemo(
+    () => (composeTargetBuildings || []).some((b) => Boolean(resolveBuildingAuditorRecipient(b))),
+    [composeTargetBuildings]
+  );
+
   // Calculate target audience recipients for compose
   const resolvedRecipients = useMemo(() => {
     if (!composeTargetBuildings || composeTargetBuildings.length === 0) return [];
     const recList = [];
 
     composeTargetBuildings.forEach(b => {
+      // Direct Financial Auditor targeting for KK <-> Auditor communication
+      if (composeAudience === 'auditor') {
+        const aud = resolveBuildingAuditorRecipient(b);
+        if (aud) {
+          recList.push({
+            buildingId: b.id,
+            buildingName: b.officialName || b.name,
+            flatNum: aud.flatNum || '',
+            name: aud.name,
+            email: aud.email,
+            share: '',
+            isOwner: false,
+            isTenant: false,
+            isAuditor: true,
+            targetProfile: aud.targetProfile,
+            sendEmailNotification: true,
+            balance: 0,
+            balanceFormatted: formatCurrency(0),
+          });
+        }
+        return;
+      }
+
+      // Direct SZVB targeting using canonical building.szvb committee members first
+      if (composeAudience === 'szvb') {
+        const canonicalSzvb = resolveBuildingSzvbRecipients(b);
+        if (canonicalSzvb.length > 0) {
+          canonicalSzvb.forEach((s) => {
+            recList.push({
+              buildingId: b.id,
+              buildingName: b.officialName || b.name,
+              flatNum: s.flatNum || '',
+              name: s.name,
+              email: s.email,
+              share: '',
+              isOwner: false,
+              isTenant: false,
+              isSzvb: true,
+              targetProfile: s.targetProfile,
+              sendEmailNotification: true,
+              balance: 0,
+              balanceFormatted: formatCurrency(0),
+            });
+          });
+          return;
+        }
+      }
+
       const flats = Array.isArray(b.flats) ? b.flats : [];
       let targetFlats = flats;
       if (composeAudience === 'arrears') {
@@ -337,6 +393,10 @@ export function CommunicationCenterModal({
     () => resolveBuildingSzvbRecipients(activeBuilding),
     [activeBuilding]
   );
+  const activeBuildingResidents = useMemo(
+    () => resolveBuildingResidentRecipients(activeBuilding),
+    [activeBuilding]
+  );
   const residentProfileEmail = useMemo(
     () => resolveResidentProfileEmail(currentUser, activeBuilding),
     [currentUser, activeBuilding]
@@ -408,22 +468,32 @@ export function CommunicationCenterModal({
   const viewingReplyTarget = useMemo(() => {
     if (!viewingNotification) return null;
     const myEmail = normalizeEmail(currentUser?.email || '');
-    const isReplyableMsg = (m) =>
-      Boolean(
-        m &&
-        !m.meta?.isSenderCopy &&
-        m.type !== 'team_updated' &&
-        m.type !== 'bank_account_changed' &&
-        m.actorEmail &&
-        normalizeEmail(m.actorEmail) !== myEmail
-      );
+    const isReplyableMsg = (m) => {
+      if (
+        !m ||
+        m.meta?.isSenderCopy ||
+        m.type === 'team_updated' ||
+        m.type === 'bank_account_changed' ||
+        !m.actorEmail ||
+        normalizeEmail(m.actorEmail) === myEmail
+      ) {
+        return false;
+      }
+      // Strictly prevent Financial Auditor from replying to Residents
+      if (isAuditor && m.meta?.senderProfile?.type === 'owner') return false;
+      // Strictly prevent Residents from replying to Financial Auditor or other Residents
+      if (isResident && (m.meta?.senderProfile?.type === 'auditor' || m.meta?.senderProfile?.type === 'owner')) {
+        return false;
+      }
+      return true;
+    };
     for (let i = viewingThreadMessages.length - 1; i >= 0; i -= 1) {
       if (isReplyableMsg(viewingThreadMessages[i])) {
         return viewingThreadMessages[i];
       }
     }
     return isReplyableMsg(viewingNotification) ? viewingNotification : null;
-  }, [viewingNotification, viewingThreadMessages, currentUser]);
+  }, [viewingNotification, viewingThreadMessages, currentUser, isAuditor, isResident]);
 
   const openThreadViewer = (targetNotif, fullChain = []) => {
     if (!targetNotif) return;
@@ -535,7 +605,9 @@ export function CommunicationCenterModal({
     setDirectReplyTarget(replyTo);
     setDirectAttachments([]);
     setDirectIncludeKk(true);
-    setDirectIncludeSzvb(false);
+    setDirectIncludeSzvb(isAuditor && activeBuildingSzvbList.length > 0);
+    setDirectIncludeAuditor(false);
+    setDirectIncludeResidents(false);
     setDirectDeliveryChannel(isAuditor ? 'both' : 'in_app');
     if (replyTo) {
       const origTitle = (isEn ? (replyTo.titleEn || replyTo.titleHu) : (replyTo.titleHu || replyTo.titleEn)) || '';
@@ -557,7 +629,24 @@ export function CommunicationCenterModal({
   const handleSendDirectMessage = async () => {
     if (isSendingDirect || typeof sendDirectMessage !== 'function') return;
     const isResidentMultiTarget = isResident && !directReplyTarget && activeBuildingSzvbList.length > 0;
+    const isSzvbMultiTarget = isSzvb && !directReplyTarget && (Boolean(activeBuildingAuditor) || activeBuildingResidents.length > 0);
+    const isAuditorMultiTarget = isAuditor && !directReplyTarget && activeBuildingSzvbList.length > 0;
+
     if (isResidentMultiTarget && !directIncludeKk && !directIncludeSzvb) {
+      showToast(
+        isEn ? 'Please select at least one recipient!' : 'Kérjük, válassz ki legalább egy címzettet!',
+        'error'
+      );
+      return;
+    }
+    if (isSzvbMultiTarget && !directIncludeKk && !directIncludeAuditor && !directIncludeResidents) {
+      showToast(
+        isEn ? 'Please select at least one recipient!' : 'Kérjük, válassz ki legalább egy címzettet!',
+        'error'
+      );
+      return;
+    }
+    if (isAuditorMultiTarget && !directIncludeKk && !directIncludeSzvb) {
       showToast(
         isEn ? 'Please select at least one recipient!' : 'Kérjük, válassz ki legalább egy címzettet!',
         'error'
@@ -573,9 +662,9 @@ export function CommunicationCenterModal({
       return;
     }
 
-    const canSelectEmailChannel = isAuditor || isResident || Boolean(directReplyTarget);
+    const canSelectEmailChannel = isAuditor || isResident || isSzvb || Boolean(directReplyTarget);
     const wantsEmail = canSelectEmailChannel && (directDeliveryChannel === 'email' || directDeliveryChannel === 'both');
-    if (isResident && wantsEmail && !residentHasValidEmail) {
+    if ((isResident || isSzvb) && wantsEmail && !residentHasValidEmail) {
       showToast(
         isEn
           ? 'Please configure a valid email address in your profile before sending emails.'
@@ -590,21 +679,32 @@ export function CommunicationCenterModal({
       ? (directDeliveryChannel === 'in_app' || directDeliveryChannel === 'both')
       : true;
 
-    const effectiveRecipientMode = isResidentMultiTarget
-      ? (directIncludeKk && directIncludeSzvb
-          ? 'kk_and_szvb'
-          : directIncludeSzvb
-            ? 'szvb'
-            : 'kk')
-      : directRecipientMode;
+    let effectiveRecipientMode = directRecipientMode;
+    if (isResidentMultiTarget) {
+      effectiveRecipientMode = directIncludeKk && directIncludeSzvb
+        ? 'kk_and_szvb'
+        : directIncludeSzvb
+          ? 'szvb'
+          : 'kk';
+    } else if (isSzvbMultiTarget) {
+      effectiveRecipientMode = 'custom';
+    } else if (isAuditorMultiTarget) {
+      effectiveRecipientMode = directIncludeKk && directIncludeSzvb
+        ? 'kk_and_szvb'
+        : directIncludeSzvb
+          ? 'szvb'
+          : 'kk';
+    }
 
     setIsSendingDirect(true);
     try {
       const res = await sendDirectMessage({
         buildingId: directReplyTarget?.buildingId || activeBuilding?.id,
         recipientMode: effectiveRecipientMode,
-        includeKk: isResidentMultiTarget ? directIncludeKk : true,
-        includeSzvb: isResidentMultiTarget ? directIncludeSzvb : false,
+        includeKk: (isResidentMultiTarget || isSzvbMultiTarget || isAuditorMultiTarget) ? directIncludeKk : true,
+        includeSzvb: (isResidentMultiTarget || isAuditorMultiTarget) ? directIncludeSzvb : false,
+        includeAuditor: isSzvbMultiTarget ? directIncludeAuditor : false,
+        includeResidents: isSzvbMultiTarget ? directIncludeResidents : false,
         selectedSzvbEmails: [],
         replyToNotif: directReplyTarget,
         subject: directSubject.trim(),
@@ -988,7 +1088,7 @@ export function CommunicationCenterModal({
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>
-                  {isResident
+                  {(isResident || isSzvb)
                     ? (t.mail_compose_to_kk_btn || (isEn ? "Write Message" : "Levél írása"))
                     : (t.comm_compose_btn || (isEn ? "New Message" : "Új levél írása"))}
                 </span>
@@ -1940,7 +2040,7 @@ export function CommunicationCenterModal({
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className={`grid grid-cols-2 ${anyComposeTargetHasAuditor ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-2`}>
                     <button
                       type="button"
                       onClick={() => setComposeAudience('all')}
@@ -1994,6 +2094,26 @@ export function CommunicationCenterModal({
                         {isEn ? "Board members & audit" : "Felügyelő bizottsági tagok"}
                       </span>
                     </button>
+
+                    {anyComposeTargetHasAuditor && (
+                      <button
+                        type="button"
+                        onClick={() => setComposeAudience('auditor')}
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                          composeAudience === 'auditor'
+                            ? 'border-emerald-700 bg-emerald-50/80 text-emerald-900 shadow-xs'
+                            : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        <span className="text-xs font-bold flex items-center gap-1.5">
+                          <ClipboardCheck className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>{isEn ? "Financial Auditor" : "Gazdasági ellenőr"}</span>
+                        </span>
+                        <span className="text-[10px] text-gray-500 line-clamp-1">
+                          {isEn ? "Direct audit contact" : "Közvetlen ellenőri kapcsolat"}
+                        </span>
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -3060,63 +3180,203 @@ export function CommunicationCenterModal({
                   </div>
                 )
               ) : isAuditor ? (
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1.5">
-                    {isEn ? 'Recipients' : 'Címzettek'}
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    {[
-                      { id: 'kk_and_szvb', label: isEn ? 'Management + SZVB' : 'KK + SZVB együtt', disabled: false },
-                      { id: 'kk', label: isEn ? 'Management (KK) Only' : 'Csak Közös Képviselet', disabled: false },
-                      { id: 'szvb', label: isEn ? 'SZVB Only' : 'Csak SZVB', disabled: activeBuildingSzvbList.length === 0 },
-                    ].map((opt) => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        disabled={opt.disabled}
-                        onClick={() => setDirectRecipientMode(opt.id)}
-                        className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
-                          directRecipientMode === opt.id
-                            ? 'bg-[#1E3A8A] text-white border-[#1E3A8A] shadow-xs'
-                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                activeBuildingSzvbList.length === 0 ? (
+                  <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 flex items-center gap-2.5">
+                    <Building2 className="w-4 h-4 text-[#1E3A8A] shrink-0" />
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800 block">
+                        {isEn ? 'Recipient' : 'Címzett'}
+                      </span>
+                      <span className="font-bold text-gray-900">
+                        {isEn ? 'Common Representative (Building Management)' : 'Közös Képviselet (Házkezelés)'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1.5">
+                      {isEn ? 'Recipients' : 'Címzettek'} <span className="text-red-500">*</span>
+                    </label>
+                    <div className="space-y-1.5">
+                      <label
+                        className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                          directIncludeKk
+                            ? 'bg-blue-50/80 border-blue-300 shadow-2xs'
+                            : 'bg-gray-50/70 border-gray-200 hover:bg-gray-100/80'
                         }`}
                       >
-                        {opt.label}
-                      </button>
-                    ))}
+                        <input
+                          type="checkbox"
+                          checked={directIncludeKk}
+                          onChange={(e) => setDirectIncludeKk(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                        />
+                        <Building2 className="w-4 h-4 text-[#1E3A8A] shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="font-bold text-gray-900 block truncate">
+                            {isEn ? 'Common Representative (Management)' : 'Közös Képviselet (KK)'}
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-[#1E3A8A] shrink-0">
+                          KK
+                        </span>
+                      </label>
+
+                      <label
+                        className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                          directIncludeSzvb
+                            ? 'bg-indigo-50/80 border-indigo-300 shadow-2xs'
+                            : 'bg-gray-50/70 border-gray-200 hover:bg-gray-100/80'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={directIncludeSzvb}
+                          onChange={(e) => setDirectIncludeSzvb(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-indigo-700 focus:ring-indigo-600 cursor-pointer"
+                        />
+                        <Shield className="w-4 h-4 text-indigo-600 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="font-bold text-gray-900 block truncate">
+                            {isEn ? 'Supervisory Committee (SZVB)' : 'Számvizsgáló Bizottság (SZVB)'}
+                          </span>
+                          <span className="text-[10px] text-gray-500 block truncate">
+                            {isEn
+                              ? `Sent to all ${activeBuildingSzvbList.length} committee members simultaneously`
+                              : `A teljes SZVB tanács (${activeBuildingSzvbList.length} tag) egyszerre kapja meg`}
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 shrink-0">
+                          SZVB ({activeBuildingSzvbList.length})
+                        </span>
+                      </label>
+                    </div>
+                    {!directIncludeKk && !directIncludeSzvb && (
+                      <p className="text-[11px] font-semibold text-red-600 mt-1.5">
+                        {isEn ? 'Select at least one recipient.' : 'Válassz ki legalább egy címzettet!'}
+                      </p>
+                    )}
                   </div>
-                </div>
+                )
               ) : isSzvb ? (
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1.5">
-                    {isEn ? 'Recipient' : 'Címzett'}
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    {[
-                      { id: 'kk', label: isEn ? 'Management (KK)' : 'Közös Képviselet (KK)', disabled: false },
-                      { id: 'auditor', label: isEn ? 'Financial Auditor' : 'Gazdasági ellenőr', disabled: !activeBuildingAuditor },
-                      { id: 'kk_and_auditor', label: isEn ? 'Both (KK + Auditor)' : 'KK + Ellenőr együtt', disabled: !activeBuildingAuditor },
-                    ].map((opt) => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        disabled={opt.disabled}
-                        onClick={() => setDirectRecipientMode(opt.id)}
-                        className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
-                          directRecipientMode === opt.id
-                            ? 'bg-[#1E3A8A] text-white border-[#1E3A8A] shadow-xs'
-                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                (!activeBuildingAuditor && activeBuildingResidents.length === 0) ? (
+                  <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 flex items-center gap-2.5">
+                    <Building2 className="w-4 h-4 text-[#1E3A8A] shrink-0" />
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800 block">
+                        {isEn ? 'Recipient' : 'Címzett'}
+                      </span>
+                      <span className="font-bold text-gray-900">
+                        {isEn ? 'Common Representative (Building Management)' : 'Közös Képviselet (Házkezelés)'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1.5">
+                      {isEn ? 'Recipients' : 'Címzettek'} <span className="text-red-500">*</span>
+                    </label>
+                    <div className="space-y-1.5">
+                      {/* 1. Common Representative (KK) checkbox — checked by default */}
+                      <label
+                        className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                          directIncludeKk
+                            ? 'bg-blue-50/80 border-blue-300 shadow-2xs'
+                            : 'bg-gray-50/70 border-gray-200 hover:bg-gray-100/80'
                         }`}
                       >
-                        {opt.label}
-                      </button>
-                    ))}
+                        <input
+                          type="checkbox"
+                          checked={directIncludeKk}
+                          onChange={(e) => setDirectIncludeKk(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                        />
+                        <Building2 className="w-4 h-4 text-[#1E3A8A] shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="font-bold text-gray-900 block truncate">
+                            {isEn ? 'Common Representative (Management)' : 'Közös Képviselet (KK)'}
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-[#1E3A8A] shrink-0">
+                          KK
+                        </span>
+                      </label>
+
+                      {/* 2. Financial Auditor checkbox — shown ONLY if building has an active Financial Auditor */}
+                      {activeBuildingAuditor && (
+                        <label
+                          className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                            directIncludeAuditor
+                              ? 'bg-emerald-50/80 border-emerald-300 shadow-2xs'
+                              : 'bg-gray-50/70 border-gray-200 hover:bg-gray-100/80'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={directIncludeAuditor}
+                            onChange={(e) => setDirectIncludeAuditor(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-emerald-700 focus:ring-emerald-600 cursor-pointer"
+                          />
+                          <ClipboardCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <span className="font-bold text-gray-900 block truncate">
+                              {isEn ? 'Financial Auditor' : 'Gazdasági ellenőr'}
+                            </span>
+                            {activeBuildingAuditor.name && (
+                              <span className="text-[10px] text-gray-500 block truncate">
+                                {activeBuildingAuditor.name}
+                              </span>
+                            )}
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 shrink-0">
+                            {isEn ? 'Auditor' : 'Ellenőr'}
+                          </span>
+                        </label>
+                      )}
+
+                      {/* 3. All Residents / Owners committee notice checkbox — bypassing KK, strictly private (BCC / individual) */}
+                      {activeBuildingResidents.length > 0 && (
+                        <label
+                          className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                            directIncludeResidents
+                              ? 'bg-indigo-50/80 border-indigo-300 shadow-2xs'
+                              : 'bg-gray-50/70 border-gray-200 hover:bg-gray-100/80'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={directIncludeResidents}
+                            onChange={(e) => setDirectIncludeResidents(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-indigo-700 focus:ring-indigo-600 cursor-pointer"
+                          />
+                          <Users className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <span className="font-bold text-gray-900 block truncate">
+                              {isEn ? 'All Residents / Owners (Committee Notice)' : 'Összes tulajdonos / Lakók (Testületi közlemény)'}
+                            </span>
+                            <span className="text-[10px] text-gray-500 block truncate">
+                              {isEn
+                                ? 'Private individual delivery (BCC) bypassing management — resident emails stay hidden'
+                                : 'Egyedi, rejtett címzésű (BCC) kézbesítés a KK megkerülésével — a lakók címei rejtve maradnak'}
+                            </span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 shrink-0">
+                            {activeBuildingResidents.length} {isEn ? 'recipients' : 'címzett'}
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                    {!directIncludeKk && !directIncludeAuditor && !directIncludeResidents && (
+                      <p className="text-[11px] font-semibold text-red-600 mt-1.5">
+                        {isEn ? 'Select at least one recipient.' : 'Válassz ki legalább egy címzettet!'}
+                      </p>
+                    )}
                   </div>
-                </div>
+                )
               ) : null}
 
-              {/* Delivery Channel Selector (In-App / Email / Both) for Resident, Financial Auditor & Replies */}
-              {(isAuditor || isResident || Boolean(directReplyTarget)) && (
+              {/* Delivery Channel Selector (In-App / Email / Both) for Resident, SZVB, Financial Auditor & Replies */}
+              {(isAuditor || isResident || isSzvb || Boolean(directReplyTarget)) && (
                 <div className="space-y-2">
                   <label className="block font-bold text-gray-700">
                     {isEn ? 'Delivery Channel' : 'Kézbesítés módja'}
@@ -3127,7 +3387,7 @@ export function CommunicationCenterModal({
                       { id: 'in_app', label: isEn ? 'In-App Only' : 'Alkalmazáson belül', requiresEmail: false },
                       { id: 'email', label: isEn ? 'Email Only' : 'Csak e-mailben', requiresEmail: true },
                     ].map((ch) => {
-                      const isDisabled = isResident && ch.requiresEmail && !residentHasValidEmail;
+                      const isDisabled = (isResident || isSzvb) && ch.requiresEmail && !residentHasValidEmail;
                       return (
                         <button
                           key={ch.id}
@@ -3150,7 +3410,7 @@ export function CommunicationCenterModal({
                       );
                     })}
                   </div>
-                  {isResident && !residentHasValidEmail && (
+                  {(isResident || isSzvb) && !residentHasValidEmail && (
                     <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-medium text-amber-900 flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                       <span>
@@ -3160,13 +3420,13 @@ export function CommunicationCenterModal({
                       </span>
                     </div>
                   )}
-                  {isResident && residentHasValidEmail && (directDeliveryChannel === 'email' || directDeliveryChannel === 'both') && (
+                  {(isResident || isSzvb) && residentHasValidEmail && (directDeliveryChannel === 'email' || directDeliveryChannel === 'both') && (
                     <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 flex items-center gap-2">
                       <Mail className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                       <span>
                         {isEn
-                          ? `Email replies from KK/SZVB will be delivered directly to: ${residentProfileEmail}`
-                          : `Ha a KK vagy az SZVB e-mailben válaszol, a válasz közvetlenül erre a címedre érkezik: ${residentProfileEmail}`}
+                          ? `Email replies from recipients will be delivered directly to: ${residentProfileEmail}`
+                          : `Ha a címzettek e-mailben válaszolnak, a válasz közvetlenül erre a címedre érkezik: ${residentProfileEmail}`}
                       </span>
                     </div>
                   )}
@@ -3263,7 +3523,9 @@ export function CommunicationCenterModal({
                   isSendingDirect ||
                   !directSubject.trim() ||
                   !directBody.trim() ||
-                  (isResident && !directReplyTarget && activeBuildingSzvbList.length > 0 && !directIncludeKk && !directIncludeSzvb)
+                  (isResident && !directReplyTarget && activeBuildingSzvbList.length > 0 && !directIncludeKk && !directIncludeSzvb) ||
+                  (isSzvb && !directReplyTarget && (Boolean(activeBuildingAuditor) || activeBuildingResidents.length > 0) && !directIncludeKk && !directIncludeAuditor && !directIncludeResidents) ||
+                  (isAuditor && !directReplyTarget && activeBuildingSzvbList.length > 0 && !directIncludeKk && !directIncludeSzvb)
                 }
                 onClick={handleSendDirectMessage}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#1E3A8A] hover:bg-[#1e40af] shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
