@@ -1003,82 +1003,132 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
           </div>
 
           {/* ================= STICKY TABS BAR ================= */}
-          <div className="flex items-center gap-1 border-t border-gray-100 pt-2 overflow-x-auto no-scrollbar">
-            {/* Tab 1: Alapadatok */}
-            <button
-              type="button"
-              onClick={() => setActiveTab('basic')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === 'basic'
-                  ? 'bg-blue-50 text-[#1E3A8A] font-bold shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <Home className="w-3.5 h-3.5" />
-              <span>{t.tab_flat_basic || (isEn ? "Basic Data" : "Alapadatok")}</span>
-            </button>
-
-            {/* Tab 2: Tulajok / Bérlők (Hidden for SZVB & Financial Auditor under GDPR) */}
-            {!hideOwnerPii && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+              {/* Tab 1: Alapadatok */}
               <button
                 type="button"
-                onClick={() => setActiveTab('owners')}
+                onClick={() => setActiveTab('basic')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  activeTab === 'owners'
+                  activeTab === 'basic'
                     ? 'bg-blue-50 text-[#1E3A8A] font-bold shadow-2xs'
                     : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
-                <Users className="w-3.5 h-3.5" />
-                <span>{t.tab_flat_owners_tenants_short || (isEn ? "Owners / Tenants" : "Tulajok / Bérlők")}</span>
+                <Home className="w-3.5 h-3.5" />
+                <span>{t.tab_flat_basic || (isEn ? "Basic Data" : "Alapadatok")}</span>
+              </button>
+
+              {/* Tab 2: Tulajok / Bérlők (Hidden for SZVB & Financial Auditor under GDPR) */}
+              {!hideOwnerPii && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('owners')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                    activeTab === 'owners'
+                      ? 'bg-blue-50 text-[#1E3A8A] font-bold shadow-2xs'
+                      : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>{t.tab_flat_owners_tenants_short || (isEn ? "Owners / Tenants" : "Tulajok / Bérlők")}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    activeTab === 'owners' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-200 text-gray-700'
+                  }`}>
+                    {totalOccupantsCount}
+                  </span>
+                </button>
+              )}
+
+              {/* Tab 3: Mérőórák */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('meters')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                  activeTab === 'meters'
+                    ? 'bg-blue-50 text-[#1E3A8A] font-bold shadow-2xs'
+                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>{t.tab_flat_meters || (isEn ? "Meters" : "Mérőórák")}</span>
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                  activeTab === 'owners' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-200 text-gray-700'
+                  activeTab === 'meters' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-200 text-gray-700'
                 }`}>
-                  {totalOccupantsCount}
+                  {meters.length}
+                </span>
+                {meterAlertsCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title="Lejárt vagy lejáró hitelesítésű óra!" />
+                )}
+              </button>
+
+              {/* Tab 4: Tartozékok */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('annexes')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                  activeTab === 'annexes'
+                    ? 'bg-blue-50 text-[#1E3A8A] font-bold shadow-2xs'
+                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <Package className="w-3.5 h-3.5" />
+                <span>{t.tab_flat_annexes || (isEn ? "Accessories" : "Tartozékok")}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === 'annexes' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-200 text-gray-700'
+                }`}>
+                  {annexes.length}
                 </span>
               </button>
+            </div>
+
+            {/* Contextual Add Buttons aligned to right edge of tabs row */}
+            {isEditMode && !hideOwnerPii && activeTab === 'owners' && (
+              <div className="flex items-center gap-2 shrink-0 ml-auto">
+                <button
+                  type="button"
+                  onClick={handleAddOwner}
+                  className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{t.add_owner_btn || (isEn ? "Add Owner" : "Új tulajdonos")}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddTenant}
+                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{t.add_tenant_btn || (isEn ? "+ Add Tenant" : "+ Új bérlő")}</span>
+                </button>
+              </div>
             )}
 
-            {/* Tab 3: Mérőórák */}
-            <button
-              type="button"
-              onClick={() => setActiveTab('meters')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === 'meters'
-                  ? 'bg-blue-50 text-[#1E3A8A] font-bold shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5" />
-              <span>{t.tab_flat_meters || (isEn ? "Meters" : "Mérőórák")}</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === 'meters' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-200 text-gray-700'
-              }`}>
-                {meters.length}
-              </span>
-              {meterAlertsCount > 0 && (
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title="Lejárt vagy lejáró hitelesítésű óra!" />
-              )}
-            </button>
+            {isEditMode && activeTab === 'meters' && (
+              <div className="flex items-center gap-2 shrink-0 ml-auto">
+                <button
+                  type="button"
+                  onClick={handleAddMeter}
+                  className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{t.add_meter_btn || (isEn ? "+ Add Meter" : "+ Új mérőóra")}</span>
+                </button>
+              </div>
+            )}
 
-            {/* Tab 4: Tartozékok */}
-            <button
-              type="button"
-              onClick={() => setActiveTab('annexes')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === 'annexes'
-                  ? 'bg-blue-50 text-[#1E3A8A] font-bold shadow-2xs'
-                  : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <Package className="w-3.5 h-3.5" />
-              <span>{t.tab_flat_annexes || (isEn ? "Accessories" : "Tartozékok")}</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === 'annexes' ? 'bg-[#1E3A8A] text-white' : 'bg-gray-200 text-gray-700'
-              }`}>
-                {annexes.length}
-              </span>
-            </button>
+            {isEditMode && activeTab === 'annexes' && (
+              <div className="flex items-center gap-2 shrink-0 ml-auto">
+                <button
+                  type="button"
+                  onClick={handleAddAnnex}
+                  className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{t.add_annex_btn || (isEn ? "+ Add Accessory" : "+ Új tartozék")}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1469,41 +1519,6 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
           {/* TAB B: TULAJDONOSOK / BÉRLŐK (UNIFIED & ACCORDION) */}
           {!hideOwnerPii && activeTab === 'owners' && (
             <div className="space-y-4 animate-fadeIn">
-              
-              {/* Header bar: Title & Add buttons */}
-              <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-gray-200 shadow-2xs">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Users className="w-5 h-5 text-[#1E3A8A]" />
-                    <h4 className="font-bold text-gray-900 text-sm">
-                      {t.tab_flat_owners_tenants || (isEn ? "Owners & Tenants" : "Tulajdonosok és Bérlők")}
-                    </h4>
-                  </div>
-
-                  {/* Add Buttons */}
-                  {isEditMode && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={handleAddOwner}
-                        className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{t.add_owner_btn || (isEn ? "Add Owner" : "Új tulajdonos")}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleAddTenant}
-                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{t.add_tenant_btn || (isEn ? "+ Add Tenant" : "+ Új bérlő")}</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
               {/* People List (Owners & Tenants) */}
               <div className="space-y-3">
                 
@@ -2362,33 +2377,6 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
           {/* TAB C: MÉRŐÓRÁK */}
           {activeTab === 'meters' && (
             <div className="space-y-4 animate-fadeIn">
-              
-              {/* Header bar: Count & Add button */}
-              <div className="flex items-center justify-between bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-[#1E3A8A]" />
-                  <div>
-                    <h4 className="font-bold text-gray-900 text-sm">
-                      {t.meters_title || (isEn ? "Meters Registry" : "Mérőórák Nyilvántartása")} ({meters.length} {isEn ? "meters" : "óra"})
-                    </h4>
-                    <span className="text-[11px] text-gray-500">
-                      {isEn ? "Cold/hot water, heating, electricity & gas meters with expiration tracking" : "Víz, fűtés, villany és gázórák hitelesítési lejárati figyelmeztetéssel"}
-                    </span>
-                  </div>
-                </div>
-
-                {isEditMode && (
-                  <button
-                    type="button"
-                    onClick={handleAddMeter}
-                    className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{t.add_meter_btn || (isEn ? "+ Add Meter" : "+ Új mérőóra")}</span>
-                  </button>
-                )}
-              </div>
-
               {/* Meters List */}
               {meters.length === 0 ? (
                 <div className="p-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-300 text-gray-500 text-xs">
@@ -2662,33 +2650,6 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
           {/* TAB D: TARTOZÉKOK */}
           {activeTab === 'annexes' && (
             <div className="space-y-4 animate-fadeIn">
-              
-              {/* Header bar: Count & Add button */}
-              <div className="flex items-center justify-between bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs">
-                <div className="flex items-center gap-2">
-                  <Package className="w-5 h-5 text-[#1E3A8A]" />
-                  <div>
-                    <h4 className="font-bold text-gray-900 text-sm">
-                      {t.annexes_title || (isEn ? "Accessories & Facilities" : "Tartozékok és Kapcsolódó Helyiségek")} ({annexes.length} {isEn ? "items" : "db"})
-                    </h4>
-                    <span className="text-[11px] text-gray-500">
-                      {isEn ? "Non-unit garages, storages, terraces or quotas assigned to this apartment" : "Nem önálló albetétként kezelt garázsbeállók, tárolók, teraszok nyilvántartása"}
-                    </span>
-                  </div>
-                </div>
-
-                {isEditMode && (
-                  <button
-                    type="button"
-                    onClick={handleAddAnnex}
-                    className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{t.add_annex_btn || (isEn ? "+ Add Accessory" : "+ Új tartozék")}</span>
-                  </button>
-                )}
-              </div>
-
               {/* Annexes List */}
               {annexes.length === 0 ? (
                 <div className="p-8 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-300 text-gray-500 text-xs">
