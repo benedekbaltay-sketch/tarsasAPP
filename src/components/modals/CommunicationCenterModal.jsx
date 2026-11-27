@@ -125,7 +125,7 @@ export function CommunicationCenterModal({
     showToast
   } = useApp();
 
-  const { currentUser, currentLang, buildings, notifications, emailRules, emailOutbox, repProfile } = state;
+  const { currentUser, currentLang, buildings, organizations, users, notifications, emailRules, emailOutbox, repProfile } = state;
   const isEn = currentLang === 'en';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const isSzvb = currentUser?.role === 'szvb';
@@ -599,7 +599,7 @@ export function CommunicationCenterModal({
   // so Select All strictly applies ONLY to the currently visible tab (e.g. Archive only).
   useEffect(() => {
     setSelectedMailIds([]);
-  }, [activeTab, filterBuildingId, searchQuery, isOpen]);
+  }, [activeTab, activeBuildingId, searchQuery, isOpen]);
 
   const selectedMailIdSet = useMemo(() => new Set(selectedMailIds), [selectedMailIds]);
 
