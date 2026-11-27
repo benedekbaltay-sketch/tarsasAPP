@@ -50,6 +50,8 @@ export const sendDirectMail = onCall(
     const {
       buildingId,
       recipientMode = 'kk',
+      includeKk = true,
+      selectedSzvbEmails = [],
       replyToEmail = '',
       subject = '',
       body = '',
@@ -105,43 +107,109 @@ export const sendDirectMail = onCall(
             : 'owner';
 
     const adminMembers = activeMembers.filter((m) => m.role === 'admin');
-    const szvbMembers = activeMembers.filter((m) => m.role === 'szvb');
+    // Match SZVB members from BOTH building membership role='szvb' AND canonical building.szvb list
+    const canonicalSzvbEmails = new Set();
+    if (bData.szvb?.chairperson?.email) canonicalSzvbEmails.add(normalizeEmail(bData.szvb.chairperson.email));
+    if (Array.isArray(bData.szvb?.members)) {
+      bData.szvb.members.forEach((sm) => {
+        if (sm?.email) canonicalSzvbEmails.add(normalizeEmail(sm.email));
+      });
+    }
+    const szvbMembers = activeMembers.filter(
+      (m) => m.role === 'szvb' || canonicalSzvbEmails.has(normalizeEmail(m.email))
+    );
     const auditorMembers = activeMembers.filter(
       (m) => m.role === 'auditor' || m.isEconomicAuditor === true
     );
 
-    let targetMembers = [];
+    const cleanSelectedSzvb = Array.isArray(selectedSzvbEmails)
+      ? new Set(selectedSzvbEmails.map((e) => normalizeEmail(e)).filter(Boolean))
+      : new Set();
+
+    // Track { member, targetProfileType } so multi-profile users receive each letter in the right profile!
+    const targetEntries = [];
+    const pushTargets = (list, profileType) => {
+      for (const m of list) {
+        if (m && m.uid) targetEntries.push({ member: m, profileType });
+      }
+    };
     const cleanReplyEmail = normalizeEmail(replyToEmail);
 
     if (effectiveRole === 'owner') {
-      // Owners may ONLY write to Common Representative (KK / admin)
-      targetMembers = adminMembers;
+      // Owners may ONLY write to Common Representative (KK) and/or individually selected verified SZVB members
+      if (cleanReplyEmail) {
+        const matchedAdmin = adminMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
+        const matchedSzvb = szvbMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
+        if (matchedAdmin.length > 0) pushTargets(matchedAdmin, 'kk');
+        if (matchedSzvb.length > 0) pushTargets(matchedSzvb, 'szvb');
+        if (targetEntries.length === 0) {
+          throw new HttpsError('permission-denied', 'Residents may only reply to Management (KK) or SZVB members.');
+        }
+      } else {
+        const allowedOwnerModes = ['kk', 'szvb', 'kk_and_szvb', 'custom'];
+        if (!allowedOwnerModes.includes(recipientMode)) {
+          throw new HttpsError('permission-denied', 'Residents may only message Management (KK) or SZVB members.');
+        }
+        const wantKk =
+          recipientMode === 'kk' ||
+          (recipientMode === 'kk_and_szvb' && includeKk !== false) ||
+          (recipientMode === 'custom' && Boolean(includeKk));
+        const wantSzvb =
+          recipientMode === 'szvb' ||
+          recipientMode === 'kk_and_szvb' ||
+          (recipientMode === 'custom' && cleanSelectedSzvb.size > 0);
+
+        if (wantKk) pushTargets(adminMembers, 'kk');
+        if (wantSzvb) {
+          const filteredSzvb = cleanSelectedSzvb.size > 0
+            ? szvbMembers.filter((m) => cleanSelectedSzvb.has(normalizeEmail(m.email)))
+            : szvbMembers;
+          pushTargets(filteredSzvb, 'szvb');
+        }
+      }
     } else if (effectiveRole === 'szvb') {
-      if (recipientMode === 'auditor') targetMembers = auditorMembers;
-      else if (recipientMode === 'kk_and_auditor') targetMembers = [...adminMembers, ...auditorMembers];
-      else targetMembers = adminMembers;
+      if (recipientMode === 'auditor') pushTargets(auditorMembers, 'auditor');
+      else if (recipientMode === 'kk_and_auditor') {
+        pushTargets(adminMembers, 'kk');
+        pushTargets(auditorMembers, 'auditor');
+      } else {
+        pushTargets(adminMembers, 'kk');
+      }
     } else if (effectiveRole === 'auditor') {
-      if (recipientMode === 'szvb') targetMembers = szvbMembers;
-      else if (recipientMode === 'kk_and_szvb') targetMembers = [...adminMembers, ...szvbMembers];
-      else targetMembers = adminMembers;
+      if (recipientMode === 'szvb') pushTargets(szvbMembers, 'szvb');
+      else if (recipientMode === 'kk_and_szvb') {
+        pushTargets(adminMembers, 'kk');
+        pushTargets(szvbMembers, 'szvb');
+      } else {
+        pushTargets(adminMembers, 'kk');
+      }
     } else {
       // Admin / SuperAdmin
       if (cleanReplyEmail) {
-        targetMembers = activeMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
+        const matched = activeMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
+        matched.forEach((m) => {
+          const pType = m.role === 'szvb' ? 'szvb' : m.role === 'auditor' ? 'auditor' : m.role === 'admin' ? 'kk' : 'owner';
+          pushTargets([m], pType);
+        });
       } else if (recipientMode === 'szvb') {
-        targetMembers = szvbMembers;
+        pushTargets(szvbMembers, 'szvb');
       } else if (recipientMode === 'auditor') {
-        targetMembers = auditorMembers;
+        pushTargets(auditorMembers, 'auditor');
       } else {
-        targetMembers = adminMembers;
+        pushTargets(adminMembers, 'kk');
       }
     }
 
-    // Deduplicate recipients by UID
-    const recipientByUid = new Map();
-    for (const m of targetMembers) {
-      if (m && m.uid && m.uid !== callerUid) {
-        recipientByUid.set(m.uid, m);
+    // Deduplicate recipients by UID + targetProfileType (so multi-profile accounts still receive cross-profile mail cleanly)
+    const recipientByKey = new Map();
+    for (const entry of targetEntries) {
+      const m = entry.member;
+      const isSameUidAndSameRole =
+        m.uid === callerUid &&
+        ((entry.profileType === 'kk' && (effectiveRole === 'admin' || effectiveRole === 'superadmin')) ||
+          entry.profileType === effectiveRole);
+      if (!isSameUidAndSameRole) {
+        recipientByKey.set(`${m.uid}::${entry.profileType}`, entry);
       }
     }
 
@@ -156,20 +224,32 @@ export const sendDirectMail = onCall(
       owner: { hu: 'Tulajdonos', en: 'Owner' },
     };
     const lbl = roleLabels[effectiveRole] || roleLabels.owner;
+    const senderProfileType =
+      effectiveRole === 'admin' || effectiveRole === 'superadmin'
+        ? 'kk'
+        : effectiveRole === 'szvb'
+          ? 'szvb'
+          : effectiveRole === 'auditor'
+            ? 'auditor'
+            : 'owner';
 
     const batch = db.batch();
     let deliveredCount = 0;
 
     if (sendInApp) {
-      for (const [recUid, recMember] of recipientByUid.entries()) {
+      for (const { member: recMember, profileType } of recipientByKey.values()) {
         const notifId = makeId('mail');
-        batch.set(db.doc(`users/${recUid}/notifications/${notifId}`), {
+        batch.set(db.doc(`users/${recMember.uid}/notifications/${notifId}`), {
           id: notifId,
           type: 'direct_message',
           severity: 'info',
           buildingId,
           buildingName: bName,
           recipientEmail: normalizeEmail(recMember.email),
+          targetProfile: {
+            type: profileType,
+            buildingId,
+          },
           actorUid: callerUid,
           actorName: resolvedSenderName,
           actorEmail: callerEmail,
@@ -186,6 +266,7 @@ export const sendDirectMail = onCall(
             senderRole: effectiveRole,
             senderRoleLabelHu: lbl.hu,
             senderRoleLabelEn: lbl.en,
+            senderProfile: { type: senderProfileType, buildingId },
             deliveryChannel,
             isDirectMessage: true,
           },
@@ -197,10 +278,14 @@ export const sendDirectMail = onCall(
 
     // Always write sender's own Sent copy
     const senderNotifId = makeId('sent');
-    const recipientNames = Array.from(recipientByUid.values())
-      .map((m) => m.name || m.email)
+    const recipientNames = Array.from(recipientByKey.values())
+      .map(({ member: m, profileType }) => {
+        if (profileType === 'kk') return 'Közös Képviselet (KK)';
+        return m.name || m.email;
+      })
       .filter(Boolean)
-      .slice(0, 5)
+      .filter((v, idx, arr) => arr.indexOf(v) === idx)
+      .slice(0, 6)
       .join(', ');
 
     batch.set(db.doc(`users/${callerUid}/notifications/${senderNotifId}`), {
@@ -210,6 +295,10 @@ export const sendDirectMail = onCall(
       buildingId,
       buildingName: bName,
       recipientEmail: callerEmail,
+      targetProfile: {
+        type: senderProfileType,
+        buildingId,
+      },
       actorUid: callerUid,
       actorName: resolvedSenderName,
       actorEmail: callerEmail,
@@ -227,6 +316,7 @@ export const sendDirectMail = onCall(
         senderRole: effectiveRole,
         senderRoleLabelHu: lbl.hu,
         senderRoleLabelEn: lbl.en,
+        senderProfile: { type: senderProfileType, buildingId },
         recipientSummaryHu: recipientNames || bName,
         recipientSummaryEn: recipientNames || bName,
         deliveryChannel,

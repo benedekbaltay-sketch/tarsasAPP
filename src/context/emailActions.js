@@ -925,6 +925,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
   const sendDirectMessage = async ({
     buildingId,
     recipientMode = 'kk',
+    includeKk = true,
+    selectedSzvbEmails = [],
     replyToNotif = null,
     subject = '',
     body = '',
@@ -979,6 +981,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       users: cur.users || [],
       buildings: cur.buildings || [],
       recipientMode,
+      includeKk,
+      selectedSzvbEmails,
       replyToNotif,
       subject,
       body,
@@ -995,8 +999,11 @@ export function createEmailActions(optionsOrState, maybeSetState) {
             ? 'You do not have permission to send messages from this profile.'
             : 'Nincs jogosultságod üzenetet küldeni ebből a profilból.',
           'resident-kk-only': isEn()
-            ? 'Residents can only send direct messages to the Common Representative (Management).'
-            : 'Lakói profilból kizárólag a Közös Képviselet részére küldhető levél.',
+            ? 'Residents can only send direct messages to the Common Representative (Management) or SZVB members.'
+            : 'Lakói profilból kizárólag a Közös Képviselet vagy az SZVB tagjai részére küldhető levél.',
+          'resident-kk-szvb-only': isEn()
+            ? 'Residents can only send direct messages to the Common Representative (Management) or SZVB members.'
+            : 'Lakói profilból kizárólag a Közös Képviselet vagy az SZVB tagjai részére küldhető levél.',
           'no-recipients': isEn()
             ? 'No recipient with a valid email address was found for the selected target.'
             : 'A kiválasztott címzetthez nem található érvényes e-mail cím a rendszerben.',
@@ -1102,6 +1109,8 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         await callSendDirectMail({
           buildingId: building.id,
           recipientMode: recipientMode || 'kk',
+          includeKk: includeKk !== false,
+          selectedSzvbEmails: Array.isArray(selectedSzvbEmails) ? selectedSzvbEmails : [],
           replyToEmail: replyToNotif?.actorEmail || '',
           subject: subject.trim(),
           body: body.trim(),

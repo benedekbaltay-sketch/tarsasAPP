@@ -186,8 +186,9 @@ export function CommunicationCenterModal({
   const [isDirectComposeOpen, setIsDirectComposeOpen] = useState(false);
   const [directReplyTarget, setDirectReplyTarget] = useState(null);
   const [directRecipientMode, setDirectRecipientMode] = useState('kk');
+  const [directIncludeKk, setDirectIncludeKk] = useState(true);
+  const [directSelectedSzvbEmails, setDirectSelectedSzvbEmails] = useState([]);
   const [directDeliveryChannel, setDirectDeliveryChannel] = useState('both'); // 'both' | 'in_app' | 'email'
-  const [directCategory, setDirectCategory] = useState('general');
   const [directSubject, setDirectSubject] = useState('');
   const [directBody, setDirectBody] = useState('');
   const [directAttachments, setDirectAttachments] = useState([]);
@@ -456,7 +457,8 @@ export function CommunicationCenterModal({
   const handleOpenDirectCompose = ({ replyTo = null } = {}) => {
     setDirectReplyTarget(replyTo);
     setDirectAttachments([]);
-    setDirectCategory('general');
+    setDirectIncludeKk(true);
+    setDirectSelectedSzvbEmails([]);
     setDirectDeliveryChannel(isAuditor ? 'both' : 'in_app');
     if (replyTo) {
       const origTitle = (isEn ? (replyTo.titleEn || replyTo.titleHu) : (replyTo.titleHu || replyTo.titleEn)) || '';
@@ -477,6 +479,14 @@ export function CommunicationCenterModal({
 
   const handleSendDirectMessage = async () => {
     if (isSendingDirect || typeof sendDirectMessage !== 'function') return;
+    const isResidentMultiTarget = isResident && !directReplyTarget && activeBuildingSzvbList.length > 0;
+    if (isResidentMultiTarget && !directIncludeKk && directSelectedSzvbEmails.length === 0) {
+      showToast(
+        isEn ? 'Please select at least one recipient!' : 'Kérjük, válassz ki legalább egy címzettet!',
+        'error'
+      );
+      return;
+    }
     if (!directSubject.trim()) {
       showToast(isEn ? 'Please enter a subject.' : 'Kérjük, add meg a levél tárgyát!', 'error');
       return;
@@ -489,15 +499,25 @@ export function CommunicationCenterModal({
     const useEmail = isAuditor ? (directDeliveryChannel === 'email' || directDeliveryChannel === 'both') : false;
     const useInApp = isAuditor ? (directDeliveryChannel === 'in_app' || directDeliveryChannel === 'both') : true;
 
+    const effectiveRecipientMode = isResidentMultiTarget
+      ? (directIncludeKk && directSelectedSzvbEmails.length > 0
+          ? 'kk_and_szvb'
+          : directSelectedSzvbEmails.length > 0
+            ? 'szvb'
+            : 'kk')
+      : directRecipientMode;
+
     setIsSendingDirect(true);
     try {
       const res = await sendDirectMessage({
         buildingId: directReplyTarget?.buildingId || activeBuilding?.id,
-        recipientMode: directRecipientMode,
+        recipientMode: effectiveRecipientMode,
+        includeKk: isResidentMultiTarget ? directIncludeKk : true,
+        selectedSzvbEmails: isResidentMultiTarget ? directSelectedSzvbEmails : [],
         replyToNotif: directReplyTarget,
         subject: directSubject.trim(),
         body: directBody.trim(),
-        category: directCategory,
+        category: 'general',
         attachments: directAttachments,
         auditOpinionMeta: null,
         sendInApp: useInApp,
@@ -2585,7 +2605,7 @@ export function CommunicationCenterModal({
                   <h3 className="text-sm sm:text-base font-bold text-gray-900 font-display truncate">
                     {directReplyTarget
                       ? (isEn ? `Reply to ${directReplyTarget.actorName || directReplyTarget.actorEmail}` : `Válasz küldése: ${directReplyTarget.actorName || directReplyTarget.actorEmail}`)
-                      : isResident
+                      : isResident && activeBuildingSzvbList.length === 0
                       ? (isEn ? 'Write to Common Representative (Management)' : 'Levél írása a Közös Képviseletnek')
                       : (isEn ? 'New Message' : 'Új levél írása')}
                   </h3>
@@ -2626,17 +2646,100 @@ export function CommunicationCenterModal({
                   )}
                 </div>
               ) : isResident ? (
-                <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 flex items-center gap-2.5">
-                  <Building2 className="w-4 h-4 text-[#1E3A8A] shrink-0" />
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800 block">
-                      {isEn ? 'Recipient' : 'Címzett'}
-                    </span>
-                    <span className="font-bold text-gray-900">
-                      {isEn ? 'Common Representative (Building Management)' : 'Közös Képviselet (Házkezelés)'}
-                    </span>
+                activeBuildingSzvbList.length === 0 ? (
+                  <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 flex items-center gap-2.5">
+                    <Building2 className="w-4 h-4 text-[#1E3A8A] shrink-0" />
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800 block">
+                        {isEn ? 'Recipient' : 'Címzett'}
+                      </span>
+                      <span className="font-bold text-gray-900">
+                        {isEn ? 'Common Representative (Building Management)' : 'Közös Képviselet (Házkezelés)'}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1.5">
+                      {isEn ? 'Recipients' : 'Címzettek'} <span className="text-red-500">*</span>
+                    </label>
+                    <div className="space-y-1.5">
+                      {/* 1. Common Representative (KK) checkbox */}
+                      <label
+                        className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                          directIncludeKk
+                            ? 'bg-blue-50/80 border-blue-300 shadow-2xs'
+                            : 'bg-gray-50/70 border-gray-200 hover:bg-gray-100/80'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={directIncludeKk}
+                          onChange={(e) => setDirectIncludeKk(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                        />
+                        <Building2 className="w-4 h-4 text-[#1E3A8A] shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="font-bold text-gray-900 block truncate">
+                            {isEn ? 'Common Representative (Management)' : 'Közös Képviselet (KK)'}
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-[#1E3A8A] shrink-0">
+                          KK
+                        </span>
+                      </label>
+
+                      {/* 2. Individual SZVB members checkboxes */}
+                      {activeBuildingSzvbList.map((szvbRec) => {
+                        const isChecked = directSelectedSzvbEmails.includes(szvbRec.email);
+                        const roleBadge = szvbRec.szvbRole === 'chairperson'
+                          ? (isEn ? 'SZVB Chairperson' : 'SZVB Elnök')
+                          : (isEn ? 'SZVB Member' : 'SZVB Tag');
+                        return (
+                          <label
+                            key={szvbRec.email}
+                            className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                              isChecked
+                                ? 'bg-indigo-50/80 border-indigo-300 shadow-2xs'
+                                : 'bg-gray-50/70 border-gray-200 hover:bg-gray-100/80'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setDirectSelectedSzvbEmails((prev) =>
+                                    prev.includes(szvbRec.email) ? prev : [...prev, szvbRec.email]
+                                  );
+                                } else {
+                                  setDirectSelectedSzvbEmails((prev) =>
+                                    prev.filter((em) => em !== szvbRec.email)
+                                  );
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-gray-300 text-indigo-700 focus:ring-indigo-600 cursor-pointer"
+                            />
+                            <Shield className="w-4 h-4 text-indigo-600 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <span className="font-bold text-gray-900 block truncate">
+                                {szvbRec.name || roleBadge}
+                              </span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 shrink-0">
+                              {roleBadge}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {!directIncludeKk && directSelectedSzvbEmails.length === 0 && (
+                      <p className="text-[11px] font-semibold text-red-600 mt-1.5">
+                        {isEn ? 'Select at least one recipient.' : 'Válassz ki legalább egy címzettet!'}
+                      </p>
+                    )}
+                  </div>
+                )
               ) : isAuditor ? (
                 <div>
                   <label className="block font-bold text-gray-700 mb-1.5">
@@ -2719,25 +2822,6 @@ export function CommunicationCenterModal({
                       </button>
                     ))}
                   </div>
-                </div>
-              )}
-
-              {/* Resident Category Picker */}
-              {isResident && !directReplyTarget && (
-                <div>
-                  <label className="block font-bold text-gray-700 mb-1">
-                    {isEn ? 'Topic / Category' : 'Témakör'}
-                  </label>
-                  <select
-                    value={directCategory}
-                    onChange={(e) => setDirectCategory(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
-                  >
-                    <option value="general">{isEn ? 'General inquiry' : 'Általános megkeresés'}</option>
-                    <option value="finance">{isEn ? 'Balance / Payment question' : 'Elszámolás / Befizetés kérdés'}</option>
-                    <option value="urgent">{isEn ? 'Maintenance / Urgent issue' : 'Hibabejelentés / Sürgős ügy'}</option>
-                    <option value="document">{isEn ? 'Document request' : 'Dokumentum / Igazolás kérés'}</option>
-                  </select>
                 </div>
               )}
 
@@ -2827,7 +2911,12 @@ export function CommunicationCenterModal({
               </button>
               <button
                 type="button"
-                disabled={isSendingDirect || !directSubject.trim() || !directBody.trim()}
+                disabled={
+                  isSendingDirect ||
+                  !directSubject.trim() ||
+                  !directBody.trim() ||
+                  (isResident && !directReplyTarget && activeBuildingSzvbList.length > 0 && !directIncludeKk && directSelectedSzvbEmails.length === 0)
+                }
                 onClick={handleSendDirectMessage}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#1E3A8A] hover:bg-[#1e40af] shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
