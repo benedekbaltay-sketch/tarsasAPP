@@ -603,6 +603,16 @@ export async function clearBuildingEmailOutbox(buildingId) {
   await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
 }
 
+export async function deleteBuildingEmailOutboxItems(buildingId, itemIds = []) {
+  if (!buildingId || !Array.isArray(itemIds) || itemIds.length === 0) return;
+  const db = requireFirestore();
+  await Promise.all(
+    itemIds
+      .filter(Boolean)
+      .map((id) => deleteDoc(doc(db, 'buildings', buildingId, 'emailOutbox', String(id))).catch(() => {}))
+  );
+}
+
 // =============================================================================
 // 5. IMMUTABLE AUDIT LOGS VIEWER (Admin & SZVB ONLY)
 // =============================================================================

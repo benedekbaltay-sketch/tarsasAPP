@@ -200,6 +200,7 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
     };
 
     if (flat.owners && Array.isArray(flat.owners) && flat.owners.length > 0) {
+      const isSingleOwner = flat.owners.length === 1;
       setOwners(flat.owners.map((o, idx) => {
         const ownerEmail = o.email || (Array.isArray(o.emails) ? o.emails[0] : '') || '';
         const liveSzvbRole = resolveOwnerLiveSzvbRole(ownerEmail, o.name || '', flat.flatNum || '');
@@ -213,7 +214,7 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
           id: o.id || `owner-${idx}-${Date.now()}`,
           role: o.role || 'owner',
           name: o.name || '',
-          share: o.share || '',
+          share: (o.share || '').trim() || (isSingleOwner ? '100%' : ''),
           email: ownerEmail,
           phone: formatPhoneNumber(o.phone || (Array.isArray(o.phones) ? o.phones[0] : '') || ''),
           postalCode: o.postalCode || '',
@@ -459,7 +460,7 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
         id: newId,
         role: prev.length === 0 ? 'owner' : 'coowner',
         name: '',
-        share: '',
+        share: prev.length === 0 ? '100%' : '',
         email: '',
         phone: '',
         postalCode: '',
@@ -477,7 +478,13 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
 
   const handleRemoveOwner = (id) => {
     if (owners.length <= 1) return;
-    setOwners(prev => prev.filter(o => o.id !== id));
+    setOwners(prev => {
+      const remaining = prev.filter(o => o.id !== id);
+      if (remaining.length === 1) {
+        return [{ ...remaining[0], share: '100%' }];
+      }
+      return remaining;
+    });
     setExpandedIds(prev => {
       const next = new Set(prev);
       next.delete(id);
@@ -1029,18 +1036,6 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
                 }`}>
                   {totalOccupantsCount}
                 </span>
-                {totalOwnerSharePercent > 0 && totalOwnerSharePercent !== 100 && (
-                  <span
-                    className="inline-flex items-center shrink-0"
-                    title={
-                      isEn
-                        ? `The sum of ownership shares is ${totalOwnerSharePercent}% instead of 100%!`
-                        : `A tulajdoni hányadok összege ${totalOwnerSharePercent}%, nem 100%!`
-                    }
-                  >
-                    <AlertTriangle className="w-3 h-3 text-amber-500" />
-                  </span>
-                )}
               </button>
             )}
 
@@ -1764,21 +1759,43 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
                                 {/* Tulajdoni hányad */}
                                 <div>
                                   <label className="block text-gray-700 font-semibold mb-1 text-[11px]">
-                                    {isEn ? "Ownership share (e.g. 1/2 or 50%)" : "Tulajdoni hányad (pl. 1/2 vagy 50%)"}
+                                    {isEn ? "Ownership share (e.g. 100%, 1/2 or 50%)" : "Tulajdoni hányad (pl. 100%, 1/2 vagy 50%)"}
                                   </label>
-                                  {isEditMode ? (
-                                    <input
-                                      type="text"
-                                      value={owner.share || ''}
-                                      onChange={(e) => handleOwnerChange(owner.id, 'share', e.target.value)}
-                                      placeholder="pl. 1/2 vagy 50%"
-                                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs font-bold text-[#1E3A8A]"
-                                    />
-                                  ) : (
-                                    <div className="p-2.5 bg-white rounded-xl border border-gray-200 font-bold text-[#1E3A8A]">
-                                      {owner.share || "-"}
-                                    </div>
-                                  )}
+                                  <div className="flex items-center gap-1.5">
+                                    {isEditMode ? (
+                                      <input
+                                        type="text"
+                                        value={owner.share || ''}
+                                        onChange={(e) => handleOwnerChange(owner.id, 'share', e.target.value)}
+                                        placeholder="pl. 100%, 1/2 vagy 50%"
+                                        className={`w-full px-3 py-2 bg-white border rounded-xl text-xs font-bold text-[#1E3A8A] focus:outline-none ${
+                                          totalOwnerSharePercent > 0 && totalOwnerSharePercent !== 100
+                                            ? 'border-amber-400 focus:border-amber-500'
+                                            : 'border-gray-300 focus:border-[#1E3A8A]'
+                                        }`}
+                                      />
+                                    ) : (
+                                      <div className={`flex-1 p-2.5 bg-white rounded-xl border font-bold text-[#1E3A8A] ${
+                                        totalOwnerSharePercent > 0 && totalOwnerSharePercent !== 100
+                                          ? 'border-amber-400'
+                                          : 'border-gray-200'
+                                      }`}>
+                                        {owner.share || "-"}
+                                      </div>
+                                    )}
+                                    {totalOwnerSharePercent > 0 && totalOwnerSharePercent !== 100 && (
+                                      <span
+                                        className="inline-flex items-center justify-center p-1.5 rounded-lg bg-amber-50 border border-amber-200 shrink-0"
+                                        title={
+                                          isEn
+                                            ? `The sum of ownership shares is ${totalOwnerSharePercent}% instead of 100%!`
+                                            : `A tulajdoni hányadok összege ${totalOwnerSharePercent}%, nem 100%!`
+                                        }
+                                      >
+                                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
 
                                 {/* E-mail */}

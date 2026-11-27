@@ -118,6 +118,7 @@ export function CommunicationCenterModal({
     toggleEmailRule,
     queueOutboxItems,
     clearOutboxItems,
+    deleteOutboxItems,
     sendCustomResidentNotice,
     sendDirectMessage,
     fetchMailAttachment,
@@ -618,6 +619,10 @@ export function CommunicationCenterModal({
     });
   };
 
+  const OUTBOX_ID_PREFIX = 'outbox::';
+  const isOutboxSelectionId = (id) => typeof id === 'string' && id.startsWith(OUTBOX_ID_PREFIX);
+  const stripOutboxSelectionId = (id) => (isOutboxSelectionId(id) ? id.slice(OUTBOX_ID_PREFIX.length) : id);
+
   const toggleSelectAllForTab = (tabIds = []) => {
     const cleanIds = Array.from(new Set(tabIds.filter(Boolean)));
     if (cleanIds.length === 0) return;
@@ -630,12 +635,12 @@ export function CommunicationCenterModal({
 
   const handleBulkArchiveSelected = (tabIds = []) => {
     const tabSet = new Set(tabIds);
-    const idsToArchive = selectedMailIds.filter((id) => tabSet.has(id));
+    const idsToArchive = selectedMailIds.filter((id) => tabSet.has(id) && !isOutboxSelectionId(id));
     if (idsToArchive.length === 0) return;
     if (typeof archiveNotification === 'function') {
       archiveNotification(idsToArchive);
     }
-    setSelectedMailIds([]);
+    setSelectedMailIds((prev) => prev.filter((id) => !idsToArchive.includes(id)));
     showToast(
       isEn
         ? `${idsToArchive.length} message(s) archived.`
@@ -646,10 +651,10 @@ export function CommunicationCenterModal({
 
   const handleBulkRestoreSelected = (tabIds = []) => {
     const tabSet = new Set(tabIds);
-    const idsToRestore = selectedMailIds.filter((id) => tabSet.has(id));
+    const idsToRestore = selectedMailIds.filter((id) => tabSet.has(id) && !isOutboxSelectionId(id));
     if (idsToRestore.length === 0 || typeof unarchiveNotification !== 'function') return;
     unarchiveNotification(idsToRestore);
-    setSelectedMailIds([]);
+    setSelectedMailIds((prev) => prev.filter((id) => !idsToRestore.includes(id)));
     showToast(
       isEn
         ? `${idsToRestore.length} message(s) restored from archive.`
@@ -661,9 +666,13 @@ export function CommunicationCenterModal({
   const handleBulkDeleteSelected = (tabIds = []) => {
     const tabSet = new Set(tabIds);
     const idsToDelete = selectedMailIds.filter((id) => tabSet.has(id));
-    if (idsToDelete.length === 0 || typeof deleteNotification !== 'function') return;
+    if (idsToDelete.length === 0) return;
+    const notifIds = idsToDelete.filter((id) => !isOutboxSelectionId(id));
+    const outboxIds = idsToDelete.filter(isOutboxSelectionId).map(stripOutboxSelectionId);
+    if (notifIds.length === 0 && outboxIds.length === 0) return;
     setPendingDeleteMail({
-      notifIds: idsToDelete,
+      notifIds,
+      outboxIds,
       closeViewer: false,
       label: isEn
         ? `${idsToDelete.length} selected message(s)`
@@ -677,19 +686,32 @@ export function CommunicationCenterModal({
     const label = found
       ? ((isEn ? (found.titleEn || found.titleHu) : (found.titleHu || found.titleEn)) || '')
       : '';
-    setPendingDeleteMail({ notifIds: [notifId], closeViewer, label });
+    setPendingDeleteMail({ notifIds: [notifId], outboxIds: [], closeViewer, label });
   };
 
   const confirmDeleteItem = () => {
-    if (!pendingDeleteMail || !Array.isArray(pendingDeleteMail.notifIds) || pendingDeleteMail.notifIds.length === 0) return;
-    const { notifIds, closeViewer } = pendingDeleteMail;
+    if (!pendingDeleteMail) return;
+    const notifIds = Array.isArray(pendingDeleteMail.notifIds) ? pendingDeleteMail.notifIds : [];
+    const outboxIds = Array.isArray(pendingDeleteMail.outboxIds) ? pendingDeleteMail.outboxIds : [];
+    const totalCount = notifIds.length + outboxIds.length;
+    if (totalCount === 0) return;
+    const { closeViewer } = pendingDeleteMail;
     setPendingDeleteMail(null);
-    deleteNotification(notifIds);
-    setSelectedMailIds((prev) => prev.filter((id) => !notifIds.includes(id)));
+    if (notifIds.length > 0 && typeof deleteNotification === 'function') {
+      deleteNotification(notifIds);
+    }
+    if (outboxIds.length > 0 && typeof deleteOutboxItems === 'function') {
+      deleteOutboxItems(outboxIds, activeBuildingId || 'all');
+    }
+    const removedSet = new Set([
+      ...notifIds,
+      ...outboxIds.map((id) => `${OUTBOX_ID_PREFIX}${id}`),
+    ]);
+    setSelectedMailIds((prev) => prev.filter((id) => !removedSet.has(id)));
     if (closeViewer) setViewingNotification(null);
     showToast(
-      notifIds.length > 1
-        ? (isEn ? `${notifIds.length} messages deleted.` : `${notifIds.length} levél törölve.`)
+      totalCount > 1
+        ? (isEn ? `${totalCount} messages deleted.` : `${totalCount} levél törölve.`)
         : (isEn ? 'Message deleted.' : 'Levél törölve.'),
       'info'
     );
@@ -703,66 +725,6 @@ export function CommunicationCenterModal({
       currentUser,
       isEn,
     });
-
-  const renderBulkSelectionBar = ({ tabIds = [], showArchive = false, showRestore = false }) => {
-    const uniqueTabIds = Array.from(new Set(tabIds.filter(Boolean)));
-    if (uniqueTabIds.length === 0) return null;
-    const selectedInTab = uniqueTabIds.filter((id) => selectedMailIdSet.has(id));
-    const allSelected = selectedInTab.length === uniqueTabIds.length;
-    const someSelected = selectedInTab.length > 0;
-
-    return (
-      <div className="px-4 py-2.5 bg-gray-50/90 border-b border-gray-200/80 flex flex-wrap items-center justify-between gap-2">
-        <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={allSelected}
-            onChange={() => toggleSelectAllForTab(uniqueTabIds)}
-            className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
-          />
-          <span>{isEn ? 'Select all' : 'Összes kijelölése'}</span>
-          <span className="text-[11px] font-semibold text-gray-400">
-            {someSelected
-              ? (isEn ? `(${selectedInTab.length} / ${uniqueTabIds.length} selected)` : `(${selectedInTab.length} / ${uniqueTabIds.length} kijelölve)`)
-              : `(${uniqueTabIds.length})`}
-          </span>
-        </label>
-
-        {someSelected && (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {showArchive && (
-              <button
-                type="button"
-                onClick={() => handleBulkArchiveSelected(uniqueTabIds)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-gray-700 hover:text-[#1E3A8A] text-[11px] font-bold transition-colors cursor-pointer"
-              >
-                <Archive className="w-3.5 h-3.5" />
-                <span>{isEn ? `Archive (${selectedInTab.length})` : `Archiválás (${selectedInTab.length})`}</span>
-              </button>
-            )}
-            {showRestore && (
-              <button
-                type="button"
-                onClick={() => handleBulkRestoreSelected(uniqueTabIds)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-gray-700 hover:text-[#1E3A8A] text-[11px] font-bold transition-colors cursor-pointer"
-              >
-                <ArchiveRestore className="w-3.5 h-3.5" />
-                <span>{isEn ? `Restore (${selectedInTab.length})` : `Visszaállítás (${selectedInTab.length})`}</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => handleBulkDeleteSelected(uniqueTabIds)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white text-[11px] font-bold transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>{isEn ? `Delete (${selectedInTab.length})` : `Törlés (${selectedInTab.length})`}</span>
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
 
   const handleOpenDirectCompose = ({ replyTo = null } = {}) => {
     setDirectReplyTarget(replyTo);
@@ -1374,66 +1336,151 @@ export function CommunicationCenterModal({
             )}
           </div>
 
-          {/* Search Box & Contextual Tab Action */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="relative flex-1 min-w-[200px] max-w-md">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={isEn ? "Search..." : "Keresés..."}
-                className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-gray-200 rounded-xl shadow-2xs focus:outline-none focus:border-[#1E3A8A]"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+          {/* Search Box, Select All (beside search on Inbox / Outbox / Archive when non-empty) & Contextual Tab Actions */}
+          {(() => {
+            const currentTabRawIds =
+              activeTab === 'inbox'
+                ? inboxThreads.flatMap((th) => th.tabItemIds || [th.latest?.id])
+                : activeTab === 'outbox'
+                ? [
+                    ...sentThreads.flatMap((th) => th.tabItemIds || [th.latest?.id]),
+                    ...(isAdmin && canManageAnyBuilding
+                      ? outboxItems.map((item) => (item?.id ? `${OUTBOX_ID_PREFIX}${item.id}` : null))
+                      : []),
+                  ]
+                : activeTab === 'archive'
+                ? filteredArchivedNotifications.map((n) => n.id)
+                : [];
+            const uniqueCurrentTabIds = Array.from(new Set(currentTabRawIds.filter(Boolean)));
+            const selectedInCurrentTab = uniqueCurrentTabIds.filter((id) => selectedMailIdSet.has(id));
+            const selectedNotifIdsInCurrentTab = selectedInCurrentTab.filter((id) => !isOutboxSelectionId(id));
+            const allSelectedInCurrentTab =
+              uniqueCurrentTabIds.length > 0 && selectedInCurrentTab.length === uniqueCurrentTabIds.length;
+            const showSelectAllToolbar =
+              (activeTab === 'inbox' || activeTab === 'outbox' || activeTab === 'archive') &&
+              uniqueCurrentTabIds.length > 0;
 
-            <div className="flex items-center gap-2">
-              {isAdmin && activeTab === 'rules' && canManageAnyBuilding && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingRule(null);
-                    setIsEditRuleOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex-shrink-0 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{isEn ? "New Rule" : "Új szabály"}</span>
-                </button>
-              )}
+            return (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                  <div className="relative flex-1 min-w-[200px] max-w-md">
+                    <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={isEn ? "Search..." : "Keresés..."}
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-gray-200 rounded-xl shadow-2xs focus:outline-none focus:border-[#1E3A8A]"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
 
-              {activeTab === 'inbox' && unreadCount > 0 && (
-                <button
-                  type="button"
-                  onClick={markAllNotificationsRead}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
-                >
-                  <CheckCheck className="w-3.5 h-3.5 text-blue-600" />
-                  <span>{isEn ? "Mark all read" : "Mind olvasott"}</span>
-                </button>
-              )}
+                  {showSelectAllToolbar && (
+                    <label
+                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-2xs cursor-pointer select-none whitespace-nowrap flex-shrink-0 ${
+                        allSelectedInCurrentTab
+                          ? 'bg-blue-50 border-[#1E3A8A] text-[#1E3A8A]'
+                          : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={allSelectedInCurrentTab}
+                        onChange={() => toggleSelectAllForTab(uniqueCurrentTabIds)}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                      />
+                      <span>{isEn ? 'Select all' : 'Összes kiválasztása'}</span>
+                      <span className="text-[11px] font-semibold text-gray-400">
+                        {selectedInCurrentTab.length > 0
+                          ? `(${selectedInCurrentTab.length}/${uniqueCurrentTabIds.length})`
+                          : `(${uniqueCurrentTabIds.length})`}
+                      </span>
+                    </label>
+                  )}
 
-              {isAdmin && activeTab === 'outbox' && (emailOutbox || []).length > 0 && canManageAnyBuilding && (
-                <button
-                  type="button"
-                  onClick={clearOutboxItems}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200 hover:bg-red-50 hover:text-red-600 text-gray-600 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
-                  title={isEn ? "Clear simulated outbox" : "Napló kiürítése"}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>{isEn ? "Clear" : "Ürítés"}</span>
-                </button>
-              )}
-            </div>
-          </div>
+                  {showSelectAllToolbar && selectedInCurrentTab.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(activeTab === 'inbox' || activeTab === 'outbox') && selectedNotifIdsInCurrentTab.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleBulkArchiveSelected(uniqueCurrentTabIds)}
+                          className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-gray-700 hover:text-[#1E3A8A] text-xs font-bold transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
+                        >
+                          <Archive className="w-3.5 h-3.5" />
+                          <span>{isEn ? `Archive (${selectedNotifIdsInCurrentTab.length})` : `Archiválás (${selectedNotifIdsInCurrentTab.length})`}</span>
+                        </button>
+                      )}
+                      {activeTab === 'archive' && selectedNotifIdsInCurrentTab.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleBulkRestoreSelected(uniqueCurrentTabIds)}
+                          className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-gray-700 hover:text-[#1E3A8A] text-xs font-bold transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
+                        >
+                          <ArchiveRestore className="w-3.5 h-3.5" />
+                          <span>{isEn ? `Restore (${selectedNotifIdsInCurrentTab.length})` : `Visszaállítás (${selectedNotifIdsInCurrentTab.length})`}</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleBulkDeleteSelected(uniqueCurrentTabIds)}
+                        className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white text-xs font-bold transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{isEn ? `Delete (${selectedInCurrentTab.length})` : `Törlés (${selectedInCurrentTab.length})`}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {isAdmin && activeTab === 'rules' && canManageAnyBuilding && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingRule(null);
+                        setIsEditRuleOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex-shrink-0 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{isEn ? "New Rule" : "Új szabály"}</span>
+                    </button>
+                  )}
+
+                  {activeTab === 'inbox' && unreadCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={markAllNotificationsRead}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
+                    >
+                      <CheckCheck className="w-3.5 h-3.5 text-blue-600" />
+                      <span>{isEn ? "Mark all read" : "Mind olvasott"}</span>
+                    </button>
+                  )}
+
+                  {isAdmin && activeTab === 'outbox' && (emailOutbox || []).length > 0 && canManageAnyBuilding && (
+                    <button
+                      type="button"
+                      onClick={clearOutboxItems}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200 hover:bg-red-50 hover:text-red-600 text-gray-600 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
+                      title={isEn ? "Clear simulated outbox" : "Napló kiürítése"}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{isEn ? "Clear" : "Ürítés"}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           
           {/* TAB 1: INBOX & PROFILE NOTIFICATIONS (Threaded Gmail / Outlook view) */}
           {activeTab === 'inbox' && (
@@ -1447,10 +1494,6 @@ export function CommunicationCenterModal({
                 </div>
               ) : (
                 <>
-                  {renderBulkSelectionBar({
-                    tabIds: inboxThreads.flatMap((th) => th.tabItemIds || [th.latest?.id]),
-                    showArchive: true,
-                  })}
                   {inboxThreads.map((thread) => {
                   const notif = thread.latest;
                   const rowIds = thread.tabItemIds && thread.tabItemIds.length > 0 ? thread.tabItemIds : [notif.id];
@@ -1800,10 +1843,6 @@ export function CommunicationCenterModal({
                       {isEn ? "Direct Replies & Messages Sent" : "Elküldött közvetlen levelek & válaszok"} ({sentThreads.length})
                     </div>
                   )}
-                  {renderBulkSelectionBar({
-                    tabIds: sentThreads.flatMap((th) => th.tabItemIds || [th.latest?.id]),
-                    showArchive: true,
-                  })}
                   {sentThreads.map((thread) => {
                     const msg = thread.latest;
                     const rowIds = thread.tabItemIds && thread.tabItemIds.length > 0 ? thread.tabItemIds : [msg.id];
@@ -1940,13 +1979,30 @@ export function CommunicationCenterModal({
                       </div>
                     )
                   ) : (
-                    outboxItems.map((item) => (
+                    outboxItems.map((item) => {
+                      const outboxSelId = `${OUTBOX_ID_PREFIX}${item.id}`;
+                      const isOutboxRowSelected = selectedMailIdSet.has(outboxSelId);
+                      return (
                       <div
                         key={item.id}
                         onClick={() => setViewingLetter(item)}
-                        className="p-4 hover:bg-gray-50 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                        className={`p-4 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+                          isOutboxRowSelected ? 'bg-indigo-50/70 hover:bg-indigo-50' : 'hover:bg-gray-50'
+                        }`}
                       >
-                        <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          {canManageAnyBuilding && (
+                            <div className="pt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isOutboxRowSelected}
+                                onChange={() => toggleSelectMailIds([outboxSelId])}
+                                aria-label={isEn ? 'Select log entry' : 'Naplóbejegyzés kijelölése'}
+                                className="w-4 h-4 rounded border-gray-300 text-[#1E3A8A] focus:ring-[#1E3A8A] cursor-pointer"
+                              />
+                            </div>
+                          )}
+                          <div className="space-y-1 min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-gray-900 truncate">
                               {item.subject}
@@ -1987,6 +2043,7 @@ export function CommunicationCenterModal({
                               ⚠️ {item.errorMessage}
                             </div>
                           )}
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-3 flex-shrink-0">
@@ -2006,7 +2063,8 @@ export function CommunicationCenterModal({
                           </button>
                         </div>
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -2035,10 +2093,6 @@ export function CommunicationCenterModal({
                 </div>
               ) : (
                 <>
-                  {renderBulkSelectionBar({
-                    tabIds: filteredArchivedNotifications.map((n) => n.id),
-                    showRestore: true,
-                  })}
                   {filteredArchivedNotifications.map((notif) => {
                   const isRowSelected = selectedMailIdSet.has(notif.id);
                   const title = isEn ? (notif.titleEn || notif.titleHu) : (notif.titleHu || notif.titleEn);
@@ -3872,30 +3926,36 @@ export function CommunicationCenterModal({
         </div>
       )}
 
-      <ConfirmDialog
-        isOpen={Boolean(pendingDeleteMail)}
-        title={
-          (pendingDeleteMail?.notifIds?.length || 0) > 1
-            ? (isEn ? "Delete Selected Messages" : "Kijelölt levelek törlése")
-            : (isEn ? "Delete Message" : "Levél törlése")
-        }
-        message={
-          (pendingDeleteMail?.notifIds?.length || 0) > 1
-            ? (isEn
-                ? `Are you sure you want to permanently delete the ${pendingDeleteMail.notifIds.length} selected messages?`
-                : `Biztosan véglegesen törlöd a kijelölt ${pendingDeleteMail.notifIds.length} levelet?`)
-            : (t.mail_delete_confirm ||
-                (isEn
-                  ? "Are you sure you want to permanently delete this message?"
-                  : "Biztosan véglegesen törlöd ezt a levelet?"))
-        }
-        itemLabel={pendingDeleteMail?.label || ''}
-        confirmLabel={t.delete || (isEn ? "Delete" : "Törlés")}
-        cancelLabel={t.cancel || (isEn ? "Cancel" : "Mégse")}
-        variant="danger"
-        onConfirm={confirmDeleteItem}
-        onCancel={() => setPendingDeleteMail(null)}
-      />
+      {(() => {
+        const deleteTotalCount =
+          (pendingDeleteMail?.notifIds?.length || 0) + (pendingDeleteMail?.outboxIds?.length || 0);
+        return (
+          <ConfirmDialog
+            isOpen={Boolean(pendingDeleteMail)}
+            title={
+              deleteTotalCount > 1
+                ? (isEn ? "Delete Selected Messages" : "Kijelölt levelek törlése")
+                : (isEn ? "Delete Message" : "Levél törlése")
+            }
+            message={
+              deleteTotalCount > 1
+                ? (isEn
+                    ? `Are you sure you want to permanently delete the ${deleteTotalCount} selected messages?`
+                    : `Biztosan véglegesen törlöd a kijelölt ${deleteTotalCount} levelet?`)
+                : (t.mail_delete_confirm ||
+                    (isEn
+                      ? "Are you sure you want to permanently delete this message?"
+                      : "Biztosan véglegesen törlöd ezt a levelet?"))
+            }
+            itemLabel={pendingDeleteMail?.label || ''}
+            confirmLabel={t.delete || (isEn ? "Delete" : "Törlés")}
+            cancelLabel={t.cancel || (isEn ? "Cancel" : "Mégse")}
+            variant="danger"
+            onConfirm={confirmDeleteItem}
+            onCancel={() => setPendingDeleteMail(null)}
+          />
+        );
+      })()}
 
     </div>
   );

@@ -23,6 +23,7 @@ import {
   deleteBuildingEmailRule,
   saveBuildingEmailOutboxItem,
   clearBuildingEmailOutbox,
+  deleteBuildingEmailOutboxItems,
 } from '../services/firestoreService.js';
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
 import { sanitizeMailAttachments, buildDirectMessagePayload, resolveResidentProfileEmail } from '../utils/directMessaging.js';
@@ -297,6 +298,51 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         emailOutbox: [],
         lastUpdated: Date.now(),
         revision: (prev.revision || 0) + 1
+      };
+    };
+
+    if (typeof persistState === 'function') {
+      persistState(updater, true);
+    } else if (typeof setState === 'function') {
+      setState(updater);
+    }
+    return true;
+  };
+
+  const deleteOutboxItems = (itemIds, buildingId) => {
+    const idList = Array.isArray(itemIds) ? itemIds.filter(Boolean) : (itemIds ? [itemIds] : []);
+    if (idList.length === 0) return false;
+    if (!checkManagePerm(buildingId || 'all')) {
+      if (typeof showToast === 'function') {
+        showToast(isEn() ? "You have view-only access." : "Csak megtekintési jogosultságod van.", "error");
+      }
+      return false;
+    }
+    const idSet = new Set(idList);
+    const updater = (prev) => {
+      const currentOutbox = Array.isArray(prev.emailOutbox) ? prev.emailOutbox : [];
+      if (IS_FIRESTORE_MODE) {
+        const fallbackBId = (buildingId && buildingId !== 'all' ? buildingId : null) || prev.currentBuildingId || prev.buildings?.[0]?.id;
+        const idsByBuilding = new Map();
+        currentOutbox.forEach((item) => {
+          if (!item || !idSet.has(item.id)) return;
+          const bId = item.buildingId || fallbackBId;
+          if (!bId) return;
+          if (!idsByBuilding.has(bId)) idsByBuilding.set(bId, []);
+          idsByBuilding.get(bId).push(item.id);
+        });
+        if (idsByBuilding.size === 0 && fallbackBId) {
+          idsByBuilding.set(fallbackBId, idList);
+        }
+        idsByBuilding.forEach((ids, bId) => {
+          deleteBuildingEmailOutboxItems(bId, ids).catch(() => {});
+        });
+      }
+      return {
+        ...prev,
+        emailOutbox: currentOutbox.filter((item) => !item || !idSet.has(item.id)),
+        lastUpdated: Date.now(),
+        revision: (prev.revision || 0) + 1,
       };
     };
 
@@ -1257,6 +1303,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     toggleEmailRule,
     queueOutboxItems,
     clearOutboxItems,
+    deleteOutboxItems,
     sendCustomResidentNotice,
     sendDirectMessage,
     fetchMailAttachment,

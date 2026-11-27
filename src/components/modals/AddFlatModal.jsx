@@ -14,7 +14,7 @@ export function AddFlatModal({ isOpen, onClose }) {
 
   const [flatNum, setFlatNum] = useState('');
   const [hrsz, setHrsz] = useState('');
-  const [owners, setOwners] = useState([{ name: '', share: '', email: '', phone: '' }]);
+  const [owners, setOwners] = useState([{ name: '', share: '100%', email: '', phone: '' }]);
   const [monthlyFee, setMonthlyFee] = useState('');
   const [renovationFee, setRenovationFee] = useState('');
   const [ownershipShare, setOwnershipShare] = useState('');
@@ -35,7 +35,13 @@ export function AddFlatModal({ isOpen, onClose }) {
 
   const handleRemoveOwner = (index) => {
     if (owners.length <= 1) return;
-    setOwners(prev => prev.filter((_, i) => i !== index));
+    setOwners(prev => {
+      const next = prev.filter((_, i) => i !== index);
+      if (next.length === 1) {
+        return [{ ...next[0], share: '100%' }];
+      }
+      return next;
+    });
   };
 
   const handleOwnerChange = (index, field, value) => {
@@ -248,7 +254,7 @@ export function AddFlatModal({ isOpen, onClose }) {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div className={owners.length > 1 ? '' : 'sm:col-span-2'}>
+                    <div>
                       <label className="block text-gray-700 font-semibold mb-1 text-[10px]">
                         {t.owner_name} *
                       </label>
@@ -262,21 +268,18 @@ export function AddFlatModal({ isOpen, onClose }) {
                       />
                     </div>
 
-                    {/* Tulajdoni arány - CSAK ha 1-nél több tulajdonos van */}
-                    {owners.length > 1 && (
-                      <div>
-                        <label className="block text-gray-700 font-semibold mb-1 text-[10px]">
-                          {isEn ? "Share (optional)" : "Tulajdoni arány (opcionális)"}
-                        </label>
-                        <input
-                          type="text"
-                          value={owner.share || ''}
-                          onChange={(e) => handleOwnerChange(idx, 'share', e.target.value)}
-                          placeholder="pl. 1/2 vagy 50%"
-                          className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs"
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className="block text-gray-700 font-semibold mb-1 text-[10px]">
+                        {isEn ? "Ownership share" : "Tulajdoni hányad"}
+                      </label>
+                      <input
+                        type="text"
+                        value={owner.share || ''}
+                        onChange={(e) => handleOwnerChange(idx, 'share', e.target.value)}
+                        placeholder="pl. 100%, 1/2 vagy 50%"
+                        className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs"
+                      />
+                    </div>
                   </div>
 
                   {/* 1 E-mail és 1 Telefonszám per tulajdonos */}
