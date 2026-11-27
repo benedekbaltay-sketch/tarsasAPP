@@ -1470,112 +1470,37 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
           {!hideOwnerPii && activeTab === 'owners' && (
             <div className="space-y-4 animate-fadeIn">
               
-              {/* Header bar: Count, Share validation indicator, Filter pills & Expand/Add buttons */}
-              <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-gray-200 shadow-2xs space-y-3">
+              {/* Header bar: Title & Add buttons */}
+              <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-gray-200 shadow-2xs">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Users className="w-5 h-5 text-[#1E3A8A]" />
                     <h4 className="font-bold text-gray-900 text-sm">
                       {t.tab_flat_owners_tenants || (isEn ? "Owners & Tenants" : "Tulajdonosok és Bérlők")}
                     </h4>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-[#1E3A8A]">
-                      {totalOccupantsCount} {isEn ? "people" : "fő"}
-                    </span>
-
-                    {/* Share indicator */}
-                    {totalOwnerSharePercent === 100 ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-xs font-semibold">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>100% {isEn ? "(OK)" : "(rendben)"}</span>
-                      </span>
-                    ) : totalOwnerSharePercent > 0 ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                        <span>{isEn ? "Sum:" : "Összeg:"} {totalOwnerSharePercent}%</span>
-                      </span>
-                    ) : null}
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {/* Expand / Collapse All */}
-                    <button
-                      type="button"
-                      onClick={expandedIds.size > 0 ? handleCollapseAll : handleExpandAll}
-                      className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1"
-                    >
-                      {expandedIds.size > 0 ? (
-                        <>
-                          <ChevronUp className="w-3.5 h-3.5" />
-                          <span>{t.collapse_all || (isEn ? "Collapse All" : "Összecsukás")}</span>
-                        </>
-                      ) : (
-                        <>
-                          <ChevronDown className="w-3.5 h-3.5" />
-                          <span>{t.expand_all || (isEn ? "Expand All" : "Kibontás")}</span>
-                        </>
-                      )}
-                    </button>
-
-                    {/* Add Buttons */}
-                    {isEditMode && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleAddOwner}
-                          className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>{t.add_owner_btn || (isEn ? "+ Add Owner" : "+ Új tulajdonos")}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleAddTenant}
-                          className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>{t.add_tenant_btn || (isEn ? "+ Add Tenant" : "+ Új bérlő")}</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Filter Pills */}
-                <div className="flex items-center gap-2 border-t border-gray-100 pt-2 text-xs">
-                  <span className="text-gray-400 font-medium text-[11px]">{isEn ? "Filter:" : "Szűrés:"}</span>
-                  <button
-                    type="button"
-                    onClick={() => setOccupantFilter('all')}
-                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
-                      occupantFilter === 'all'
-                        ? 'bg-[#1E3A8A] text-white shadow-2xs'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {t.filter_all_occupants || (isEn ? "All" : "Mind")} ({totalOccupantsCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOccupantFilter('owners')}
-                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
-                      occupantFilter === 'owners'
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {t.filter_owners_only || (isEn ? "Owners" : "Tulajdonosok")} ({owners.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOccupantFilter('tenants')}
-                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
-                      occupantFilter === 'tenants'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {t.filter_tenants_only || (isEn ? "Tenants" : "Bérlők")} ({tenants.length})
-                  </button>
+                  {/* Add Buttons */}
+                  {isEditMode && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleAddOwner}
+                        className="px-3 py-1.5 bg-[#1E3A8A] hover:bg-[#1e40af] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{t.add_owner_btn || (isEn ? "Add Owner" : "Új tulajdonos")}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAddTenant}
+                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{t.add_tenant_btn || (isEn ? "+ Add Tenant" : "+ Új bérlő")}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 

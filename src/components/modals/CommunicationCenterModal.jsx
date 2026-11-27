@@ -1465,18 +1465,6 @@ export function CommunicationCenterModal({
                       <span>{isEn ? "Mark all read" : "Mind olvasott"}</span>
                     </button>
                   )}
-
-                  {isAdmin && activeTab === 'outbox' && (emailOutbox || []).length > 0 && canManageAnyBuilding && (
-                    <button
-                      type="button"
-                      onClick={clearOutboxItems}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200 hover:bg-red-50 hover:text-red-600 text-gray-600 rounded-xl text-xs font-bold transition-all shadow-2xs flex-shrink-0 cursor-pointer"
-                      title={isEn ? "Clear simulated outbox" : "Napló kiürítése"}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>{isEn ? "Clear" : "Ürítés"}</span>
-                    </button>
-                  )}
                 </div>
               </div>
             );
@@ -1498,6 +1486,7 @@ export function CommunicationCenterModal({
                   const notif = thread.latest;
                   const rowIds = thread.tabItemIds && thread.tabItemIds.length > 0 ? thread.tabItemIds : [notif.id];
                   const isRowSelected = rowIds.every((id) => selectedMailIdSet.has(id));
+                  const isSelectionMode = selectedMailIds.length > 0;
                   const isUnread = thread.hasUnread || !notif.read;
                   const isCritical = notif.severity === 'critical';
                   const title = isEn ? (notif.titleEn || notif.titleHu) : (notif.titleHu || notif.titleEn);
@@ -1507,8 +1496,10 @@ export function CommunicationCenterModal({
                   return (
                     <div
                       key={thread.key}
-                      onClick={() => openThreadViewer(notif, thread.fullChain)}
+                      onClick={() => (isSelectionMode ? toggleSelectMailIds(rowIds) : openThreadViewer(notif, thread.fullChain))}
                       className={`p-4 transition-colors cursor-pointer relative group border-l-4 flex items-start justify-between gap-4 ${
+                        isSelectionMode ? 'select-none ' : ''
+                      }${
                         isRowSelected
                           ? 'bg-indigo-50/70 hover:bg-indigo-50 border-l-[#1E3A8A]'
                           : isCritical
@@ -1847,14 +1838,17 @@ export function CommunicationCenterModal({
                     const msg = thread.latest;
                     const rowIds = thread.tabItemIds && thread.tabItemIds.length > 0 ? thread.tabItemIds : [msg.id];
                     const isRowSelected = rowIds.every((id) => selectedMailIdSet.has(id));
+                    const isSelectionMode = selectedMailIds.length > 0;
                     const title = isEn ? (msg.titleEn || msg.titleHu) : (msg.titleHu || msg.titleEn);
                     const body = isEn ? (msg.messageEn || msg.messageHu) : (msg.messageHu || msg.messageEn);
                     const recSummary = (isEn ? msg.meta?.recipientSummaryEn : msg.meta?.recipientSummaryHu) || '';
                     return (
                       <div
                         key={thread.key}
-                        onClick={() => openThreadViewer(msg, thread.fullChain)}
+                        onClick={() => (isSelectionMode ? toggleSelectMailIds(rowIds) : openThreadViewer(msg, thread.fullChain))}
                         className={`p-4 transition-colors cursor-pointer flex items-start justify-between gap-4 group ${
+                          isSelectionMode ? 'select-none ' : ''
+                        }${
                           isRowSelected ? 'bg-indigo-50/70 hover:bg-indigo-50' : 'hover:bg-gray-50/80'
                         }`}
                       >
@@ -1982,11 +1976,14 @@ export function CommunicationCenterModal({
                     outboxItems.map((item) => {
                       const outboxSelId = `${OUTBOX_ID_PREFIX}${item.id}`;
                       const isOutboxRowSelected = selectedMailIdSet.has(outboxSelId);
+                      const isSelectionMode = selectedMailIds.length > 0;
                       return (
                       <div
                         key={item.id}
-                        onClick={() => setViewingLetter(item)}
+                        onClick={() => (isSelectionMode && canManageAnyBuilding ? toggleSelectMailIds([outboxSelId]) : setViewingLetter(item))}
                         className={`p-4 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+                          isSelectionMode && canManageAnyBuilding ? 'select-none ' : ''
+                        }${
                           isOutboxRowSelected ? 'bg-indigo-50/70 hover:bg-indigo-50' : 'hover:bg-gray-50'
                         }`}
                       >
@@ -2054,7 +2051,11 @@ export function CommunicationCenterModal({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setViewingLetter(item);
+                              if (isSelectionMode && canManageAnyBuilding) {
+                                toggleSelectMailIds([outboxSelId]);
+                              } else {
+                                setViewingLetter(item);
+                              }
                             }}
                             className="p-1.5 rounded-lg border border-gray-200 hover:bg-white text-gray-700 flex items-center gap-1 text-[11px] font-semibold"
                           >
@@ -2095,6 +2096,7 @@ export function CommunicationCenterModal({
                 <>
                   {filteredArchivedNotifications.map((notif) => {
                   const isRowSelected = selectedMailIdSet.has(notif.id);
+                  const isSelectionMode = selectedMailIds.length > 0;
                   const title = isEn ? (notif.titleEn || notif.titleHu) : (notif.titleHu || notif.titleEn);
                   const message = isEn ? (notif.messageEn || notif.messageHu) : (notif.messageHu || notif.messageEn);
                   const isSentCopy = Boolean(notif.meta?.isSenderCopy);
@@ -2103,8 +2105,10 @@ export function CommunicationCenterModal({
                   return (
                     <div
                       key={notif.id}
-                      onClick={() => setViewingNotification(notif)}
+                      onClick={() => (isSelectionMode ? toggleSelectMailIds([notif.id]) : setViewingNotification(notif))}
                       className={`p-4 transition-colors cursor-pointer flex items-start justify-between gap-4 group ${
+                        isSelectionMode ? 'select-none ' : ''
+                      }${
                         isRowSelected ? 'bg-indigo-50/70 hover:bg-indigo-50' : 'bg-white hover:bg-gray-50/80'
                       }`}
                     >
