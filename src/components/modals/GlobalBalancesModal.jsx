@@ -1261,118 +1261,158 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block font-semibold text-gray-700 mb-1">
-                          {t.bld_settings_name || (isEn ? "Condominium Name" : "Elnevezés")} *
-                        </label>
-                        <input
-                          type="text"
-                          value={buildingName}
-                          disabled={isEffectiveReadOnly || !isEditingMasterData}
-                          onChange={(e) => setBuildingName(e.target.value)}
-                          placeholder={isEn ? "e.g. Batyu 21" : "pl. Batyu u. 21."}
-                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-[#1E3A8A] ${
-                            isEffectiveReadOnly || !isEditingMasterData ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
-                          }`}
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-semibold text-gray-700 mb-1">
-                          {t.bld_settings_official_name || (isEn ? "Official Legal Name" : "Hivatalos név")}
-                        </label>
-                        <input
-                          type="text"
-                          value={buildingOfficialName}
-                          disabled={isEffectiveReadOnly || !isEditingMasterData}
-                          onChange={(e) => setBuildingOfficialName(e.target.value)}
-                          placeholder={isEn ? "e.g. Batyu utca 21. Társasház" : "pl. Batyu utca 21. Társasház"}
-                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
-                            isEffectiveReadOnly || !isEditingMasterData ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
-                          }`}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-semibold text-gray-700 mb-1">
-                          {t.bld_settings_address || (isEn ? "Building Address" : "Cím")} *
-                        </label>
-                        <input
-                          type="text"
-                          value={buildingAddress}
-                          disabled={isEffectiveReadOnly || !isEditingMasterData}
-                          onChange={(e) => setBuildingAddress(e.target.value)}
-                          placeholder={isEn ? "1051 Budapest, Example St. 1." : "1051 Budapest, Példa utca 1."}
-                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] ${
-                            isEffectiveReadOnly || !isEditingMasterData ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
-                          }`}
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-semibold text-gray-700 mb-1">
-                          {t.bld_settings_tax_number || (isEn ? "Tax Number" : "Adószám")}
-                        </label>
-                        <input
-                          type="text"
-                          value={buildingTaxNumber}
-                          disabled={isEffectiveReadOnly || !isEditingMasterData}
-                          onChange={(e) => setBuildingTaxNumber(formatTaxNumber(e.target.value))}
-                          placeholder="12345678-1-42"
-                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
-                            isEffectiveReadOnly || !isEditingMasterData ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
-                          }`}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-semibold text-gray-700 mb-1">
-                          {t.bld_settings_hrsz || (isEn ? "Land Registry No. (HRSZ)" : "Helyrajzi szám (hrsz.)")}
-                        </label>
-                        <input
-                          type="text"
-                          value={buildingHrsz}
-                          disabled={isEffectiveReadOnly || !isEditingMasterData}
-                          onChange={(e) => setBuildingHrsz(e.target.value)}
-                          placeholder={isEn ? "e.g. 12345/0" : "pl. 12345/0"}
-                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
-                            isEffectiveReadOnly || !isEditingMasterData ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
-                          }`}
-                        />
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="block font-semibold text-gray-700">
-                            {t.bld_settings_total_share || (isEn ? "Total Ownership Share (Basis)" : "Teljes tulajdoni hányad (Alap)")} *
-                          </label>
-                          <span className="text-[10px] text-gray-400">
-                            {isEn ? "Default: 10,000" : "Alapértelmezett: 10 000"}
+                    {isEffectiveReadOnly || !isEditingMasterData ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        <div className="p-3 rounded-xl bg-white border border-gray-200/80">
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                            {t.bld_settings_name || (isEn ? "Condominium Name" : "Elnevezés")}
+                          </span>
+                          <span className="block text-xs sm:text-[13px] font-bold text-gray-900 break-words">
+                            {buildingName || '—'}
                           </span>
                         </div>
-                        <input
-                          type="number"
-                          step="any"
-                          min="1"
-                          value={totalOwnershipShare}
-                          disabled={isEffectiveReadOnly || !isEditingMasterData}
-                          onChange={(e) => setTotalOwnershipShare(e.target.value)}
-                          placeholder="10000"
-                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono font-bold focus:outline-none focus:border-[#1E3A8A] ${
-                            isEffectiveReadOnly || !isEditingMasterData ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
-                          }`}
-                          required
-                        />
-                        <p className="text-[10px] text-gray-500 mt-1">
-                          {t.bld_settings_total_share_desc || (isEn 
-                            ? "Condominium deed basis for voting and shares (typically 10,000, 1,000, 100,000 or custom deed sum)." 
-                            : "Az alapító okirat szerinti teljes eszmei hányad (általában 10 000, de lehet 1 000, 100 000 vagy egyedi összeg).")}
-                        </p>
+
+                        <div className="p-3 rounded-xl bg-white border border-gray-200/80">
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                            {t.bld_settings_official_name || (isEn ? "Official Legal Name" : "Hivatalos név")}
+                          </span>
+                          <span className={`block text-xs sm:text-[13px] break-words ${buildingOfficialName ? 'font-semibold text-gray-900' : 'text-gray-400 italic'}`}>
+                            {buildingOfficialName || (isEn ? 'Not set' : 'Nincs megadva')}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-white border border-gray-200/80">
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                            {t.bld_settings_address || (isEn ? "Building Address" : "Cím")}
+                          </span>
+                          <span className="block text-xs sm:text-[13px] font-semibold text-gray-900 break-words">
+                            {buildingAddress || '—'}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-white border border-gray-200/80">
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                            {t.bld_settings_tax_number || (isEn ? "Tax Number" : "Adószám")}
+                          </span>
+                          <span className={`block text-xs sm:text-[13px] font-mono ${buildingTaxNumber ? 'font-semibold text-gray-900' : 'text-gray-400 italic font-sans'}`}>
+                            {buildingTaxNumber || (isEn ? 'Not set' : 'Nincs megadva')}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-white border border-gray-200/80">
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                            {t.bld_settings_hrsz || (isEn ? "Land Registry No. (HRSZ)" : "Helyrajzi szám (hrsz.)")}
+                          </span>
+                          <span className={`block text-xs sm:text-[13px] font-mono ${buildingHrsz ? 'font-semibold text-gray-900' : 'text-gray-400 italic font-sans'}`}>
+                            {buildingHrsz || (isEn ? 'Not set' : 'Nincs megadva')}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-white border border-gray-200/80">
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                            {t.bld_settings_total_share || (isEn ? "Total Ownership Share (Basis)" : "Teljes tulajdoni hányad (Alap)")}
+                          </span>
+                          <span className="block text-xs sm:text-[13px] font-mono font-bold text-gray-900">
+                            {totalOwnershipShare ? Number(totalOwnershipShare).toLocaleString(isEn ? 'en-US' : 'hu-HU') : '10 000'}
+                          </span>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold text-gray-700 mb-1">
+                            {t.bld_settings_name || (isEn ? "Condominium Name" : "Elnevezés")} *
+                          </label>
+                          <input
+                            type="text"
+                            value={buildingName}
+                            onChange={(e) => setBuildingName(e.target.value)}
+                            placeholder={isEn ? "e.g. Batyu 21" : "pl. Batyu u. 21."}
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-[#1E3A8A] bg-white text-gray-900"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-gray-700 mb-1">
+                            {t.bld_settings_official_name || (isEn ? "Official Legal Name" : "Hivatalos név")}
+                          </label>
+                          <input
+                            type="text"
+                            value={buildingOfficialName}
+                            onChange={(e) => setBuildingOfficialName(e.target.value)}
+                            placeholder={isEn ? "e.g. Batyu utca 21. Társasház" : "pl. Batyu utca 21. Társasház"}
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] bg-white text-gray-900"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-gray-700 mb-1">
+                            {t.bld_settings_address || (isEn ? "Building Address" : "Cím")} *
+                          </label>
+                          <input
+                            type="text"
+                            value={buildingAddress}
+                            onChange={(e) => setBuildingAddress(e.target.value)}
+                            placeholder={isEn ? "1051 Budapest, Example St. 1." : "1051 Budapest, Példa utca 1."}
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-[#1E3A8A] bg-white text-gray-900"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-gray-700 mb-1">
+                            {t.bld_settings_tax_number || (isEn ? "Tax Number" : "Adószám")}
+                          </label>
+                          <input
+                            type="text"
+                            value={buildingTaxNumber}
+                            onChange={(e) => setBuildingTaxNumber(formatTaxNumber(e.target.value))}
+                            placeholder="12345678-1-42"
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] bg-white text-gray-900"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-gray-700 mb-1">
+                            {t.bld_settings_hrsz || (isEn ? "Land Registry No. (HRSZ)" : "Helyrajzi szám (hrsz.)")}
+                          </label>
+                          <input
+                            type="text"
+                            value={buildingHrsz}
+                            onChange={(e) => setBuildingHrsz(e.target.value)}
+                            placeholder={isEn ? "e.g. 12345/0" : "pl. 12345/0"}
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-[#1E3A8A] bg-white text-gray-900"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block font-semibold text-gray-700">
+                              {t.bld_settings_total_share || (isEn ? "Total Ownership Share (Basis)" : "Teljes tulajdoni hányad (Alap)")} *
+                            </label>
+                            <span className="text-[10px] text-gray-400">
+                              {isEn ? "Default: 10,000" : "Alapértelmezett: 10 000"}
+                            </span>
+                          </div>
+                          <input
+                            type="number"
+                            step="any"
+                            min="1"
+                            value={totalOwnershipShare}
+                            onChange={(e) => setTotalOwnershipShare(e.target.value)}
+                            placeholder="10000"
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-mono font-bold focus:outline-none focus:border-[#1E3A8A] bg-white text-gray-900"
+                            required
+                          />
+                          <p className="text-[10px] text-gray-500 mt-1">
+                            {t.bld_settings_total_share_desc || (isEn 
+                              ? "Condominium deed basis for voting and shares (typically 10,000, 1,000, 100,000 or custom deed sum)." 
+                              : "Az alapító okirat szerinti teljes eszmei hányad (általában 10 000, de lehet 1 000, 100 000 vagy egyedi összeg).")}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2226,64 +2266,40 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block font-bold text-gray-700 mb-1">
-                        {t.settings_api_provider || "API Szolgáltató"}
-                      </label>
-                      <select
-                        value={apiProvider}
-                        disabled={isEffectiveReadOnly || !isEditingApi}
-                        onChange={(e) => setApiProvider(e.target.value)}
-                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] ${
-                          isEffectiveReadOnly || !isEditingApi ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
-                        }`}
-                      >
-                        <option value="OTP CorpAPI">OTP Bank CorpAPI</option>
-                        <option value="Erste Open Banking API">Erste Open Banking API</option>
-                        <option value="MBH Bank Connect">MBH Bank Connect</option>
-                        <option value="K&H OpenBanking">K&H OpenBanking</option>
-                      </select>
-                    </div>
+                  {isEffectiveReadOnly || !isEditingApi ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3 rounded-xl bg-white border border-gray-200/80">
+                        <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                          {t.settings_api_provider || "API Szolgáltató"}
+                        </span>
+                        <span className="block text-xs sm:text-[13px] font-bold text-gray-900">
+                          {apiProvider === 'OTP CorpAPI' ? 'OTP Bank CorpAPI' : apiProvider}
+                        </span>
+                      </div>
 
-                    <div>
-                      <label className="block font-bold text-gray-700 mb-1">
-                        {t.settings_api_env || "Működési környezet"}
-                      </label>
-                      <select
-                        value={apiEnv}
-                        disabled={isEffectiveReadOnly || !isEditingApi}
-                        onChange={(e) => setApiEnv(e.target.value)}
-                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] ${
-                          isEffectiveReadOnly || !isEditingApi ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
-                        }`}
-                      >
-                        <option value="sandbox">{t.settings_api_env_sandbox || "Sandbox (Teszt üzemmód)"}</option>
-                        <option value="production">{t.settings_api_env_prod || "Éles (Production)"}</option>
-                      </select>
-                    </div>
+                      <div className="p-3 rounded-xl bg-white border border-gray-200/80">
+                        <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                          {t.settings_api_env || "Működési környezet"}
+                        </span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                          apiEnv === 'production' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {apiEnv === 'production'
+                            ? (t.settings_api_env_prod || "Éles (Production)")
+                            : (t.settings_api_env_sandbox || "Sandbox (Teszt üzemmód)")}
+                        </span>
+                      </div>
 
-                    <div>
-                      <label className="block font-bold text-gray-700 mb-1">
-                        {t.settings_api_client_id || "Ügyfél-azonosító (Client ID)"}
-                      </label>
-                      <input
-                        type="text"
-                        value={apiClientId}
-                        disabled={isEffectiveReadOnly || !isEditingApi}
-                        onChange={(e) => setApiClientId(e.target.value)}
-                        placeholder={isEn ? "e.g. corp-building-001" : "pl. corp-tarsashaz-001"}
-                        className={`w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono focus:outline-none focus:border-[#1E3A8A] ${
-                          isEffectiveReadOnly || !isEditingApi ? 'bg-gray-100/80 text-gray-700 cursor-default' : 'bg-white text-gray-900'
-                        }`}
-                      />
-                    </div>
+                      <div className="p-3 rounded-xl bg-white border border-gray-200/80">
+                        <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                          {t.settings_api_client_id || "Ügyfél-azonosító (Client ID)"}
+                        </span>
+                        <span className={`block text-xs sm:text-[13px] font-mono ${apiClientId ? 'font-semibold text-gray-900' : 'text-gray-400 italic font-sans'}`}>
+                          {apiClientId || (isEn ? 'Not set' : 'Nincs megadva')}
+                        </span>
+                      </div>
 
-                    <div>
-                      <label className="block font-bold text-gray-700 mb-1">
-                        {t.settings_api_key || (isEn ? "API Secret & mTLS Certificate" : "API Titkos Kulcs és mTLS Tanúsítvány")}
-                      </label>
-                      <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-start gap-2">
+                      <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 text-[11px] text-emerald-900 flex items-start gap-2">
                         <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                         <span className="leading-snug">
                           {t.bld_settings_api_secret_notice || (
@@ -2294,21 +2310,94 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                         </span>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block font-bold text-gray-700 mb-1">
+                          {t.settings_api_provider || "API Szolgáltató"}
+                        </label>
+                        <select
+                          value={apiProvider}
+                          onChange={(e) => setApiProvider(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] bg-white text-gray-900"
+                        >
+                          <option value="OTP CorpAPI">OTP Bank CorpAPI</option>
+                          <option value="Erste Open Banking API">Erste Open Banking API</option>
+                          <option value="MBH Bank Connect">MBH Bank Connect</option>
+                          <option value="K&H OpenBanking">K&H OpenBanking</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-gray-700 mb-1">
+                          {t.settings_api_env || "Működési környezet"}
+                        </label>
+                        <select
+                          value={apiEnv}
+                          onChange={(e) => setApiEnv(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-[#1E3A8A] bg-white text-gray-900"
+                        >
+                          <option value="sandbox">{t.settings_api_env_sandbox || "Sandbox (Teszt üzemmód)"}</option>
+                          <option value="production">{t.settings_api_env_prod || "Éles (Production)"}</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-gray-700 mb-1">
+                          {t.settings_api_client_id || "Ügyfél-azonosító (Client ID)"}
+                        </label>
+                        <input
+                          type="text"
+                          value={apiClientId}
+                          onChange={(e) => setApiClientId(e.target.value)}
+                          placeholder={isEn ? "e.g. corp-building-001" : "pl. corp-tarsashaz-001"}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono focus:outline-none focus:border-[#1E3A8A] bg-white text-gray-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-gray-700 mb-1">
+                          {t.settings_api_key || (isEn ? "API Secret & mTLS Certificate" : "API Titkos Kulcs és mTLS Tanúsítvány")}
+                        </label>
+                        <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-start gap-2">
+                          <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                          <span className="leading-snug">
+                            {t.bld_settings_api_secret_notice || (
+                              isEn
+                                ? "Managed strictly server-side (Secret Manager / KMS). Banking secrets are never stored in the browser or client database."
+                                : "Kizárólag szerveroldalon tárolva (Secret Manager / KMS). A banki titkos kulcsok soha nem kerülnek a böngészőbe vagy az ügyféloldali adatbázisba."
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="pt-2 border-t border-gray-200/70 flex flex-wrap items-center justify-between gap-3">
-                    <label className={`flex items-center gap-2 ${isEffectiveReadOnly || !isEditingApi ? 'cursor-default opacity-75' : 'cursor-pointer'}`}>
-                      <input
-                        type="checkbox"
-                        checked={apiAutoSync}
-                        disabled={isEffectiveReadOnly || !isEditingApi}
-                        onChange={(e) => setApiAutoSync(e.target.checked)}
-                        className="w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
-                      />
-                      <span className="font-bold text-gray-800 text-xs">
-                        {t.settings_api_autosync || "Automatikus napi számlatörténet-szinkronizáció éjfélkor"}
-                      </span>
-                    </label>
+                    {isEffectiveReadOnly || !isEditingApi ? (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-semibold text-gray-600">
+                          {t.settings_api_autosync || "Automatikus napi számlatörténet-szinkronizáció éjfélkor"}:
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          apiAutoSync ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          {apiAutoSync ? (isEn ? 'ENABLED' : 'BEKAPCSOLVA') : (isEn ? 'DISABLED' : 'KIKAPCSOLVA')}
+                        </span>
+                      </div>
+                    ) : (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={apiAutoSync}
+                          onChange={(e) => setApiAutoSync(e.target.checked)}
+                          className="w-4 h-4 rounded text-[#1E3A8A] focus:ring-[#1E3A8A]"
+                        />
+                        <span className="font-bold text-gray-800 text-xs">
+                          {t.settings_api_autosync || "Automatikus napi számlatörténet-szinkronizáció éjfélkor"}
+                        </span>
+                      </label>
+                    )}
 
                     {!isEffectiveReadOnly && (
                       <button
