@@ -18,6 +18,126 @@ import {
 import { sanitizeFileName } from './fileSecurity.js';
 
 export const MAIL_INLINE_MAX_CHARS = 120_000;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Resolves a resident/user's verified configured email address from their active profile or owned flat.
+ * Returns normalized email string if valid, or '' if no valid email is configured.
+ */
+export function resolveResidentProfileEmail(actorUser, building = null) {
+  if (!actorUser) return '';
+  const direct = normalizeEmail(actorUser.email || '');
+  if (direct && EMAIL_RE.test(direct)) return direct;
+
+  if (building && Array.isArray(building.flats) && actorUser.flatNum) {
+    const flat = building.flats.find((f) => f && String(f.flatNum) === String(actorUser.flatNum));
+    if (flat) {
+      const flatEmail = normalizeEmail(flat.email || '');
+      if (flatEmail && EMAIL_RE.test(flatEmail)) return flatEmail;
+      if (Array.isArray(flat.owners)) {
+        for (const o of flat.owners) {
+          const oe = normalizeEmail(o?.email || (Array.isArray(o?.emails) ? o.emails[0] : ''));
+          if (oe && EMAIL_RE.test(oe)) return oe;
+        }
+      }
+    }
+  }
+  return '';
+}
+
+/**
+ * Resolves a stable conversation thread identifier for Gmail/Outlook-style message threading.
+ */
+export function resolveMessageThreadId(notif) {
+  if (!notif) return '';
+  if (notif.threadId) return String(notif.threadId);
+  if (notif.meta?.threadId) return String(notif.meta.threadId);
+  if (notif.meta?.replyToId) return String(notif.meta.replyToId);
+  return String(notif.id || '');
+}
+
+/**
+ * Returns all non-deleted messages belonging to the same conversation thread (both received and sent),
+ * sorted chronologically from oldest to newest (Gmail / Outlook conversation chain order).
+ */
+export function getConversationThreadMessages(allProfileNotifs = [], targetNotif = null) {
+  if (!targetNotif) return [];
+  const targetThreadId = resolveMessageThreadId(targetNotif);
+  const targetId = String(targetNotif.id || '');
+  const list = Array.isArray(allProfileNotifs) ? allProfileNotifs : [];
+
+  const matched = new Map();
+  const add = (n) => {
+    if (!n || !n.id || n.deleted) return;
+    matched.set(n.id, n);
+  };
+
+  add(targetNotif);
+  for (const n of list) {
+    if (!n || n.deleted) continue;
+    const nThreadId = resolveMessageThreadId(n);
+    if (
+      (targetThreadId && nThreadId === targetThreadId) ||
+      (targetId && (n.id === targetId || n.meta?.replyToId === targetId)) ||
+      (targetNotif.meta?.replyToId && n.id === targetNotif.meta.replyToId)
+    ) {
+      add(n);
+    }
+  }
+
+  return Array.from(matched.values()).sort((a, b) => {
+    const ta = new Date(a.createdAt || 0).getTime();
+    const tb = new Date(b.createdAt || 0).getTime();
+    return ta - tb;
+  });
+}
+
+/**
+ * Groups direct-message notifications in a tab list by conversation threadId so each conversation
+ * renders as one row with the latest message preview, total chain count, and unread indicator.
+ */
+export function groupNotificationsByThread(tabList = [], allProfileNotifs = []) {
+  const list = Array.isArray(tabList) ? tabList : [];
+  const threadBuckets = new Map();
+  const orderedKeys = [];
+
+  for (const notif of list) {
+    if (!notif || notif.deleted) continue;
+    const isThreadable = Boolean(
+      notif.threadId ||
+      notif.meta?.threadId ||
+      notif.meta?.directMessage ||
+      notif.meta?.isDirectMessage ||
+      notif.type === 'direct_message' ||
+      notif.type === 'audit_opinion' ||
+      notif.type === 'audit_observation'
+    );
+    const key = isThreadable ? `thread:${resolveMessageThreadId(notif)}` : `single:${notif.id}`;
+    if (!threadBuckets.has(key)) {
+      threadBuckets.set(key, []);
+      orderedKeys.push(key);
+    }
+    threadBuckets.get(key).push(notif);
+  }
+
+  return orderedKeys.map((key) => {
+    const items = threadBuckets.get(key) || [];
+    // Sort newest first inside the tab bucket
+    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    const latest = items[0];
+    const fullChain = key.startsWith('thread:')
+      ? getConversationThreadMessages(allProfileNotifs.length > 0 ? allProfileNotifs : list, latest)
+      : [latest];
+    const hasUnread = items.some((n) => !n.read && !n.meta?.isSenderCopy);
+    return {
+      key,
+      latest,
+      threadCount: fullChain.length,
+      fullChain,
+      hasUnread,
+    };
+  });
+}
 
 /**
  * Strip heavy base64 payloads into lightweight attachment metadata for state/RTDB notifications.
@@ -181,6 +301,7 @@ export function buildDirectMessagePayload({
   buildings = [],
   recipientMode = 'kk',
   includeKk = true,
+  includeSzvb = false,
   selectedSzvbEmails = [],
   replyToNotif = null,
   subject = '',
@@ -217,10 +338,21 @@ export function buildDirectMessagePayload({
     return { ok: false, error: 'permission-denied' };
   }
 
-  const senderEmail = normalizeEmail(actorUser.email || actorUser.username || '');
+  // Residents MUST have a valid configured email in their profile to send via Email ('email' or 'both')
+  const senderProfileEmail = isResident
+    ? resolveResidentProfileEmail(actorUser, building)
+    : normalizeEmail(actorUser.email || actorUser.username || '');
+  if (isResident && (deliveryChannel === 'email' || deliveryChannel === 'both') && !senderProfileEmail) {
+    return { ok: false, error: 'sender-email-required' };
+  }
+
+  const senderEmail = senderProfileEmail || normalizeEmail(actorUser.email || actorUser.username || '');
   const senderProfile = resolveSenderProfile(actorUser, building.id);
   const safeAttachments = sanitizeMailAttachments(attachments);
   const bName = building.name || 'Társasház';
+  const threadId =
+    (replyToNotif ? resolveMessageThreadId(replyToNotif) : '') ||
+    `thread-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   let recipients = [];
   let recipientSummaryHu = '';
@@ -233,26 +365,23 @@ export function buildDirectMessagePayload({
     const replyProfile = replyToNotif.meta?.senderProfile || null;
 
     if (isResident) {
-      // Residents may ONLY reply to KK or verified SZVB members of their own building
+      // Residents may ONLY reply to KK or SZVB of their own building
       const kkRecs = resolveBuildingKkRecipients(building, organizations, users);
       const szvbRecs = resolveBuildingSzvbRecipients(building);
       const isTargetKk = kkRecs.some((r) => r.email === replyEmail) || replyProfile?.type === 'kk';
-      const matchedSzvb = szvbRecs.find((r) => r.email === replyEmail);
-      if (!isTargetKk && !matchedSzvb) {
+      const isTargetSzvb = szvbRecs.some((r) => r.email === replyEmail) || replyProfile?.type === 'szvb';
+      if (!isTargetKk && !isTargetSzvb) {
         return { ok: false, error: 'resident-kk-szvb-only' };
       }
-      if (matchedSzvb && replyProfile?.type === 'szvb') {
-        recipients = [matchedSzvb];
-        recipientSummaryHu = `${matchedSzvb.name} (${matchedSzvb.szvbRole === 'chairperson' ? 'SZVB Elnök' : 'SZVB Tag'})`;
-        recipientSummaryEn = `${matchedSzvb.name} (${matchedSzvb.szvbRole === 'chairperson' ? 'SZVB Chairperson' : 'SZVB Member'})`;
-      } else if (isTargetKk) {
+      if (isTargetSzvb && (replyProfile?.type === 'szvb' || !isTargetKk)) {
+        // Council-wide delivery to the entire SZVB committee
+        recipients = szvbRecs;
+        recipientSummaryHu = 'Számvizsgáló Bizottság (SZVB)';
+        recipientSummaryEn = 'Accounting Committee (SZVB)';
+      } else {
         recipients = kkRecs.length > 0 ? kkRecs : [{ email: replyEmail, name: replyName, targetProfile: { type: 'kk', buildingId: building.id } }];
         recipientSummaryHu = 'Közös Képviselet (KK)';
         recipientSummaryEn = 'Common Representative (Management)';
-      } else {
-        recipients = [matchedSzvb];
-        recipientSummaryHu = `${matchedSzvb.name} (${matchedSzvb.szvbRole === 'chairperson' ? 'SZVB Elnök' : 'SZVB Tag'})`;
-        recipientSummaryEn = `${matchedSzvb.name} (${matchedSzvb.szvbRole === 'chairperson' ? 'SZVB Chairperson' : 'SZVB Member'})`;
       }
     } else {
       recipients = [
@@ -267,16 +396,13 @@ export function buildDirectMessagePayload({
       recipientSummaryEn = replyName;
     }
   } else if (isResident) {
-    // Resident -> KK and/or individually selected verified SZVB members of their own building
+    // Resident -> KK and/or the ENTIRE SZVB committee of their own building (never individual cherry-picking or arbitrary residents)
     const allowedResidentModes = ['kk', 'szvb', 'kk_and_szvb', 'custom'];
     if (recipientMode && !allowedResidentModes.includes(recipientMode)) {
       return { ok: false, error: 'resident-kk-szvb-only' };
     }
     const kkRecs = resolveBuildingKkRecipients(building, organizations, users);
     const allSzvbRecs = resolveBuildingSzvbRecipients(building);
-    const cleanSelectedSzvb = Array.isArray(selectedSzvbEmails)
-      ? Array.from(new Set(selectedSzvbEmails.map((e) => normalizeEmail(e)).filter(Boolean)))
-      : [];
 
     const wantKk =
       recipientMode === 'kk' ||
@@ -285,17 +411,12 @@ export function buildDirectMessagePayload({
     const wantSzvb =
       recipientMode === 'szvb' ||
       recipientMode === 'kk_and_szvb' ||
-      (recipientMode === 'custom' && cleanSelectedSzvb.length > 0);
-
-    const chosenSzvb = wantSzvb
-      ? (cleanSelectedSzvb.length > 0
-          ? allSzvbRecs.filter((r) => cleanSelectedSzvb.includes(r.email))
-          : allSzvbRecs)
-      : [];
+      Boolean(includeSzvb) ||
+      (Array.isArray(selectedSzvbEmails) && selectedSzvbEmails.length > 0);
 
     recipients = [
       ...(wantKk ? kkRecs : []),
-      ...chosenSzvb,
+      ...(wantSzvb ? allSzvbRecs : []),
     ];
 
     const summaryPartsHu = [];
@@ -304,12 +425,10 @@ export function buildDirectMessagePayload({
       summaryPartsHu.push('Közös Képviselet (KK)');
       summaryPartsEn.push('Common Representative (KK)');
     }
-    chosenSzvb.forEach((s) => {
-      const rHu = s.szvbRole === 'chairperson' ? 'SZVB Elnök' : 'SZVB Tag';
-      const rEn = s.szvbRole === 'chairperson' ? 'SZVB Chairperson' : 'SZVB Member';
-      summaryPartsHu.push(`${s.name} (${rHu})`);
-      summaryPartsEn.push(`${s.name} (${rEn})`);
-    });
+    if (wantSzvb && allSzvbRecs.length > 0) {
+      summaryPartsHu.push('Számvizsgáló Bizottság (SZVB)');
+      summaryPartsEn.push('Accounting Committee (SZVB)');
+    }
     recipientSummaryHu = summaryPartsHu.join(', ') || 'Közös Képviselet (KK)';
     recipientSummaryEn = summaryPartsEn.join(', ') || 'Common Representative (KK)';
   } else if (isSzvb) {
@@ -419,6 +538,7 @@ export function buildDirectMessagePayload({
 
   const sharedMeta = {
     directMessage: true,
+    threadId,
     category: category || 'general',
     deliveryChannel: deliveryChannel || 'in_app',
     senderRole: role,
@@ -445,8 +565,8 @@ export function buildDirectMessagePayload({
       : {}),
   };
 
-  const recipientNotifications = finalRecipients.map((r) =>
-    buildNotification({
+  const recipientNotifications = finalRecipients.map((r) => ({
+    ...buildNotification({
       type: notifType,
       severity: notifSeverity,
       recipientEmail: r.email,
@@ -461,30 +581,34 @@ export function buildDirectMessagePayload({
       messageEn: cleanBody,
       attachments: safeAttachments,
       meta: sharedMeta,
-    })
-  );
+    }),
+    threadId,
+  }));
 
   // Sender's own copy (stored cleanly for their Sent tab & independent archiving, never unread)
-  const senderCopyNotification = buildNotification({
-    type: notifType,
-    severity: notifSeverity,
-    recipientEmail: senderEmail,
-    buildingId: building.id,
-    buildingName: bName,
-    flatNum: actorUser.flatNum ? String(actorUser.flatNum) : null,
-    targetProfile: senderProfile,
-    actorUser,
-    titleHu: cleanSubject,
-    titleEn: cleanSubject,
-    messageHu: cleanBody,
-    messageEn: cleanBody,
-    attachments: safeAttachments,
-    read: true,
-    meta: {
-      ...sharedMeta,
-      isSenderCopy: true,
-    },
-  });
+  const senderCopyNotification = {
+    ...buildNotification({
+      type: notifType,
+      severity: notifSeverity,
+      recipientEmail: senderEmail,
+      buildingId: building.id,
+      buildingName: bName,
+      flatNum: actorUser.flatNum ? String(actorUser.flatNum) : null,
+      targetProfile: senderProfile,
+      actorUser,
+      titleHu: cleanSubject,
+      titleEn: cleanSubject,
+      messageHu: cleanBody,
+      messageEn: cleanBody,
+      attachments: safeAttachments,
+      read: true,
+      meta: {
+        ...sharedMeta,
+        isSenderCopy: true,
+      },
+    }),
+    threadId,
+  };
 
   // If Financial Auditor submitted an Official Written Opinion via Mail, sync it into building.auditOpinions too!
   let syncedAuditOpinion = null;
@@ -513,6 +637,7 @@ export function buildDirectMessagePayload({
 
   return {
     ok: true,
+    threadId,
     recipientNotifications,
     senderCopyNotification,
     syncedAuditOpinion,

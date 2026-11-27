@@ -276,6 +276,9 @@ export async function sendResidentCustomNoticeEmail({
   organizations = [],
   senderUser = null,
   senderEmail = '',
+  replyToOverride = '',
+  headerTitle = '',
+  senderBannerText = '',
   isEn = false,
   emailSettings = {},
   includeGreeting = false,
@@ -286,12 +289,19 @@ export async function sendResidentCustomNoticeEmail({
   }
 
   const effectiveBody = messageBody || bodyText || '';
+  const cleanOverrideReplyTo = replyToOverride && EMAIL_RE.test(normalizeEmail(replyToOverride))
+    ? normalizeEmail(replyToOverride)
+    : '';
   const fallbackSender = normalizeEmail(senderEmail || senderUser?.email);
-  const dynamicReplyTo = (targetBuilding
+  const dynamicReplyTo = cleanOverrideReplyTo || (targetBuilding
     ? resolveBuildingResidentEmail(targetBuilding, repProfile, organizations)
     : '') || fallbackSender;
 
   const buildingName = targetBuilding?.officialName || targetBuilding?.name || (isEn ? 'Condominium' : 'Társasház');
+  const resolvedHeaderTitle = headerTitle || (isEn ? 'Official Management Notice' : 'Hivatalos Közös Képviseleti Tájékoztató');
+  const escapedSenderBanner = senderBannerText
+    ? `<p style="margin: 0 0 14px 0; padding: 10px 14px; background-color: #eff6ff; border-radius: 10px; font-size: 13px; color: #1e3a8a; font-weight: 600;">${String(senderBannerText).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`
+    : '';
   const greeting = recipientName 
     ? (isEn ? `Dear ${recipientName} (Flat ${flatNum}),` : `Kedves ${recipientName} (${flatNum}. lakás)!`)
     : (flatNum ? (isEn ? `Dear Resident of Flat ${flatNum},` : `Kedves ${flatNum}. lakás Tulajdonos / Lakó!`) : (isEn ? 'Dear Resident,' : 'Kedves Lakó!'));
@@ -322,12 +332,13 @@ export async function sendResidentCustomNoticeEmail({
           <!-- Header -->
           <tr>
             <td style="background-color: #1E3A8A; padding: 22px 32px; text-align: left;">
-              <h2 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 700; letter-spacing: 0.3px;">${isEn ? 'Official Management Notice' : 'Hivatalos Közös Képviseleti Tájékoztató'}</h2>
+              <h2 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 700; letter-spacing: 0.3px;">${resolvedHeaderTitle}</h2>
             </td>
           </tr>
           <!-- Body -->
           <tr>
             <td style="padding: 32px; font-size: 14px; color: #1f2937;">
+              ${escapedSenderBanner}
               ${greetingHtml}
               ${escapedBody}
             </td>
@@ -346,7 +357,7 @@ export async function sendResidentCustomNoticeEmail({
 </html>
   `.trim();
 
-  const textBody = `${isEn ? 'Official Management Notice' : 'Hivatalos Közös Képviseleti Tájékoztató'}: ${subject}\n\n${includeGreeting ? `${greeting}\n\n` : ''}${messageBody}${dynamicReplyTo ? `\n\n---\n${isEn ? 'Direct reply to:' : 'Válasz közvetlenül ide:'} ${dynamicReplyTo}` : ''}`;
+  const textBody = `${resolvedHeaderTitle}: ${subject}\n${senderBannerText ? `${senderBannerText}\n` : ''}\n${includeGreeting ? `${greeting}\n\n` : ''}${effectiveBody}${dynamicReplyTo ? `\n\n---\n${isEn ? 'Direct reply to:' : 'Válasz közvetlenül ide:'} ${dynamicReplyTo}` : ''}`;
 
   return sendTransactionalEmail({
     to: recipientEmail,
@@ -355,7 +366,7 @@ export async function sendResidentCustomNoticeEmail({
     text: textBody,
     from: effective.senderEmail,
     replyTo: dynamicReplyTo,
-    senderName: effective.senderName || (isEn ? 'Property Management' : 'Közös Képviselet'),
+    senderName: senderUser?.name || effective.senderName || (isEn ? 'Property Management' : 'Közös Képviselet'),
     apiKey: effective.apiKey,
   });
 }

@@ -51,13 +51,19 @@ export const sendDirectMail = onCall(
       buildingId,
       recipientMode = 'kk',
       includeKk = true,
+      includeSzvb = false,
       selectedSzvbEmails = [],
       replyToEmail = '',
+      replyToProfileType = '',
+      replyToFlatNum = null,
+      threadId = '',
+      replyToId = null,
       subject = '',
       body = '',
       attachments = [],
       senderRole = '',
       senderName = '',
+      senderFlatNum = null,
       deliveryChannel = 'in_app',
       sendInApp = true,
     } = request.data || {};
@@ -126,29 +132,33 @@ export const sendDirectMail = onCall(
       ? new Set(selectedSzvbEmails.map((e) => normalizeEmail(e)).filter(Boolean))
       : new Set();
 
-    // Track { member, targetProfileType } so multi-profile users receive each letter in the right profile!
+    // Track { member, targetProfileType, targetFlatNum } so multi-profile users receive each letter in the right profile!
     const targetEntries = [];
-    const pushTargets = (list, profileType) => {
+    const pushTargets = (list, profileType, flatNumOverride = null) => {
       for (const m of list) {
-        if (m && m.uid) targetEntries.push({ member: m, profileType });
+        if (m && m.uid) targetEntries.push({ member: m, profileType, flatNum: flatNumOverride || null });
       }
     };
     const cleanReplyEmail = normalizeEmail(replyToEmail);
+    const resolvedThreadId = String(threadId || replyToId || makeId('thread')).slice(0, 120);
 
     if (effectiveRole === 'owner') {
-      // Owners may ONLY write to Common Representative (KK) and/or individually selected verified SZVB members
+      // Owners may ONLY write to Common Representative (KK) and/or the ENTIRE SZVB committee
       if (cleanReplyEmail) {
-        const matchedAdmin = adminMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
-        const matchedSzvb = szvbMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
-        if (matchedAdmin.length > 0) pushTargets(matchedAdmin, 'kk');
-        if (matchedSzvb.length > 0) pushTargets(matchedSzvb, 'szvb');
+        const isReplyKk = adminMembers.some((m) => normalizeEmail(m.email) === cleanReplyEmail) || replyToProfileType === 'kk';
+        const isReplySzvb = szvbMembers.some((m) => normalizeEmail(m.email) === cleanReplyEmail) || replyToProfileType === 'szvb';
+        if (isReplySzvb && (replyToProfileType === 'szvb' || !isReplyKk)) {
+          pushTargets(szvbMembers, 'szvb');
+        } else if (isReplyKk) {
+          pushTargets(adminMembers, 'kk');
+        }
         if (targetEntries.length === 0) {
-          throw new HttpsError('permission-denied', 'Residents may only reply to Management (KK) or SZVB members.');
+          throw new HttpsError('permission-denied', 'Residents may only reply to Management (KK) or SZVB.');
         }
       } else {
         const allowedOwnerModes = ['kk', 'szvb', 'kk_and_szvb', 'custom'];
         if (!allowedOwnerModes.includes(recipientMode)) {
-          throw new HttpsError('permission-denied', 'Residents may only message Management (KK) or SZVB members.');
+          throw new HttpsError('permission-denied', 'Residents may only message Management (KK) or SZVB.');
         }
         const wantKk =
           recipientMode === 'kk' ||
@@ -157,27 +167,37 @@ export const sendDirectMail = onCall(
         const wantSzvb =
           recipientMode === 'szvb' ||
           recipientMode === 'kk_and_szvb' ||
-          (recipientMode === 'custom' && cleanSelectedSzvb.size > 0);
+          Boolean(includeSzvb) ||
+          cleanSelectedSzvb.size > 0;
 
         if (wantKk) pushTargets(adminMembers, 'kk');
-        if (wantSzvb) {
-          const filteredSzvb = cleanSelectedSzvb.size > 0
-            ? szvbMembers.filter((m) => cleanSelectedSzvb.has(normalizeEmail(m.email)))
-            : szvbMembers;
-          pushTargets(filteredSzvb, 'szvb');
-        }
+        if (wantSzvb) pushTargets(szvbMembers, 'szvb');
       }
     } else if (effectiveRole === 'szvb') {
-      if (recipientMode === 'auditor') pushTargets(auditorMembers, 'auditor');
-      else if (recipientMode === 'kk_and_auditor') {
+      if (cleanReplyEmail) {
+        const matched = activeMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
+        matched.forEach((m) => {
+          const pType = replyToProfileType || (m.role === 'admin' ? 'kk' : m.role === 'auditor' ? 'auditor' : m.role === 'szvb' ? 'szvb' : 'owner');
+          pushTargets([m], pType, replyToFlatNum || null);
+        });
+      } else if (recipientMode === 'auditor') {
+        pushTargets(auditorMembers, 'auditor');
+      } else if (recipientMode === 'kk_and_auditor') {
         pushTargets(adminMembers, 'kk');
         pushTargets(auditorMembers, 'auditor');
       } else {
         pushTargets(adminMembers, 'kk');
       }
     } else if (effectiveRole === 'auditor') {
-      if (recipientMode === 'szvb') pushTargets(szvbMembers, 'szvb');
-      else if (recipientMode === 'kk_and_szvb') {
+      if (cleanReplyEmail) {
+        const matched = activeMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
+        matched.forEach((m) => {
+          const pType = replyToProfileType || (m.role === 'admin' ? 'kk' : m.role === 'szvb' ? 'szvb' : 'owner');
+          pushTargets([m], pType, replyToFlatNum || null);
+        });
+      } else if (recipientMode === 'szvb') {
+        pushTargets(szvbMembers, 'szvb');
+      } else if (recipientMode === 'kk_and_szvb') {
         pushTargets(adminMembers, 'kk');
         pushTargets(szvbMembers, 'szvb');
       } else {
@@ -188,8 +208,8 @@ export const sendDirectMail = onCall(
       if (cleanReplyEmail) {
         const matched = activeMembers.filter((m) => normalizeEmail(m.email) === cleanReplyEmail);
         matched.forEach((m) => {
-          const pType = m.role === 'szvb' ? 'szvb' : m.role === 'auditor' ? 'auditor' : m.role === 'admin' ? 'kk' : 'owner';
-          pushTargets([m], pType);
+          const pType = replyToProfileType || (m.role === 'szvb' ? 'szvb' : m.role === 'auditor' ? 'auditor' : m.role === 'admin' ? 'kk' : 'owner');
+          pushTargets([m], pType, replyToFlatNum || null);
         });
       } else if (recipientMode === 'szvb') {
         pushTargets(szvbMembers, 'szvb');
@@ -221,7 +241,7 @@ export const sendDirectMail = onCall(
       superadmin: { hu: 'Rendszergazda', en: 'System Admin' },
       szvb: { hu: 'SZVB', en: 'SZVB' },
       auditor: { hu: 'Gazdasági ellenőr', en: 'Financial Auditor' },
-      owner: { hu: 'Tulajdonos', en: 'Owner' },
+      owner: { hu: senderFlatNum ? `${senderFlatNum}. lakás tulajdonosa` : 'Tulajdonos', en: senderFlatNum ? `Flat #${senderFlatNum} Owner` : 'Owner' },
     };
     const lbl = roleLabels[effectiveRole] || roleLabels.owner;
     const senderProfileType =
@@ -237,18 +257,21 @@ export const sendDirectMail = onCall(
     let deliveredCount = 0;
 
     if (sendInApp) {
-      for (const { member: recMember, profileType } of recipientByKey.values()) {
+      for (const { member: recMember, profileType, flatNum: recFlatNum } of recipientByKey.values()) {
         const notifId = makeId('mail');
         batch.set(db.doc(`users/${recMember.uid}/notifications/${notifId}`), {
           id: notifId,
+          threadId: resolvedThreadId,
           type: 'direct_message',
           severity: 'info',
           buildingId,
           buildingName: bName,
+          ...(recFlatNum ? { flatNum: String(recFlatNum) } : {}),
           recipientEmail: normalizeEmail(recMember.email),
           targetProfile: {
             type: profileType,
             buildingId,
+            ...(recFlatNum ? { flatNum: String(recFlatNum) } : {}),
           },
           actorUid: callerUid,
           actorName: resolvedSenderName,
@@ -263,10 +286,17 @@ export const sendDirectMail = onCall(
           deleted: false,
           dismissed: false,
           meta: {
+            threadId: resolvedThreadId,
+            ...(replyToId ? { replyToId: String(replyToId) } : {}),
             senderRole: effectiveRole,
             senderRoleLabelHu: lbl.hu,
             senderRoleLabelEn: lbl.en,
-            senderProfile: { type: senderProfileType, buildingId },
+            senderFlatNum: senderFlatNum ? String(senderFlatNum) : null,
+            senderProfile: {
+              type: senderProfileType,
+              buildingId,
+              ...(senderFlatNum ? { flatNum: String(senderFlatNum) } : {}),
+            },
             deliveryChannel,
             isDirectMessage: true,
           },
@@ -281,6 +311,7 @@ export const sendDirectMail = onCall(
     const recipientNames = Array.from(recipientByKey.values())
       .map(({ member: m, profileType }) => {
         if (profileType === 'kk') return 'Közös Képviselet (KK)';
+        if (profileType === 'szvb') return 'Számvizsgáló Bizottság (SZVB)';
         return m.name || m.email;
       })
       .filter(Boolean)
@@ -290,14 +321,17 @@ export const sendDirectMail = onCall(
 
     batch.set(db.doc(`users/${callerUid}/notifications/${senderNotifId}`), {
       id: senderNotifId,
+      threadId: resolvedThreadId,
       type: 'direct_message',
       severity: 'info',
       buildingId,
       buildingName: bName,
+      ...(senderFlatNum ? { flatNum: String(senderFlatNum) } : {}),
       recipientEmail: callerEmail,
       targetProfile: {
         type: senderProfileType,
         buildingId,
+        ...(senderFlatNum ? { flatNum: String(senderFlatNum) } : {}),
       },
       actorUid: callerUid,
       actorName: resolvedSenderName,
@@ -312,11 +346,18 @@ export const sendDirectMail = onCall(
       deleted: false,
       dismissed: false,
       meta: {
+        threadId: resolvedThreadId,
+        ...(replyToId ? { replyToId: String(replyToId) } : {}),
         isSenderCopy: true,
         senderRole: effectiveRole,
         senderRoleLabelHu: lbl.hu,
         senderRoleLabelEn: lbl.en,
-        senderProfile: { type: senderProfileType, buildingId },
+        senderFlatNum: senderFlatNum ? String(senderFlatNum) : null,
+        senderProfile: {
+          type: senderProfileType,
+          buildingId,
+          ...(senderFlatNum ? { flatNum: String(senderFlatNum) } : {}),
+        },
         recipientSummaryHu: recipientNames || bName,
         recipientSummaryEn: recipientNames || bName,
         deliveryChannel,
@@ -328,6 +369,7 @@ export const sendDirectMail = onCall(
 
     return {
       success: true,
+      threadId: resolvedThreadId,
       deliveredCount,
       senderNotifId,
     };

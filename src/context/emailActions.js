@@ -25,7 +25,7 @@ import {
   clearBuildingEmailOutbox,
 } from '../services/firestoreService.js';
 import { canUserManageBuilding, buildNotification } from '../utils/teamPermissions.js';
-import { sanitizeMailAttachments, buildDirectMessagePayload } from '../utils/directMessaging.js';
+import { sanitizeMailAttachments, buildDirectMessagePayload, resolveResidentProfileEmail } from '../utils/directMessaging.js';
 import { sendResidentCustomNoticeEmail, resolveEffectiveEmailSettings } from '../services/emailService.js';
 import { getPermanentVault, savePermanentVault } from './syncEngine.js';
 import { getServerNow, getServerIsoString } from '../utils/serverClock.js';
@@ -926,6 +926,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
     buildingId,
     recipientMode = 'kk',
     includeKk = true,
+    includeSzvb = false,
     selectedSzvbEmails = [],
     replyToNotif = null,
     subject = '',
@@ -982,6 +983,7 @@ export function createEmailActions(optionsOrState, maybeSetState) {
       buildings: cur.buildings || [],
       recipientMode,
       includeKk,
+      includeSzvb,
       selectedSzvbEmails,
       replyToNotif,
       subject,
@@ -998,12 +1000,15 @@ export function createEmailActions(optionsOrState, maybeSetState) {
           'permission-denied': isEn()
             ? 'You do not have permission to send messages from this profile.'
             : 'Nincs jogosultságod üzenetet küldeni ebből a profilból.',
+          'sender-email-required': isEn()
+            ? 'Please configure a valid email address in your profile before sending emails.'
+            : 'E-mail küldéséhez előbb adj meg egy érvényes e-mail címet a profilodban!',
           'resident-kk-only': isEn()
-            ? 'Residents can only send direct messages to the Common Representative (Management) or SZVB members.'
-            : 'Lakói profilból kizárólag a Közös Képviselet vagy az SZVB tagjai részére küldhető levél.',
+            ? 'Residents can only send direct messages to the Common Representative (Management) or SZVB.'
+            : 'Lakói profilból kizárólag a Közös Képviselet vagy az SZVB részére küldhető levél.',
           'resident-kk-szvb-only': isEn()
-            ? 'Residents can only send direct messages to the Common Representative (Management) or SZVB members.'
-            : 'Lakói profilból kizárólag a Közös Képviselet vagy az SZVB tagjai részére küldhető levél.',
+            ? 'Residents can only send direct messages to the Common Representative (Management) or SZVB.'
+            : 'Lakói profilból kizárólag a Közös Képviselet vagy az SZVB részére küldhető levél.',
           'no-recipients': isEn()
             ? 'No recipient with a valid email address was found for the selected target.'
             : 'A kiválasztott címzetthez nem található érvényes e-mail cím a rendszerben.',
@@ -1030,13 +1035,22 @@ export function createEmailActions(optionsOrState, maybeSetState) {
         }
       });
 
+      const isAdminSender = enrichedActor?.role === 'admin' || enrichedActor?.role === 'superadmin';
+      const senderEmailForReply = !isAdminSender
+        ? (resolveResidentProfileEmail(enrichedActor, building) || enrichedActor?.email || '')
+        : '';
       const senderLabel = isEn()
         ? (payload.senderCopyNotification?.meta?.senderRoleLabelEn || '')
         : (payload.senderCopyNotification?.meta?.senderRoleLabelHu || '');
-      const senderHeader = enrichedActor.name
+      const emailHeaderTitle = !isAdminSender
         ? (isEn()
-            ? `From: ${enrichedActor.name}${senderLabel ? ` (${senderLabel})` : ''}\n\n`
-            : `Feladó: ${enrichedActor.name}${senderLabel ? ` (${senderLabel})` : ''}\n\n`)
+            ? `Condominium Message — ${building.name || 'Condominium'}`
+            : `Társasházi üzenet — ${building.name || 'Társasház'}`)
+        : '';
+      const emailSenderBanner = !isAdminSender
+        ? (isEn()
+            ? `From: ${enrichedActor.name || senderEmailForReply}${senderLabel ? ` (${senderLabel})` : ''}`
+            : `Feladó: ${enrichedActor.name || senderEmailForReply}${senderLabel ? ` (${senderLabel})` : ''}`)
         : '';
 
       await Promise.all(
@@ -1047,12 +1061,16 @@ export function createEmailActions(optionsOrState, maybeSetState) {
               recipientName: r.name || r.email,
               flatNum: r.flatNum || '',
               subject: subject.trim(),
-              messageBody: `${senderHeader}${body.trim()}`,
+              messageBody: body.trim(),
               category: category || 'general',
               targetBuilding: building,
               repProfile: cur.repProfile || {},
               organizations: cur.organizations || [],
               senderUser: enrichedActor,
+              senderEmail: senderEmailForReply,
+              replyToOverride: senderEmailForReply,
+              headerTitle: emailHeaderTitle,
+              senderBannerText: emailSenderBanner,
               isEn: isEn(),
               emailSettings: building.emailSettings || cur.emailSettings || {},
             });
@@ -1110,13 +1128,19 @@ export function createEmailActions(optionsOrState, maybeSetState) {
           buildingId: building.id,
           recipientMode: recipientMode || 'kk',
           includeKk: includeKk !== false,
+          includeSzvb: Boolean(includeSzvb),
           selectedSzvbEmails: Array.isArray(selectedSzvbEmails) ? selectedSzvbEmails : [],
           replyToEmail: replyToNotif?.actorEmail || '',
+          replyToProfileType: replyToNotif?.meta?.senderProfile?.type || '',
+          replyToFlatNum: replyToNotif?.meta?.senderFlatNum || replyToNotif?.flatNum || null,
+          threadId: payload.threadId || '',
+          replyToId: replyToNotif?.id || null,
           subject: subject.trim(),
           body: body.trim(),
           attachments: uploadedAttachments,
           senderRole: enrichedActor?.role || '',
           senderName: enrichedActor?.name || enrichedActor?.email || '',
+          senderFlatNum: enrichedActor?.flatNum || null,
           deliveryChannel,
           sendInApp,
         });

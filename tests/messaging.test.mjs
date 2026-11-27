@@ -7,6 +7,10 @@ import {
   resolveBuildingKkRecipients,
   resolveBuildingSzvbRecipients,
   resolveBuildingAuditorRecipient,
+  resolveResidentProfileEmail,
+  resolveMessageThreadId,
+  getConversationThreadMessages,
+  groupNotificationsByThread,
 } from '../src/utils/directMessaging.js';
 import {
   resolveUserProfiles,
@@ -66,13 +70,13 @@ function makeFixtures() {
   return { building, organizations, users };
 }
 
-test('1. Resident can send direct message with attachments to KK and/or individually selected SZVB members (blocked from auditor / arbitrary residents)', () => {
+test('1. Resident can message KK and/or the entire SZVB committee at once, must have profile email for Email delivery, and replies preserve conversation thread chains', () => {
   const { building, organizations, users } = makeFixtures();
-  // Add a second SZVB member to verify individual checkbox selection
   building.szvb.members = [
     { key: 'szvb2@example.com', name: 'SZVB Tag Kettő', email: 'szvb2@example.com', flatNum: '3' },
   ];
   const residentUser = { email: 'lako1@example.com', name: 'Lakó Egy', role: 'Owner', buildingId: 'b-mail', flatNum: '1' };
+  const residentNoEmail = { email: '', name: 'Email Nélküli Lakó', role: 'Owner', buildingId: 'b-mail', flatNum: '99' };
 
   // Attempting auditor mode is strictly blocked for residents
   const blocked = buildDirectMessagePayload({
@@ -87,50 +91,43 @@ test('1. Resident can send direct message with attachments to KK and/or individu
   assert.equal(blocked.ok, false);
   assert.equal(blocked.error, 'resident-kk-szvb-only');
 
-  // Sending to KK succeeds with sanitized attachments & sender copy
-  const res = buildDirectMessagePayload({
-    actorUser: residentUser,
+  // Resident without configured profile email CANNOT send via email channel
+  assert.equal(resolveResidentProfileEmail(residentNoEmail, building), '');
+  const blockedEmail = buildDirectMessagePayload({
+    actorUser: residentNoEmail,
     building,
     organizations,
     users,
     recipientMode: 'kk',
-    includeKk: true,
-    selectedSzvbEmails: [],
-    subject: 'Csőtörés bejelentés',
-    body: 'Csatoltam a fotót a pincéről.',
-    attachments: [
-      { id: 'att-1', fileName: '../../pince.pdf', fileSize: '42 KB', mimeType: 'application/pdf', fileData: 'data:application/pdf;base64,JVBERi0x' },
-    ],
+    subject: 'Email próba',
+    body: 'Nincs e-mailem.',
+    deliveryChannel: 'email',
   });
+  assert.equal(blockedEmail.ok, false);
+  assert.equal(blockedEmail.error, 'sender-email-required');
 
-  assert.equal(res.ok, true);
-  assert.equal(res.recipientNotifications.length, 1);
-  assert.equal(res.recipientNotifications[0].recipientEmail, 'kk@example.com');
-  assert.equal(res.recipientNotifications[0].targetProfile.type, 'kk');
-  assert.equal(res.recipientNotifications[0].attachments.length, 1);
-  assert.equal(res.recipientNotifications[0].attachments[0].fileName, 'pince.pdf');
-  assert.equal(res.senderCopyNotification.meta.isSenderCopy, true);
-  assert.equal(res.senderCopyNotification.read, true);
-  assert.equal(res.senderCopyNotification.targetProfile.type, 'owner');
-
-  // Sending ONLY to one specific SZVB member (ignoring any spoofed non-SZVB email!)
-  const szvbOnly = buildDirectMessagePayload({
+  // Sending to whole SZVB delivers to ALL SZVB members at once (chairperson + every member)
+  const szvbAll = buildDirectMessagePayload({
     actorUser: residentUser,
     building,
     organizations,
     users,
     recipientMode: 'szvb',
     includeKk: false,
-    selectedSzvbEmails: ['szvb2@example.com', 'random_neighbor@example.com'],
-    subject: 'Kérdés az SZVB taghoz',
+    includeSzvb: true,
+    subject: 'Kérdés a teljes SZVB-hez',
     body: 'Kérem a könyvelés ellenőrzését.',
   });
-  assert.equal(szvbOnly.ok, true);
-  assert.equal(szvbOnly.recipientNotifications.length, 1);
-  assert.equal(szvbOnly.recipientNotifications[0].recipientEmail, 'szvb2@example.com');
-  assert.equal(szvbOnly.recipientNotifications[0].targetProfile.type, 'szvb');
+  assert.equal(szvbAll.ok, true);
+  assert.equal(szvbAll.recipientNotifications.length, 2);
+  assert.deepEqual(
+    szvbAll.recipientNotifications.map((n) => n.recipientEmail).sort(),
+    ['szvb2@example.com', 'szvb@example.com']
+  );
+  assert.ok(szvbAll.threadId);
+  assert.equal(szvbAll.recipientNotifications[0].threadId, szvbAll.threadId);
 
-  // Sending to KK + selected SZVB Chairperson together
+  // Sending to KK + whole SZVB delivers to KK + all SZVB members & preserves attachments
   const both = buildDirectMessagePayload({
     actorUser: residentUser,
     building,
@@ -138,14 +135,43 @@ test('1. Resident can send direct message with attachments to KK and/or individu
     users,
     recipientMode: 'kk_and_szvb',
     includeKk: true,
-    selectedSzvbEmails: ['szvb@example.com'],
-    subject: 'Közös levél KK-nak és SZVB Elnöknek',
-    body: 'Tájékoztatás a felújításról.',
+    includeSzvb: true,
+    deliveryChannel: 'both',
+    subject: 'Csőtörés bejelentés',
+    body: 'Csatoltam a fotót a pincéről.',
+    attachments: [
+      { id: 'att-1', fileName: '../../pince.pdf', fileSize: '42 KB', mimeType: 'application/pdf', fileData: 'data:application/pdf;base64,JVBERi0x' },
+    ],
   });
   assert.equal(both.ok, true);
-  assert.equal(both.recipientNotifications.length, 2);
-  const emails = both.recipientNotifications.map((n) => n.recipientEmail).sort();
-  assert.deepEqual(emails, ['kk@example.com', 'szvb@example.com']);
+  assert.equal(both.recipientNotifications.length, 3);
+  assert.equal(both.recipientNotifications[0].attachments[0].fileName, 'pince.pdf');
+
+  // KK replies -> inherits threadId -> Resident sees full 2-message Gmail/Outlook chain chronologically!
+  const kkUser = { email: 'kk@example.com', name: 'Fő KK', role: 'admin' };
+  const kkReceived = both.recipientNotifications.find((n) => n.recipientEmail === 'kk@example.com');
+  const kkReply = buildDirectMessagePayload({
+    actorUser: kkUser,
+    building,
+    organizations,
+    users,
+    replyToNotif: kkReceived,
+    subject: 'Re: Csőtörés bejelentés',
+    body: 'Köszönjük, a szerelő már úton van!',
+  });
+  assert.equal(kkReply.ok, true);
+  assert.equal(kkReply.threadId, both.threadId);
+  assert.equal(kkReply.recipientNotifications[0].threadId, both.threadId);
+  assert.equal(kkReply.recipientNotifications[0].recipientEmail, 'lako1@example.com');
+
+  const residentAll = [both.senderCopyNotification, kkReply.recipientNotifications[0]];
+  const chain = getConversationThreadMessages(residentAll, kkReply.recipientNotifications[0]);
+  assert.equal(chain.length, 2);
+  assert.equal(resolveMessageThreadId(chain[0]), both.threadId);
+  assert.equal(resolveMessageThreadId(chain[1]), both.threadId);
+  const grouped = groupNotificationsByThread([kkReply.recipientNotifications[0]], residentAll);
+  assert.equal(grouped.length, 1);
+  assert.equal(grouped[0].threadCount, 2);
 });
 
 test('2. Financial Auditor submits Official Written Opinion via Mail -> notifies KK & SZVB AND syncs auditOpinions', () => {
