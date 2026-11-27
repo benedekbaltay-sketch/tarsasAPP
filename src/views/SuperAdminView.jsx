@@ -538,21 +538,12 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
               </span>
               <span className="text-sm sm:text-base font-black text-emerald-300 leading-tight">{stats.totalEmails}</span>
             </div>
-            <button
-              type="button"
-              onClick={() => setViewMode('archive')}
-              className={`px-2.5 py-1 rounded-xl border text-center min-w-[74px] transition-all cursor-pointer ${
-                viewMode === 'archive'
-                  ? 'bg-rose-500/35 border-rose-300/60 ring-1 ring-rose-300/40'
-                  : 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-400/30'
-              }`}
-              title={isEn ? "View archived / unassigned condominiums" : "Archivált és KK nélküli társasházak megtekintése"}
-            >
+            <div className="bg-rose-500/20 backdrop-blur-md px-2.5 py-1 rounded-xl border border-rose-400/30 text-center min-w-[74px]">
               <span className="block text-[9px] text-rose-200 uppercase font-bold tracking-wider leading-tight">
                 {t.total_archived_buildings || (isEn ? "Archived" : "Archív házak")}
               </span>
               <span className="text-sm sm:text-base font-black text-rose-200 leading-tight">{stats.totalArchived}</span>
-            </button>
+            </div>
           </div>
         </div>
       </div>
@@ -591,16 +582,6 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
             >
               <GitBranch className="w-3.5 h-3.5" />
               <span>{t.superadmin_tab_hierarchy || (isEn ? "Hierarchy" : "Hierarchia")}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('table')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                viewMode === 'table' ? 'bg-white text-indigo-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <TableIcon className="w-3.5 h-3.5" />
-              <span>{t.view_table || "Táblázat"}</span>
             </button>
             <button
               type="button"
@@ -948,7 +929,7 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
             {isEn ? "Try adjusting your search keywords." : "Próbálja meg módosítani a keresési kifejezést."}
           </p>
         </div>
-      ) : viewMode === 'diagram' ? (
+      ) : (
         /* ==================== 1. COMPACT 3-LEVEL HIERARCHY (KK -> BUILDINGS -> FLATS) ==================== */
         <div className="space-y-2.5">
           {filteredRepGroups.map((rep) => {
@@ -1232,85 +1213,6 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
               </div>
             );
           })}
-        </div>
-      ) : (
-        /* ==================== 2. TABULAR MATRIX VIEW ==================== */
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
-                <tr>
-                  <th className="py-2.5 px-3">{t.rep_building_name || "Társasház"}</th>
-                  <th className="py-2.5 px-3">{isEn ? "Representative" : "Közös Képviselő"}</th>
-                  <th className="py-2.5 px-3">{t.flat_label || "Lakás"}</th>
-                  <th className="py-2.5 px-3">{t.owners_label || "Tulajdonos"}</th>
-                  <th className="py-2.5 px-3">{t.all_associated_emails || "Csatolt e-mail címek"}</th>
-                  <th className="py-2.5 px-3 text-right">{isEn ? "Actions" : "Műveletek"}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredTableBuildings.flatMap((cluster) =>
-                  cluster.flats.map((flat) => (
-                    <tr key={`${cluster.buildingId}-${flat.flatNum}`} className="hover:bg-indigo-50/40 transition-colors">
-                      <td className="py-2 px-3 font-bold text-gray-900">
-                        {cluster.buildingName}
-                      </td>
-                      <td className="py-2 px-3">
-                        <span className="font-semibold text-gray-800 block">{cluster.repUser.name}</span>
-                        <span className="text-[11px] text-gray-500">{cluster.repUser.email}</span>
-                      </td>
-                      <td className="py-2 px-3 font-bold text-indigo-700">
-                        {flat.flatNum}.
-                      </td>
-                      <td className="py-2 px-3 text-gray-800">
-                        {flat.ownerNames}
-                      </td>
-                      <td className="py-2 px-3">
-                        {flat.allEmails.length > 0 ? (
-                          <div className="space-y-0.5">
-                            {flat.allEmails.map((em, idx) => (
-                              <div key={idx} className="flex items-center gap-1">
-                                <span className="font-mono text-[11px] text-gray-700">{em}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopy(em, `tbl-em-${cluster.buildingId}-${flat.flatNum}-${idx}`)}
-                                  className="text-gray-400 hover:text-indigo-600 cursor-pointer"
-                                >
-                                  {copiedId === `tbl-em-${cluster.buildingId}-${flat.flatNum}-${idx}` ? (
-                                    <Check className="w-2.5 h-2.5 text-emerald-600" />
-                                  ) : (
-                                    <Copy className="w-2.5 h-2.5" />
-                                  )}
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 italic text-[11px]">-</span>
-                        )}
-                      </td>
-                      <td className="py-2 px-3 text-right space-x-1.5">
-                        <button
-                          type="button"
-                          onClick={() => actAsUser(cluster.repUser, cluster.buildingId)}
-                          className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded text-[11px] cursor-pointer"
-                        >
-                          {isEn ? "KK profile" : "KK profil"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => actAsUser(flat.residentUser, cluster.buildingId)}
-                          className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded text-[11px] cursor-pointer"
-                        >
-                          {isEn ? "Resident" : "Lakóként"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
         </div>
       )}
 
@@ -1729,19 +1631,22 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
               </p>
             </div>
 
-            <div className="space-y-1.5 text-xs">
+            <div className="space-y-2 text-xs">
               <label className="block font-bold text-gray-700">
                 {isEn
-                  ? <>Type the condominium name <span className="font-mono text-rose-700">"{permanentDeleteTarget.name}"</span> to confirm:</>
-                  : <>A megerősítéshez gépeld be pontosan a társasház nevét: <span className="font-mono text-rose-700">„{permanentDeleteTarget.name}”</span></>}
+                  ? "Type the exact condominium name below to confirm:"
+                  : "A megerősítéshez gépeld be pontosan a társasház nevét:"}
               </label>
+              <div className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-xs font-mono text-rose-700 select-all font-bold">
+                {permanentDeleteTarget.name}
+              </div>
               <input
                 type="text"
                 autoFocus
                 disabled={isPermanentlyDeleting}
                 value={permanentDeleteInput}
                 onChange={(e) => setPermanentDeleteInput(e.target.value)}
-                placeholder={permanentDeleteTarget.name}
+                placeholder={isEn ? "Type condominium name..." : "Írd be a ház nevét..."}
                 className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs font-semibold text-gray-900 focus:outline-none focus:border-rose-600"
               />
             </div>
