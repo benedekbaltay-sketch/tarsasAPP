@@ -125,21 +125,19 @@ export function IosSideDrawer({
                   {isSzvb && currentBuilding && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
                       <Shield className="w-2.5 h-2.5 text-indigo-600" />
-                      <span>{isHu ? 'SZVB • Csak olvasás' : 'SZVB • Read-Only'}</span>
+                      <span>SZVB</span>
                     </span>
                   )}
                   {isAuditor && currentBuilding && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200 flex-shrink-0">
                       <ClipboardCheck className="w-2.5 h-2.5 text-teal-600" />
-                      <span>{isHu ? 'Gazdasági ellenőr • Csak olvasás' : 'Financial Auditor • Read-Only'}</span>
+                      <span>{isHu ? 'Gazdasági ellenőr' : 'Financial Auditor'}</span>
                     </span>
                   )}
                 </div>
                 <span className="text-xs text-gray-500 font-medium block truncate">
                   {currentUser ? (
-                    isAdmin ? userDisplayName :
-                    isSzvb ? `${activeSzvbRole === 'chairperson' ? (isHu ? 'SZVB Elnök' : 'SZVB Chairperson') : (isHu ? 'SZVB Tag' : 'SZVB Member')} • ${userDisplayName}` :
-                    isAuditor ? `${isHu ? 'Gazdasági ellenőr' : 'Financial Auditor'} • ${userDisplayName}` :
+                    (isAdmin || isSzvb || isAuditor) ? userDisplayName :
                     `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}`
                   ) : 'Menü'}
                 </span>

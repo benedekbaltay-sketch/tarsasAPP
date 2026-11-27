@@ -57,13 +57,13 @@ export function NavLogoButton({ onClick, title, hideViewerBadge = false, isReadO
           {isSzvbMode && isInBuilding && !hideViewerBadge && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
               <Shield className="w-2.5 h-2.5 text-indigo-600" />
-              <span>{isHu ? 'SZVB • Csak olvasás' : 'SZVB • Read-Only'}</span>
+              <span>SZVB</span>
             </span>
           )}
           {isAuditorMode && isInBuilding && !hideViewerBadge && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200 flex-shrink-0">
               <ClipboardCheck className="w-2.5 h-2.5 text-teal-600" />
-              <span>{isHu ? 'Gazdasági ellenőr • Csak olvasás' : 'Financial Auditor • Read-Only'}</span>
+              <span>{isHu ? 'Gazdasági ellenőr' : 'Financial Auditor'}</span>
             </span>
           )}
         </div>

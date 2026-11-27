@@ -96,21 +96,13 @@ export function Header({
         ? (t.portfolio_title || (isHu ? "Társasházaim" : "My Condominiums"))
         : t.app_title);
 
-  // Secondary subtitle under title: always display the profile user's name
+  // Secondary subtitle under title: display the profile user's name cleanly (role is shown in the pill badge)
   const isSzvbMode = currentUser.role === 'szvb';
   const isAuditorMode = currentUser.role === 'auditor';
-  const szvbRole = isSzvbMode ? (currentUser.szvbRole || getUserBuildingSzvbRole(currentUser, currentBuilding)) : null;
-  const szvbRoleLabel = szvbRole === 'chairperson'
-    ? (isHu ? 'SZVB Elnök' : 'SZVB Chairperson')
-    : (isHu ? 'SZVB Tag' : 'SZVB Member');
 
-  const headerSubtitle = isCurrentlyAdminMode
+  const headerSubtitle = (isCurrentlyAdminMode || isSzvbMode || isAuditorMode)
     ? userDisplayName
-    : (isSzvbMode
-        ? `${szvbRoleLabel} • ${userDisplayName}`
-        : (isAuditorMode
-            ? `${isHu ? 'Gazdasági ellenőr' : 'Financial Auditor'} • ${userDisplayName}`
-            : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || ''))));
+    : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || ''));
 
   return (
     <div ref={headerContainerRef} className="sticky top-0 z-30 w-full shadow-sm">
@@ -165,13 +157,13 @@ export function Header({
                 {isSzvbMode && isInBuilding && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
                     <Shield className="w-2.5 h-2.5 text-indigo-600" />
-                    <span>{isHu ? 'SZVB • Csak olvasás' : 'SZVB • Read-Only'}</span>
+                    <span>SZVB</span>
                   </span>
                 )}
                 {isAuditorMode && isInBuilding && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200 flex-shrink-0">
                     <ClipboardCheck className="w-2.5 h-2.5 text-teal-600" />
-                    <span>{isHu ? 'Gazdasági ellenőr • Csak olvasás' : 'Financial Auditor • Read-Only'}</span>
+                    <span>{isHu ? 'Gazdasági ellenőr' : 'Financial Auditor'}</span>
                   </span>
                 )}
               </div>
