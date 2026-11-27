@@ -90,7 +90,7 @@ function isWriteAdmin(access) {
  * for both direct file download and CSP-safe in-app preview.
  */
 export const downloadBuildingFile = onCall(
-  { region: REGION, memory: '512MiB', maxInstances: 20 },
+  { region: REGION, memory: '512MiB', maxInstances: 20, invoker: 'public' },
   async (request) => {
     const db = getFirestore();
     const { storagePath } = request.data || {};
@@ -153,7 +153,7 @@ export const downloadBuildingFile = onCall(
  * Strictly validates caller write permissions, MIME allowlist, and 10 MB ceiling server-side.
  */
 export const uploadBuildingFile = onCall(
-  { region: REGION, memory: '512MiB', maxInstances: 20 },
+  { region: REGION, memory: '512MiB', maxInstances: 20, invoker: 'public' },
   async (request) => {
     const db = getFirestore();
     const { storagePath, base64, contentType } = request.data || {};
