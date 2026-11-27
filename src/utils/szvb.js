@@ -521,14 +521,14 @@ export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null,
       const rEn = roleEn(nextRole);
       const messageHu = [
         `A(z) ${bName} társasházban ${rHu} jogosultságot kaptál (szigorúan csak olvasási ellenőrzési jog).`,
-        `🔄 Hogyan tudsz átlépni az SZVB nézetbe és vissza?\n1. A felső fejléc jobb oldalán kattints a „Lakás / SZVB” (Profilváltás) gombra, vagy nyisd meg a bal felső ☰ menüt és válaszd az „SZVB Ellenőrző nézet” gombot.\n2. Bármikor ugyanígy visszaválthatsz a saját lakásod tulajdonosi nézetére („Váltás saját lakásomra”).`,
+        `🔄 Hogyan tudsz átlépni az SZVB nézetbe és vissza?\nA felső fejléc jobb oldalán kattints a „Profilváltás” gombra — ott bármikor átválthatsz az SZVB nézetre és vissza a saját lakásodra.`,
         `👁️ Mikhez férsz hozzá SZVB-tagként?\n• Ügyintézés ellenőrzése (Dokumentumok): iratok, szerződések, bankkivonatok megtekintése és letöltése.\n• Havi pénzforgalom ellenőrzése (Főmenü & Pénzügyek): a ház összes bevétele, kiadása, bizonylatai, banki egyenlegei (Pénzügyek → Bank) és a lakók hátraléklistája.\n• Lakások adatai, hitelek, közgyűlési egyenlegkimutatások és ellenőri vélemények megtekintése.`,
         `🔒 Fontos korlátozás (Csak olvasás):\nSZVB-tagként egyetlen adatot sem tudsz módosítani vagy törölni, és nem küldhetsz ki e-maileket vagy fizetési felszólításokat.`,
       ].join('\n\n');
 
       const messageEn = [
         `You have been granted ${rEn} access (strictly read-only audit oversight) for ${bName}.`,
-        `🔄 How to switch between your apartment and SZVB view:\n1. Click the "Flat / SZVB" (Switch Profile) button in the top-right header, or open the top-left ☰ menu and select "SZVB Audit View".\n2. You can switch back to your personal apartment view anytime the same way ("Switch to My Apartment").`,
+        `🔄 How to switch between your apartment and SZVB view:\nClick the "Switch Profile" button in the top-right header — from there you can switch to the SZVB view and back to your apartment anytime.`,
         `👁️ What you can inspect as an SZVB member:\n• Administration oversight (Documents): view and download documents, contracts, and bank statements.\n• Monthly financial oversight (Dashboard & Finances): building income, expenses, receipts, bank balances (Finances → Bank), and the full resident arrears list.\n• Flats master data, loans, general assembly balance statements, and audit opinions.`,
         `🔒 Read-Only Restriction:\nAs an SZVB member, you cannot edit or delete any data, and you cannot send emails or payment reminders.`,
       ].join('\n\n');
@@ -576,12 +576,12 @@ export function buildSzvbUpdateNotifications({ prevSzvb = null, nextSzvb = null,
 
       const messageHu = [
         `A(z) ${bName} társasházban az SZVB szerepköröd módosult: ${prevHu} → ${nextHu}.`,
-        `🔄 Használat:\nA felső fejléc „Lakás / SZVB” gombjával vagy a bal felső ☰ menüből továbbra is bármikor átléphetsz a csak olvasási SZVB ellenőrző nézetbe (pénzforgalom, banki egyenlegek, hátraléklista, hitelek és iratok megtekintése/letöltése).`,
+        `🔄 Használat:\nA felső fejléc jobb oldalán lévő „Profilváltás” gombbal továbbra is bármikor átléphetsz a csak olvasási SZVB ellenőrző nézetbe (pénzforgalom, banki egyenlegek, hátraléklista, hitelek és iratok megtekintése/letöltése).`,
       ].join('\n\n');
 
       const messageEn = [
         `Your SZVB role for ${bName} has been updated: ${prevEn} → ${nextEn}.`,
-        `🔄 Usage:\nUse the "Flat / SZVB" switcher in the header or the top-left ☰ menu anytime to enter the read-only SZVB audit view (finances, bank balances, arrears list, loans, and documents).`,
+        `🔄 Usage:\nUse the "Switch Profile" button in the top-right header anytime to enter the read-only SZVB audit view (finances, bank balances, arrears list, loans, and documents).`,
       ].join('\n\n');
 
       notifications.push(

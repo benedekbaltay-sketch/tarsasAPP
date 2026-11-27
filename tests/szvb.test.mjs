@@ -267,10 +267,12 @@ test('9. buildSzvbUpdateNotifications emits detailed HU/EN grant, role-change, a
   assert.ok(granted);
   assert.equal(granted.type, 'szvb_updated');
   assert.equal(granted.meta.szvbAction, 'granted');
-  assert.match(granted.messageHu, /Lakás \/ SZVB/);
+  assert.match(granted.messageHu, /Profilváltás/);
+  assert.doesNotMatch(granted.messageHu, /SZVB Ellenőrző nézet|Váltás saját lakásomra|☰/);
   assert.match(granted.messageHu, /csak olvasás/i);
   assert.match(granted.messageHu, /hátraléklistája/);
-  assert.match(granted.messageEn, /Flat \/ SZVB/);
+  assert.match(granted.messageEn, /Switch Profile/);
+  assert.doesNotMatch(granted.messageEn, /SZVB Audit View|Switch to My Apartment|☰/);
   assert.match(granted.messageEn, /Read-Only/i);
   assert.equal(granted.changes.length, 3);
 
