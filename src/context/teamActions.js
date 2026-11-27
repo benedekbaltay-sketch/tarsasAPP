@@ -29,7 +29,11 @@ import {
   sendColleaguePermissionUpdateEmail,
 } from '../services/emailService';
 import { IS_FIRESTORE_MODE } from '../constants/firebaseConfig';
-import { updateUserNotification } from '../services/firestoreService';
+import {
+  updateUserNotification,
+  callManageOrganizationMember,
+  updateOrganizationMetadata,
+} from '../services/firestoreService';
 import { formatTaxNumber } from '../utils/taxNumber';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -220,6 +224,37 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       messageHu: `${actor.name || actor.email} hozzáférést adott számodra (${assignedCountLabelHu}).`,
       messageEn: `${actor.name || actor.email} granted you access (${assignedCountLabelEn}).`,
     });
+
+    if (IS_FIRESTORE_MODE && actorCtx.org?.id) {
+      try {
+        const res = await callManageOrganizationMember({
+          orgId: actorCtx.org.id,
+          action: 'attach',
+          email: cleanEmail,
+          name: displayName,
+          phone: cleanPhone,
+          buildingScope: cleanScope,
+          buildingIds: cleanBuildingIds,
+          permissions: normalizedPerms,
+          buildingAssignments: cleanBuildingAssignments,
+          memberRecord,
+          inviteRecord,
+          notification: welcomeNotif,
+        });
+        if (res?.uid) {
+          memberRecord.uid = res.uid;
+        }
+      } catch (err) {
+        console.error('Firestore manageOrganizationMember (attach) error:', err);
+        showToast(
+          isEn()
+            ? `Failed to save team member in cloud: ${err?.message || 'Permission denied'}`
+            : `Nem sikerült elmenteni a munkatársat a felhőbe: ${err?.message || 'Hozzáférés megtagadva'}`,
+          'error'
+        );
+        return { success: false, reason: 'firestore_error', error: err?.message };
+      }
+    }
 
     await persistState((s) => {
       const { orgs, orgIndex, org } = ensureOrgInDraftState(s, actor);
@@ -511,7 +546,7 @@ export function createTeamActions({ state, persistState, showToast, t }) {
   };
 
   // Update an existing staff member's building scope, per-building assignments & permissions
-  const updateTeamMember = (memberId, { name, phone, buildingScope, buildingIds, permissions, buildingAssignments, sendNotification = true }) => {
+  const updateTeamMember = async (memberId, { name, phone, buildingScope, buildingIds, permissions, buildingAssignments, sendNotification = true }) => {
     const actor = state.currentUser;
     const actorCtx = resolveUserOrgContext(actor, state.organizations, state.buildings);
     if (!actor || !actorCtx.org || !canUserManageTeam(actor, state.organizations, state.buildings)) {
@@ -580,6 +615,34 @@ export function createTeamActions({ state, persistState, showToast, t }) {
         changes: diff.changes,
         diff,
       });
+    }
+
+    if (IS_FIRESTORE_MODE) {
+      try {
+        await callManageOrganizationMember({
+          orgId: actorCtx.org.id,
+          action: 'update',
+          memberId,
+          targetUid: target.uid || null,
+          targetEmail: target.email,
+          name: targetName,
+          phone: cleanPhone,
+          buildingScope: cleanScope,
+          buildingIds: cleanBuildingIds,
+          permissions: normalizedPerms,
+          buildingAssignments: cleanBuildingAssignments,
+          notification: updateNotif,
+        });
+      } catch (err) {
+        console.error('Firestore manageOrganizationMember (update) error:', err);
+        showToast(
+          isEn()
+            ? `Failed to save permission changes: ${err?.message || 'Permission denied'}`
+            : `Nem sikerült elmenteni a jogosultságmódosítást: ${err?.message || 'Hozzáférés megtagadva'}`,
+          'error'
+        );
+        return false;
+      }
     }
 
     persistState((s) => {
@@ -692,6 +755,24 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     }
 
     const nextActive = Boolean(active);
+    if (IS_FIRESTORE_MODE) {
+      callManageOrganizationMember({
+        orgId: actorCtx.org.id,
+        action: nextActive ? 'reactivate' : 'suspend',
+        memberId,
+        targetUid: target.uid || null,
+        targetEmail: target.email,
+      }).catch((err) => {
+        console.error('Firestore manageOrganizationMember (toggleActive) error:', err);
+        showToast(
+          isEn()
+            ? `Failed to update member status in cloud: ${err?.message || 'Permission denied'}`
+            : `Nem sikerült frissíteni a munkatárs státuszát a felhőben: ${err?.message || 'Hozzáférés megtagadva'}`,
+          'error'
+        );
+      });
+    }
+
     persistState((s) => ({
       ...s,
       organizations: (s.organizations || []).map((org) => {
@@ -732,6 +813,25 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     }
 
     const targetEmail = normalizeEmail(target.email);
+
+    if (IS_FIRESTORE_MODE) {
+      callManageOrganizationMember({
+        orgId: actorCtx.org.id,
+        action: 'remove',
+        memberId,
+        targetUid: target.uid || null,
+        targetEmail: target.email,
+        resetPersonalContacts: Boolean(resetPersonalContacts),
+      }).catch((err) => {
+        console.error('Firestore manageOrganizationMember (remove) error:', err);
+        showToast(
+          isEn()
+            ? `Failed to remove team member in cloud: ${err?.message || 'Permission denied'}`
+            : `Nem sikerült eltávolítani a munkatársat a felhőben: ${err?.message || 'Hozzáférés megtagadva'}`,
+          'error'
+        );
+      });
+    }
 
     persistState((s) => {
       const nextOrgs = (s.organizations || []).map((org) => {
@@ -807,6 +907,26 @@ export function createTeamActions({ state, persistState, showToast, t }) {
       messageEn: `${actor.name || actor.email} handed over ${fromMember.name || fromMember.email}'s condominiums to you.`,
     });
 
+    if (IS_FIRESTORE_MODE) {
+      callManageOrganizationMember({
+        orgId: actorCtx.org.id,
+        action: 'handover',
+        fromMemberId,
+        toMemberId,
+        fromEmail: fromMember.email,
+        toEmail: toMember.email,
+        notification: handoverNotif,
+      }).catch((err) => {
+        console.error('Firestore manageOrganizationMember (handover) error:', err);
+        showToast(
+          isEn()
+            ? `Failed to hand over buildings in cloud: ${err?.message || 'Permission denied'}`
+            : `Nem sikerült átadni a társasházakat a felhőben: ${err?.message || 'Hozzáférés megtagadva'}`,
+          'error'
+        );
+      });
+    }
+
     persistState((s) => {
       const nextOrgs = (s.organizations || []).map((org) => {
         if (org.id !== actorCtx.org.id) return org;
@@ -845,6 +965,16 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     const actor = state.currentUser;
     const actorCtx = resolveUserOrgContext(actor, state.organizations, state.buildings);
     if (!actor || !actorCtx.org || !canUserManageTeam(actor, state.organizations, state.buildings)) return false;
+
+    if (IS_FIRESTORE_MODE) {
+      callManageOrganizationMember({
+        orgId: actorCtx.org.id,
+        action: 'revoke_invite',
+        inviteId,
+      }).catch((err) => {
+        console.error('Firestore manageOrganizationMember (revoke_invite) error:', err);
+      });
+    }
 
     persistState((s) => ({
       ...s,
@@ -933,6 +1063,24 @@ export function createTeamActions({ state, persistState, showToast, t }) {
     if (!actor || (!actorCtx.isOwner && !actorCtx.isSuperAdmin)) {
       showToast(t.error_unauthorized || (isEn() ? 'Only the organization owner can edit company details.' : 'Csak a cég tulajdonosa módosíthatja a cégadatokat.'), 'error');
       return false;
+    }
+
+    if (IS_FIRESTORE_MODE && actorCtx.org?.id) {
+      const resolvedTax = taxNumber !== undefined ? formatTaxNumber(taxNumber).trim() : undefined;
+      updateOrganizationMetadata(actorCtx.org.id, {
+        ...(name !== undefined ? { name: String(name).trim() || actorCtx.org.name } : {}),
+        ...(resolvedTax !== undefined ? { taxNumber: resolvedTax } : {}),
+        ...(centralContact !== undefined ? { centralContact: { ...(actorCtx.org.centralContact || {}), ...centralContact } } : {}),
+        ...(showCentralContactToResidents !== undefined ? { showCentralContactToResidents: Boolean(showCentralContactToResidents) } : {}),
+      }).catch((err) => {
+        console.error('Firestore updateOrganizationMetadata error:', err);
+        showToast(
+          isEn()
+            ? `Failed to save company settings in cloud: ${err?.message || 'Permission denied'}`
+            : `Nem sikerült menteni a cégadatokat a felhőben: ${err?.message || 'Hozzáférés megtagadva'}`,
+          'error'
+        );
+      });
     }
 
     persistState((s) => {

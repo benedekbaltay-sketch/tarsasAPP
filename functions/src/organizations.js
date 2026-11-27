@@ -26,12 +26,139 @@ function normalizeEmail(email) {
 }
 
 function normalizeStaffPermissions(raw = {}) {
+  const canManageTeam = Boolean(raw?.canManageTeam);
   return {
     canCreateBuildings: Boolean(raw?.canCreateBuildings),
-    canManageTeam: Boolean(raw?.canManageTeam),
+    canManageTeam,
+    teamManageScope: canManageTeam ? (raw?.teamManageScope === 'assigned' ? 'assigned' : 'all') : 'assigned',
     canEditBankAccounts: Boolean(raw?.canEditBankAccounts),
     canDeleteBuildings: false, // Strictly Owner-only invariant
   };
+}
+
+function stripUndefinedDeep(value) {
+  if (value === undefined) return null;
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map((item) => stripUndefinedDeep(item));
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (v !== undefined) out[k] = stripUndefinedDeep(v);
+  }
+  return out;
+}
+
+async function resolveUidByEmail(email) {
+  const clean = normalizeEmail(email);
+  if (!clean) return null;
+  try {
+    const userRec = await getAuth().getUserByEmail(clean);
+    return userRec?.uid || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Synchronizes a staff member's building-level RBAC documents (`buildings/{bId}/members/{uid}`
+ * and `users/{uid}.memberships[bId]`) across all buildings owned by `orgId`.
+ * Preserves existing unitIds (if the staff member also owns a flat) and never locks them
+ * out of their personal apartment when suspended/removed from staff!
+ */
+async function syncStaffBuildingMemberships(db, { orgId, targetUid, targetEmail, memberObj, isRemoved = false }) {
+  if (!targetUid) return;
+  const bSnap = await db.collection('buildings').where('organizationId', '==', orgId).get();
+  if (bSnap.empty) return;
+
+  const isActiveStaff = !isRemoved && memberObj && memberObj.active !== false && memberObj.status !== 'suspended';
+  const scope = memberObj?.buildingScope === 'all' ? 'all' : 'selected';
+  const assignedIds = new Set(Array.isArray(memberObj?.buildingIds) ? memberObj.buildingIds : []);
+  const assignments = memberObj?.buildingAssignments || {};
+  const perms = normalizeStaffPermissions(memberObj?.permissions || memberObj);
+
+  const batch = db.batch();
+  const userMembershipsPatch = {};
+
+  for (const bDoc of bSnap.docs) {
+    const bId = bDoc.id;
+    const bData = bDoc.data() || {};
+    const mRef = db.doc(`buildings/${bId}/members/${targetUid}`);
+    const mSnap = await mRef.get();
+    const existing = mSnap.exists ? mSnap.data() : null;
+    const existingUnitIds = Array.isArray(existing?.unitIds) ? existing.unitIds : [];
+
+    const hasStaffAccess = isActiveStaff && (scope === 'all' || assignedIds.has(bId));
+    const bAssign = assignments[bId] || {};
+    const isViewerOnly = bAssign.role === 'viewer';
+    const canEditBank = !isViewerOnly && Boolean(bAssign.canEditBankAccounts ?? perms.canEditBankAccounts);
+
+    if (hasStaffAccess) {
+      // Check if SZVB / Owner unitIds exist; staff access grants building admin (or viewer metadata)
+      batch.set(
+        mRef,
+        {
+          uid: targetUid,
+          email: normalizeEmail(targetEmail || memberObj?.email || existing?.email),
+          name: String(memberObj?.name || existing?.name || targetEmail || ''),
+          role: 'admin',
+          orgRole: 'staff',
+          staffBuildingRole: isViewerOnly ? 'viewer' : 'manager',
+          canEditBankAccounts: canEditBank,
+          unitIds: existingUnitIds,
+          active: true,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      userMembershipsPatch[bId] = {
+        buildingName: bData.name || bId,
+        role: 'admin',
+        orgRole: 'staff',
+        staffBuildingRole: isViewerOnly ? 'viewer' : 'manager',
+        unitIds: existingUnitIds,
+        active: true,
+      };
+    } else if (existing && existing.orgRole === 'staff') {
+      // Revoke staff access on this building; fall back to personal Owner/SZVB role if they own a unit
+      const hasPersonalUnits = existingUnitIds.length > 0;
+      const fallbackRole = hasPersonalUnits ? 'owner' : 'admin';
+      const fallbackActive = hasPersonalUnits;
+      batch.set(
+        mRef,
+        {
+          ...existing,
+          role: fallbackRole,
+          orgRole: null,
+          staffBuildingRole: null,
+          canEditBankAccounts: false,
+          active: fallbackActive,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      userMembershipsPatch[bId] = {
+        buildingName: bData.name || bId,
+        role: fallbackRole,
+        unitIds: existingUnitIds,
+        active: fallbackActive,
+      };
+    }
+  }
+
+  if (Object.keys(userMembershipsPatch).length > 0) {
+    batch.set(
+      db.doc(`users/${targetUid}`),
+      {
+        uid: targetUid,
+        email: normalizeEmail(targetEmail || memberObj?.email),
+        orgIds: isRemoved ? FieldValue.arrayRemove(orgId) : FieldValue.arrayUnion(orgId),
+        memberships: userMembershipsPatch,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+
+  await batch.commit();
 }
 
 async function assertOrgTeamManager(db, auth, orgId) {
@@ -67,16 +194,21 @@ async function assertOrgTeamManager(db, auth, orgId) {
     };
   }
 
+  const callerEmail = normalizeEmail(auth.token?.email);
   const memberSnap = await db.doc(`organizations/${orgId}/members/${auth.uid}`).get();
-  if (!memberSnap.exists) {
+  const isDocOwner =
+    orgData.ownerUid === auth.uid ||
+    (callerEmail && normalizeEmail(orgData.ownerEmail) === callerEmail);
+
+  if (!memberSnap.exists && !isDocOwner) {
     throw new HttpsError('permission-denied', 'You are not a member of this organization.');
   }
-  const member = memberSnap.data();
-  if (member?.active !== true) {
+  const member = memberSnap.exists ? memberSnap.data() : { orgRole: 'owner', active: true, email: callerEmail };
+  if (member?.active !== true && !isDocOwner) {
     throw new HttpsError('permission-denied', 'Your organization membership is inactive.');
   }
 
-  const isOwner = member.orgRole === 'owner';
+  const isOwner = isDocOwner || member.orgRole === 'owner';
   const perms = isOwner
     ? {
         canCreateBuildings: true,
@@ -133,15 +265,203 @@ export const manageOrganizationMember = onCall({ region: REGION }, async (reques
     orgId,
     action,
     targetUid = null,
+    memberId = null,
+    targetEmail = '',
     email = '',
     name = '',
+    phone = '',
     buildingScope = 'selected',
     buildingIds = [],
     permissions = {},
+    buildingAssignments = null,
     resetPersonalContacts = false,
+    notification = null,
+    memberRecord = null,
+    inviteRecord = null,
+    inviteId = null,
+    fromMemberId = null,
+    toMemberId = null,
+    fromEmail = '',
+    toEmail = '',
   } = request.data || {};
 
   const actor = await assertOrgTeamManager(db, request.auth, orgId);
+  const orgMembersList = Array.isArray(actor.orgData?.members) ? [...actor.orgData.members] : [];
+  const orgInvitesList = Array.isArray(actor.orgData?.invites) ? [...actor.orgData.invites] : [];
+
+  const writeNotifToUid = async (uid, rawNotif) => {
+    if (!uid || !rawNotif || typeof rawNotif !== 'object') return;
+    const notifId = String(rawNotif.id || `notif-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
+    const cleanNotif = stripUndefinedDeep({
+      ...rawNotif,
+      id: notifId,
+      read: false,
+      archived: false,
+      deleted: false,
+      dismissed: false,
+    });
+    await db.doc(`users/${uid}/notifications/${notifId}`).set({
+      ...cleanNotif,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  };
+
+  if (action === 'attach') {
+    const cleanEmail = normalizeEmail(email || targetEmail || memberRecord?.email);
+    if (!EMAIL_RE.test(cleanEmail)) {
+      throw new HttpsError('invalid-argument', 'A valid email address is required.');
+    }
+    const safePerms = normalizeStaffPermissions(permissions || memberRecord?.permissions);
+    assertNoEscalation(actor, { email: cleanEmail, orgRole: 'staff' }, safePerms);
+
+    let authUid = await resolveUidByEmail(cleanEmail);
+    if (!authUid) {
+      try {
+        const created = await getAuth().createUser({
+          email: cleanEmail,
+          displayName: String(name || memberRecord?.name || cleanEmail.split('@')[0]).trim(),
+          emailVerified: false,
+        });
+        authUid = created?.uid || null;
+      } catch {
+        authUid = null;
+      }
+    }
+
+    const cleanScope = buildingScope === 'all' ? 'all' : 'selected';
+    const cleanBuildingIds = cleanScope === 'all'
+      ? []
+      : Array.from(new Set((Array.isArray(buildingIds) ? buildingIds : []).map(String).filter(Boolean)));
+    const nowIso = new Date().toISOString();
+    const cleanMember = stripUndefinedDeep({
+      ...(memberRecord || {}),
+      id: memberRecord?.id || `member-${Date.now()}`,
+      uid: authUid || memberRecord?.uid || null,
+      email: cleanEmail,
+      name: String(name || memberRecord?.name || cleanEmail.split('@')[0]).trim(),
+      phone: String(phone || memberRecord?.phone || '').trim(),
+      orgRole: 'staff',
+      active: true,
+      status: 'active',
+      buildingScope: cleanScope,
+      buildingIds: cleanBuildingIds,
+      buildingAssignments: buildingAssignments || memberRecord?.buildingAssignments || {},
+      permissions: safePerms,
+      updatedAt: nowIso,
+    });
+
+    const existingIdx = orgMembersList.findIndex((m) => m && normalizeEmail(m.email) === cleanEmail);
+    const nextMembers = existingIdx >= 0
+      ? orgMembersList.map((m, i) => (i === existingIdx ? { ...m, ...cleanMember } : m))
+      : [...orgMembersList, cleanMember];
+    const nextInvites = inviteRecord
+      ? [stripUndefinedDeep(inviteRecord), ...orgInvitesList.filter((i) => i && normalizeEmail(i.email) !== cleanEmail)]
+      : orgInvitesList;
+
+    await actor.orgRef.update({
+      members: nextMembers,
+      invites: nextInvites,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    if (authUid) {
+      await db.doc(`organizations/${orgId}/members/${authUid}`).set(
+        {
+          uid: authUid,
+          email: cleanEmail,
+          name: cleanMember.name,
+          phone: cleanMember.phone,
+          orgRole: 'staff',
+          active: true,
+          status: 'active',
+          buildingScope: cleanScope,
+          buildingIds: cleanBuildingIds,
+          buildingAssignments: cleanMember.buildingAssignments,
+          permissions: safePerms,
+          canCreateBuildings: safePerms.canCreateBuildings,
+          canManageTeam: safePerms.canManageTeam,
+          canEditBankAccounts: safePerms.canEditBankAccounts,
+          canDeleteBuildings: false,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      await syncStaffBuildingMemberships(db, {
+        orgId,
+        targetUid: authUid,
+        targetEmail: cleanEmail,
+        memberObj: cleanMember,
+      });
+      if (notification) {
+        await writeNotifToUid(authUid, notification);
+      }
+    }
+
+    return { success: true, uid: authUid };
+  }
+
+  if (action === 'revoke_invite') {
+    if (!inviteId) throw new HttpsError('invalid-argument', 'inviteId is required.');
+    const nextInvites = orgInvitesList.filter((i) => i && i.id !== inviteId);
+    await actor.orgRef.update({
+      invites: nextInvites,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    try { await db.doc(`organizations/${orgId}/invites/${inviteId}`).delete(); } catch {}
+    return { success: true };
+  }
+
+  if (action === 'handover') {
+    const fromMem = orgMembersList.find((m) => m && (m.id === fromMemberId || normalizeEmail(m.email) === normalizeEmail(fromEmail)));
+    const toMem = orgMembersList.find((m) => m && (m.id === toMemberId || normalizeEmail(m.email) === normalizeEmail(toEmail)));
+    if (!fromMem || !toMem || fromMem.orgRole === 'owner') {
+      throw new HttpsError('not-found', 'Source or target member not found.');
+    }
+    assertNoEscalation(actor, fromMem, null);
+    if (toMem.orgRole !== 'owner') assertNoEscalation(actor, toMem, null);
+
+    const nowIso = new Date().toISOString();
+    let updatedFrom = fromMem;
+    let updatedTo = toMem;
+    const nextMembers = orgMembersList.map((m) => {
+      if (m.id === toMem.id && m.orgRole !== 'owner') {
+        if (fromMem.buildingScope === 'all' || m.buildingScope === 'all') {
+          updatedTo = { ...m, buildingScope: 'all', buildingIds: [], updatedAt: nowIso };
+        } else {
+          const mergedIds = Array.from(new Set([...(m.buildingIds || []), ...(fromMem.buildingIds || [])]));
+          updatedTo = { ...m, buildingScope: 'selected', buildingIds: mergedIds, updatedAt: nowIso };
+        }
+        return updatedTo;
+      }
+      if (m.id === fromMem.id) {
+        updatedFrom = { ...m, buildingScope: 'selected', buildingIds: [], updatedAt: nowIso };
+        return updatedFrom;
+      }
+      return m;
+    });
+
+    await actor.orgRef.update({
+      members: nextMembers,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const fromUid = await resolveUidByEmail(fromMem.email);
+    const toUid = await resolveUidByEmail(toMem.email);
+    if (fromUid) {
+      await db.doc(`organizations/${orgId}/members/${fromUid}`).set({ buildingScope: 'selected', buildingIds: [], updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await syncStaffBuildingMemberships(db, { orgId, targetUid: fromUid, targetEmail: fromMem.email, memberObj: updatedFrom });
+    }
+    if (toUid) {
+      if (toMem.orgRole !== 'owner') {
+        await db.doc(`organizations/${orgId}/members/${toUid}`).set({ buildingScope: updatedTo.buildingScope, buildingIds: updatedTo.buildingIds, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        await syncStaffBuildingMemberships(db, { orgId, targetUid: toUid, targetEmail: toMem.email, memberObj: updatedTo });
+      }
+      if (notification) {
+        await writeNotifToUid(toUid, notification);
+      }
+    }
+    return { success: true };
+  }
 
   if (action === 'invite') {
     const cleanEmail = normalizeEmail(email);
@@ -255,16 +575,29 @@ export const manageOrganizationMember = onCall({ region: REGION }, async (reques
     };
   }
 
-  if (!targetUid || typeof targetUid !== 'string') {
-    throw new HttpsError('invalid-argument', 'targetUid is required for this action.');
+  // Locate target member cleanly by memberId, email, or Firebase Auth UID
+  const cleanTargetEmail = normalizeEmail(targetEmail || email);
+  const targetInOrgArray = orgMembersList.find(
+    (m) =>
+      m &&
+      ((memberId && m.id === memberId) ||
+        (targetUid && (m.uid === targetUid || m.id === targetUid)) ||
+        (cleanTargetEmail && normalizeEmail(m.email) === cleanTargetEmail))
+  );
+
+  const resolvedEmail = normalizeEmail(cleanTargetEmail || targetInOrgArray?.email);
+  let resolvedUid = (targetUid && !String(targetUid).startsWith('member-')) ? targetUid : (targetInOrgArray?.uid && !String(targetInOrgArray.uid).startsWith('member-') ? targetInOrgArray.uid : null);
+  if (!resolvedUid && resolvedEmail) {
+    resolvedUid = await resolveUidByEmail(resolvedEmail);
   }
 
-  const targetRef = db.doc(`organizations/${orgId}/members/${targetUid}`);
-  const targetSnap = await targetRef.get();
-  if (!targetSnap.exists) {
+  let targetRef = resolvedUid ? db.doc(`organizations/${orgId}/members/${resolvedUid}`) : null;
+  let targetSnap = targetRef ? await targetRef.get() : null;
+  const targetMember = targetSnap?.exists ? targetSnap.data() : targetInOrgArray;
+
+  if (!targetMember) {
     throw new HttpsError('not-found', 'Target organization member not found.');
   }
-  const targetMember = targetSnap.data();
 
   if (action === 'update') {
     const safePerms = normalizeStaffPermissions(permissions);
@@ -274,44 +607,205 @@ export const manageOrganizationMember = onCall({ region: REGION }, async (reques
     const cleanBuildingIds = cleanScope === 'all'
       ? []
       : Array.from(new Set((Array.isArray(buildingIds) ? buildingIds : []).map(String).filter(Boolean)));
+    const cleanAssignments = buildingAssignments && typeof buildingAssignments === 'object'
+      ? stripUndefinedDeep(buildingAssignments)
+      : (targetInOrgArray?.buildingAssignments || targetMember.buildingAssignments || {});
+    const cleanName = name ? String(name).trim() : (targetInOrgArray?.name || targetMember.name || resolvedEmail);
+    const cleanPhone = phone !== undefined ? String(phone).trim() : (targetInOrgArray?.phone || targetMember.phone || '');
+    const nowIso = new Date().toISOString();
 
-    await targetRef.update({
-      name: name ? String(name).trim() : targetMember.name,
-      buildingScope: cleanScope,
-      buildingIds: cleanBuildingIds,
-      permissions: safePerms,
-      canCreateBuildings: safePerms.canCreateBuildings,
-      canManageTeam: safePerms.canManageTeam,
-      canEditBankAccounts: safePerms.canEditBankAccounts,
+    const claimedContactBuildingIds = new Set(
+      Object.entries(cleanAssignments || {})
+        .filter(([bId, a]) => a && a.showManagerContact && (cleanScope === 'all' || cleanBuildingIds.includes(bId)))
+        .map(([bId]) => bId)
+    );
+
+    let updatedMemberObj = null;
+    const nextMembers = orgMembersList.map((m) => {
+      if (
+        m &&
+        ((memberId && m.id === memberId) ||
+          (resolvedEmail && normalizeEmail(m.email) === resolvedEmail) ||
+          (resolvedUid && m.uid === resolvedUid))
+      ) {
+        updatedMemberObj = {
+          ...m,
+          uid: resolvedUid || m.uid || null,
+          name: cleanName,
+          phone: cleanPhone,
+          buildingScope: cleanScope,
+          buildingIds: cleanBuildingIds,
+          permissions: safePerms,
+          buildingAssignments: cleanAssignments,
+          updatedAt: nowIso,
+        };
+        return updatedMemberObj;
+      }
+      if (claimedContactBuildingIds.size > 0 && m && m.buildingAssignments) {
+        let changedOther = false;
+        const nextOther = { ...m.buildingAssignments };
+        claimedContactBuildingIds.forEach((bId) => {
+          if (nextOther[bId]?.showManagerContact) {
+            nextOther[bId] = { ...nextOther[bId], showManagerContact: false };
+            changedOther = true;
+          }
+        });
+        if (changedOther) return { ...m, buildingAssignments: nextOther };
+      }
+      return m;
+    });
+
+    await actor.orgRef.update({
+      members: nextMembers,
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    return { success: true };
+    if (targetRef && resolvedUid) {
+      await targetRef.set(
+        {
+          uid: resolvedUid,
+          email: resolvedEmail || normalizeEmail(targetMember.email),
+          name: cleanName,
+          phone: cleanPhone,
+          orgRole: targetMember.orgRole || 'staff',
+          active: targetMember.active !== false,
+          status: targetMember.status || 'active',
+          buildingScope: cleanScope,
+          buildingIds: cleanBuildingIds,
+          buildingAssignments: cleanAssignments,
+          permissions: safePerms,
+          canCreateBuildings: safePerms.canCreateBuildings,
+          canManageTeam: safePerms.canManageTeam,
+          canEditBankAccounts: safePerms.canEditBankAccounts,
+          canDeleteBuildings: false,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      await syncStaffBuildingMemberships(db, {
+        orgId,
+        targetUid: resolvedUid,
+        targetEmail: resolvedEmail,
+        memberObj: updatedMemberObj || {
+          ...targetMember,
+          name: cleanName,
+          buildingScope: cleanScope,
+          buildingIds: cleanBuildingIds,
+          buildingAssignments: cleanAssignments,
+          permissions: safePerms,
+        },
+      });
+    }
+
+    // Sync resident contact mode on affected org buildings
+    const bSnap = await db.collection('buildings').where('organizationId', '==', orgId).get();
+    const contactBatch = db.batch();
+    let hasContactWrites = false;
+    bSnap.forEach((bDoc) => {
+      const b = bDoc.data() || {};
+      const isAssigned = cleanScope === 'all' || cleanBuildingIds.includes(bDoc.id);
+      const bAssign = cleanAssignments[bDoc.id];
+      const patch = {};
+      if (isAssigned && bAssign) {
+        if (bAssign.showManagerContact) {
+          patch.contactDisplayMode = 'manager';
+          patch.managerContact = {
+            name: cleanName,
+            email: resolvedEmail,
+            phone: cleanPhone || b.managerContact?.phone || '',
+            officeHours: b.managerContact?.officeHours || '',
+            titleHu: 'Felelős házkezelő',
+            titleEn: 'Responsible Property Manager',
+          };
+        } else if (
+          b.contactDisplayMode === 'manager' &&
+          normalizeEmail(b.managerContact?.email) === resolvedEmail
+        ) {
+          patch.contactDisplayMode = 'company';
+        }
+        if (bAssign.showCentralContact !== undefined) {
+          patch.showCentralContactToResidents = Boolean(bAssign.showCentralContact);
+        }
+      } else if (
+        b.contactDisplayMode === 'manager' &&
+        normalizeEmail(b.managerContact?.email) === resolvedEmail
+      ) {
+        patch.contactDisplayMode = 'company';
+      }
+      if (Object.keys(patch).length > 0) {
+        contactBatch.update(bDoc.ref, { ...patch, updatedAt: FieldValue.serverTimestamp() });
+        hasContactWrites = true;
+      }
+    });
+    if (hasContactWrites) await contactBatch.commit();
+
+    // Deliver bilingual team permission change notification to the colleague's Firestore inbox
+    if (notification && resolvedUid) {
+      await writeNotifToUid(resolvedUid, notification);
+    }
+
+    return { success: true, notified: Boolean(notification && resolvedUid) };
   }
 
   if (action === 'suspend' || action === 'reactivate') {
     assertNoEscalation(actor, targetMember, null);
     const nextActive = action === 'reactivate';
-    await targetRef.update({
-      active: nextActive,
-      status: nextActive ? 'active' : 'suspended',
-      updatedAt: FieldValue.serverTimestamp(),
+    const nowIso = new Date().toISOString();
+    let updatedMemberObj = null;
+    const nextMembers = orgMembersList.map((m) => {
+      if (
+        m &&
+        ((memberId && m.id === memberId) ||
+          (resolvedEmail && normalizeEmail(m.email) === resolvedEmail) ||
+          (resolvedUid && m.uid === resolvedUid))
+      ) {
+        updatedMemberObj = { ...m, active: nextActive, status: nextActive ? 'active' : 'suspended', updatedAt: nowIso };
+        return updatedMemberObj;
+      }
+      return m;
     });
+    await actor.orgRef.update({ members: nextMembers, updatedAt: FieldValue.serverTimestamp() });
+    if (targetRef && resolvedUid) {
+      await targetRef.set(
+        { active: nextActive, status: nextActive ? 'active' : 'suspended', updatedAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+      await syncStaffBuildingMemberships(db, {
+        orgId,
+        targetUid: resolvedUid,
+        targetEmail: resolvedEmail,
+        memberObj: updatedMemberObj || { ...targetMember, active: nextActive, status: nextActive ? 'active' : 'suspended' },
+      });
+    }
     return { success: true, active: nextActive };
   }
 
   if (action === 'remove') {
     assertNoEscalation(actor, targetMember, null);
-    const batch = db.batch();
-    batch.delete(targetRef);
+    const nextMembers = orgMembersList.filter(
+      (m) =>
+        !(m &&
+          ((memberId && m.id === memberId) ||
+            (resolvedEmail && normalizeEmail(m.email) === resolvedEmail) ||
+            (resolvedUid && m.uid === resolvedUid)))
+    );
+    const nextInvites = orgInvitesList.filter((inv) => !(inv && resolvedEmail && normalizeEmail(inv.email) === resolvedEmail));
+    await actor.orgRef.update({
+      members: nextMembers,
+      invites: nextInvites,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
-    if (resetPersonalContacts && targetMember.email) {
+    const batch = db.batch();
+    if (targetRef) batch.delete(targetRef);
+
+    if (resetPersonalContacts && resolvedEmail) {
       const bSnap = await db.collection('buildings').where('organizationId', '==', orgId).get();
       bSnap.forEach((docSnap) => {
         const b = docSnap.data();
         if (
           b?.contactDisplayMode === 'manager' &&
-          normalizeEmail(b?.managerContact?.email) === normalizeEmail(targetMember.email)
+          normalizeEmail(b?.managerContact?.email) === resolvedEmail
         ) {
           batch.update(docSnap.ref, {
             contactDisplayMode: 'company',
@@ -322,6 +816,15 @@ export const manageOrganizationMember = onCall({ region: REGION }, async (reques
     }
 
     await batch.commit();
+    if (resolvedUid) {
+      await syncStaffBuildingMemberships(db, {
+        orgId,
+        targetUid: resolvedUid,
+        targetEmail: resolvedEmail,
+        memberObj: targetMember,
+        isRemoved: true,
+      });
+    }
     return { success: true };
   }
 

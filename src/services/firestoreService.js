@@ -13,6 +13,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  onSnapshot,
   collection,
   query,
   where,
@@ -445,6 +446,68 @@ export async function fetchOrganization(orgId) {
   const db = requireFirestore();
   const snap = await getDoc(doc(db, 'organizations', orgId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function updateOrganizationMetadata(orgId, updates = {}) {
+  if (!orgId) return;
+  const db = requireFirestore();
+  const allowed = {};
+  if (updates.name !== undefined) allowed.name = String(updates.name || '').trim();
+  if (updates.taxNumber !== undefined) allowed.taxNumber = String(updates.taxNumber || '').trim();
+  if (updates.centralContact !== undefined) allowed.centralContact = stripUndefinedDeep(updates.centralContact);
+  if (updates.showCentralContactToResidents !== undefined) {
+    allowed.showCentralContactToResidents = Boolean(updates.showCentralContactToResidents);
+  }
+  if (Object.keys(allowed).length === 0) return;
+  await updateDoc(doc(db, 'organizations', orgId), {
+    ...allowed,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export function subscribeUserNotifications(uid, onUpdate) {
+  if (!uid || typeof onUpdate !== 'function') return () => {};
+  const db = requireFirestore();
+  const q = query(
+    collection(db, 'users', uid, 'notifications'),
+    orderBy('createdAt', 'desc'),
+    limit(200)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items = snap.docs.map((d) => {
+        const data = d.data() || {};
+        const createdIso =
+          typeof data.createdAt?.toDate === 'function'
+            ? data.createdAt.toDate().toISOString()
+            : (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString());
+        return { id: d.id, ...data, createdAt: createdIso };
+      });
+      onUpdate(items);
+    },
+    (err) => console.warn('Firestore notifications listener warning:', err?.message)
+  );
+}
+
+export function subscribeOrganization(orgId, onUpdate) {
+  if (!orgId || typeof onUpdate !== 'function') return () => {};
+  const db = requireFirestore();
+  return onSnapshot(
+    doc(db, 'organizations', orgId),
+    (snap) => {
+      if (snap.exists()) {
+        onUpdate({ id: snap.id, ...snap.data() });
+      }
+    },
+    (err) => console.warn('Firestore organization listener warning:', err?.message)
+  );
+}
+
+export async function callManageOrganizationMember(payload) {
+  const fn = httpsCallable(requireFunctions(), 'manageOrganizationMember');
+  const res = await fn(payload);
+  return res.data;
 }
 
 export async function fetchBuildingEmailRules(buildingId) {

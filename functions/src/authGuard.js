@@ -35,8 +35,8 @@ export async function assertBuildingAdmin(db, auth, buildingId) {
   }
 
   const member = memberSnap.data();
-  if (member?.active !== true || member?.role !== 'admin') {
-    throw new HttpsError('permission-denied', 'Building Common Representative (admin) role is required.');
+  if (member?.active !== true || member?.role !== 'admin' || member?.staffBuildingRole === 'viewer') {
+    throw new HttpsError('permission-denied', 'Building Common Representative (admin) write role is required.');
   }
 
   return {

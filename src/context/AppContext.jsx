@@ -33,6 +33,8 @@ import {
 import {
   fetchPaginatedTransactions,
   updateUserPreferences,
+  subscribeUserNotifications,
+  subscribeOrganization,
 } from '../services/firestoreService';
 
 import { createAuthActions } from './authActions';
@@ -1301,6 +1303,49 @@ export function AppProvider({ children }) {
   const calendarActions = createCalendarActions({ state, persistState, showToast, t });
   const teamActions = createTeamActions({ state, persistState, showToast, t });
   const emailActions = createEmailActions({ state, setState, persistState, showToast, t });
+
+  // Real-time Cloud Firestore listeners for user notifications & organization permissions
+  // so permission revocations, grants, and incoming mail reflect IMMEDIATELY across open sessions!
+  const orgIdsKey = (state.organizations || []).map((o) => o?.id).filter(Boolean).sort().join(',');
+  useEffect(() => {
+    if (!IS_FIRESTORE_MODE || !state.currentUser?.uid) return;
+    const uid = state.currentUser.uid;
+    const unsubs = [];
+
+    unsubs.push(
+      subscribeUserNotifications(uid, (liveNotifs) => {
+        setState((prev) => ({
+          ...prev,
+          notifications: liveNotifs,
+        }));
+      })
+    );
+
+    const orgIds = orgIdsKey ? orgIdsKey.split(',').filter(Boolean) : [];
+    for (const orgId of orgIds) {
+      unsubs.push(
+        subscribeOrganization(orgId, (liveOrg) => {
+          setState((prev) => {
+            const existing = prev.organizations || [];
+            const hasOrg = existing.some((o) => o && o.id === liveOrg.id);
+            const nextOrgs = hasOrg
+              ? existing.map((o) => (o && o.id === liveOrg.id ? liveOrg : o))
+              : [...existing, liveOrg];
+            return {
+              ...prev,
+              organizations: nextOrgs,
+            };
+          });
+        })
+      );
+    }
+
+    return () => {
+      unsubs.forEach((fn) => {
+        try { fn(); } catch {}
+      });
+    };
+  }, [state.currentUser?.uid, orgIdsKey]);
 
   // Invisible Server Clock Sync: subscribe to Firebase `.info/serverTimeOffset`
   // so Europe/Budapest scheduling & calendar logic never relies on drifted client clocks.

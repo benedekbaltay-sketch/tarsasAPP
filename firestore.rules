@@ -44,7 +44,15 @@ service cloud.firestore {
 
     function isBuildingAdmin(buildingId) {
       return isSuperAdmin()
-        || (hasActiveMembership(buildingId) && memberRole(buildingId) == 'admin');
+        || (hasActiveMembership(buildingId)
+            && memberRole(buildingId) == 'admin'
+            && (!('staffBuildingRole' in memberData(buildingId)) || memberData(buildingId).staffBuildingRole != 'viewer'));
+    }
+
+    function isBuildingStaffViewer(buildingId) {
+      return hasActiveMembership(buildingId)
+        && memberRole(buildingId) == 'admin'
+        && ('staffBuildingRole' in memberData(buildingId) && memberData(buildingId).staffBuildingRole == 'viewer');
     }
 
     function isBuildingSzvb(buildingId) {
@@ -56,7 +64,7 @@ service cloud.firestore {
     }
 
     function isBuildingAdminOrSzvb(buildingId) {
-      return isBuildingAdmin(buildingId) || isBuildingSzvb(buildingId) || isBuildingAuditor(buildingId);
+      return isBuildingAdmin(buildingId) || isBuildingStaffViewer(buildingId) || isBuildingSzvb(buildingId) || isBuildingAuditor(buildingId);
     }
 
     function isBuildingMember(buildingId) {
@@ -338,14 +346,16 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
-      // AUTOMATED DUNNING RULES & OUTBOX LOGS (Admin ONLY)
+      // AUTOMATED DUNNING RULES & OUTBOX LOGS (Admin R/W, Staff Viewer R/O)
       // -----------------------------------------------------------------------
       match /emailRules/{ruleId} {
-        allow read, write: if isBuildingAdmin(buildingId);
+        allow read: if isBuildingAdmin(buildingId) || isBuildingStaffViewer(buildingId);
+        allow write: if isBuildingAdmin(buildingId);
       }
 
       match /emailOutbox/{outboxId} {
-        allow read, write: if isBuildingAdmin(buildingId);
+        allow read: if isBuildingAdmin(buildingId) || isBuildingStaffViewer(buildingId);
+        allow write: if isBuildingAdmin(buildingId);
       }
     }
 
