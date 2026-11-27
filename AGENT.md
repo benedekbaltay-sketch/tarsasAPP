@@ -905,9 +905,13 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
    - A jóváhagyás után lefut a `deleteBuilding(buildingId)` művelet, amely **soft-delete (archiválás)** módszerrel `archived: true` státuszba helyezi az épületet (`organizationId: null`, eltávolítva a munkatársak listájából), így az minden lakással, könyveléssel és dokumentummal együtt biztonságban megmarad a Rendszergazda archívumában.
    - **Portal renderelés (`createPortal`)**: A törlési megerősítő ablak (valamint a SuperAdmin modális ablakai) közvetlenül a `document.body`-ba renderelődnek `z-[9999]` rétegen, elkerülve a `space-y-*` margókból adódó fehér sávokat és a ragadós fejléc általi kitakarást.
 
-### 34.4. Rendszergazda (SuperAdmin) Archívum, Ház-átadás és Tulajdonos (Owner) Kezelés (`SuperAdminView.jsx`, `buildingActions.js`, `teamActions.js`)
-1. **Archivált Társasházak és Visszaállítás / Átadás (`restoreArchivedBuilding`):**
-   - A `SuperAdminView` új **„Archívum”** fülén látható az összes tulajdonos által törölt (`archived: true`) társasház a törlés időpontjával, a korábbi tulajdonossal és a megőrzött lakás/tétel statisztikával.
+### 34.4. Rendszergazda (SuperAdmin) Kompakt 3 Szintű Hierarchia, Archívum és Tulajdonos (Owner) Kezelés (`SuperAdminView.jsx`, `buildingActions.js`, `teamActions.js`)
+1. **Kompakt fejléc, valós aktív statisztikák és külön „Archív házak” mutató (`SuperAdminView.jsx`):**
+   - A felső Rendszergazda fejléc kártya és címsor kompaktabb, sűrűbb kivitelű; eltávolításra kerültek a felesleges „Összes kibontása / Összes becsukása” gombok.
+   - A **Kezelt házak** és **Lakások** számláló szigorúan kizárólag az aktív, KK-hoz tartozó társasházakat és azok lakásait összegzi — az archivált (és KK nélküli) házakat és lakásaikat soha nem számolja bele. Ezek külön **„Archív házak”** kattintható buborékban jelennek meg, amely közvetlenül az **Archívum** fülre ugrik.
+   - A **Hierarchia** nézet valódi 3 szintű, tömör felépítésű: **Közös Képviselő (KK) → Társasházak → Lakások**. A képviselők alatt kompakt egysoros kártyákon sorakoznak a házaik (alapból becsukott lakáslistával, így egyszerre sok KK és társasház elfér a képernyőn; egy kattintással nyithatók a ház lakásai, kereséskor automatikusan kinyílnak a találatok).
+2. **Archivált és KK nélküli Társasházak, Visszaállítás / Átadás (`restoreArchivedBuilding`):**
+   - A `SuperAdminView` **„Archívum”** fülén látható az összes tulajdonos által törölt (`archived: true`) vagy KK nélküli társasház a törlés időpontjával, a korábbi tulajdonossal és a megőrzött lakás/tétel statisztikával.
    - A **„Visszaállítás / Átadás tulajdonosnak”** gombbal a SuperAdmin bármelyik rendszerbeli Tulajdonosnak (akár az eredetinek, akár egy másiknak) átadhatja a házat, amely azonnal aktívként (`archived: false`) megjelenik az új tulajdonos portfóliójában.
    - A `getAccessibleBuildings` és `isBuildingInOrganization` (`teamPermissions.js`) minden archivált házat kizár a normál nézetekből.
 2. **Új Tulajdonosok (Ownerek) Létrehozása (`createOrganizationOwner`):**

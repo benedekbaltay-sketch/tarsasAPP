@@ -51,7 +51,8 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('diagram'); // 'diagram' | 'table' | 'owners' | 'archive'
-  const [collapsedBranches, setCollapsedBranches] = useState({}); // { [buildingId]: boolean }
+  const [collapsedReps, setCollapsedReps] = useState({}); // { [repKey]: boolean } (default expanded)
+  const [expandedBuildings, setExpandedBuildings] = useState({}); // { [buildingId]: boolean } (default collapsed for compact view)
   const [copiedId, setCopiedId] = useState(null);
 
   // Modal states (all rendered via createPortal to document.body)
@@ -188,296 +189,404 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
     });
   };
 
-  const toggleBranch = (buildingId) => {
-    setCollapsedBranches(prev => ({
+  const toggleRep = (repKey) => {
+    setCollapsedReps((prev) => ({
       ...prev,
-      [buildingId]: !prev[buildingId]
+      [repKey]: !prev[repKey],
     }));
   };
 
-  const expandAll = () => setCollapsedBranches({});
-  const collapseAll = () => {
-    const all = {};
-    activeBuildings.forEach(b => { all[b.id] = true; });
-    setCollapsedBranches(all);
+  const toggleBuilding = (buildingId) => {
+    setExpandedBuildings((prev) => ({
+      ...prev,
+      [buildingId]: !prev[buildingId],
+    }));
   };
 
-  // Build the hierarchical data tree (active non-archived buildings only)
-  const treeData = useMemo(() => {
-    return activeBuildings.map(b => {
-      // Find the representative (Owner / KK) from organization first, then fallback to users
-      const matchedOrg = (organizations || []).find(o => o && (
-        (b.organizationId && o.id === b.organizationId) ||
-        (!b.organizationId && o.includeLegacyBuildings !== false)
-      ));
-      const repUser = matchedOrg
-        ? {
-            id: `org-rep-${matchedOrg.id}`,
-            name: matchedOrg.ownerName || matchedOrg.name || b.repName || 'Közös Képviselő',
-            email: matchedOrg.ownerEmail || b.email || '',
-            phone: matchedOrg.centralContact?.phone || b.phone || '',
-            role: 'admin',
-            flatNum: '0',
-            orgId: matchedOrg.id,
-            orgRole: 'owner',
-            buildingId: b.id,
+  // Helper to format a building's flats consistently
+  const formatBuildingNode = (b, repUser) => {
+    const flats = (b.flats || []).map((f) => {
+      const emailSet = new Set();
+      if (f.email && f.email.trim()) emailSet.add(f.email.trim());
+      if (Array.isArray(f.owners)) {
+        f.owners.forEach((o) => {
+          if (o.email && o.email.trim()) emailSet.add(o.email.trim());
+          if (Array.isArray(o.emails)) {
+            o.emails.forEach((em) => {
+              if (em && em.trim()) emailSet.add(em.trim());
+            });
           }
-        : ((users || []).find(u =>
-            u.role === 'admin' && (u.buildingId === b.id || (!u.buildingId && b.id === (activeBuildings?.[0]?.id)))
-          ) || {
-            id: `rep-${b.id}`,
-            name: b.repName || 'Közös Képviselő',
-            email: b.email || 'kk@tarsashaz.hu',
-            phone: b.phone || '',
-            role: 'admin',
-            buildingId: b.id
-          });
+        });
+      }
+      const allEmails = Array.from(emailSet);
 
-      // Format flat nodes with ALL associated emails
-      const flats = (b.flats || []).map(f => {
-        // Collect all distinct emails for this flat
-        const emailSet = new Set();
-        if (f.email && f.email.trim()) emailSet.add(f.email.trim());
-        if (Array.isArray(f.owners)) {
-          f.owners.forEach(o => {
-            if (o.email && o.email.trim()) emailSet.add(o.email.trim());
-            if (Array.isArray(o.emails)) {
-              o.emails.forEach(em => {
-                if (em && em.trim()) emailSet.add(em.trim());
-              });
-            }
-          });
-        }
-        const allEmails = Array.from(emailSet);
+      const phoneSet = new Set();
+      if (f.phone && f.phone.trim()) phoneSet.add(f.phone.trim());
+      if (Array.isArray(f.owners)) {
+        f.owners.forEach((o) => {
+          if (o.phone && o.phone.trim()) phoneSet.add(o.phone.trim());
+          if (Array.isArray(o.phones)) {
+            o.phones.forEach((ph) => {
+              if (ph && ph.trim()) phoneSet.add(ph.trim());
+            });
+          }
+        });
+      }
+      const allPhones = Array.from(phoneSet);
 
-        // Collect all phones
-        const phoneSet = new Set();
-        if (f.phone && f.phone.trim()) phoneSet.add(f.phone.trim());
-        if (Array.isArray(f.owners)) {
-          f.owners.forEach(o => {
-            if (o.phone && o.phone.trim()) phoneSet.add(o.phone.trim());
-            if (Array.isArray(o.phones)) {
-              o.phones.forEach(ph => {
-                if (ph && ph.trim()) phoneSet.add(ph.trim());
-              });
-            }
-          });
-        }
-        const allPhones = Array.from(phoneSet);
+      let ownerNames = f.ownerName || '-';
+      if (Array.isArray(f.owners) && f.owners.length > 0) {
+        ownerNames = f.owners.map((o) => (o.share ? `${o.name} (${o.share})` : o.name)).join(', ');
+      }
 
-        // Owner names string
-        let ownerNames = f.ownerName || '-';
-        if (Array.isArray(f.owners) && f.owners.length > 0) {
-          ownerNames = f.owners.map(o => o.share ? `${o.name} (${o.share})` : o.name).join(', ');
-        }
-
-        // Resident user object for impersonation (preserving UID so live resident notifications load cleanly)
-        const primaryEmailLower = (allEmails[0] || f.email || '').toLowerCase().trim();
-        const matchedUserRecord = primaryEmailLower
-          ? (users || []).find((u) => u && (u.email || '').toLowerCase().trim() === primaryEmailLower && u.uid)
-          : null;
-        const resolvedUid = matchedUserRecord?.uid || (Array.isArray(f.ownerUids) && f.ownerUids[0]) || null;
-        const residentUser = {
-          id: f.flatNum,
-          ...(resolvedUid ? { uid: resolvedUid } : {}),
-          name: f.owners?.[0]?.name || f.ownerName || `${f.flatNum}. lakó`,
-          email: allEmails[0] || f.email || '',
-          role: 'Owner',
-          flatNum: f.flatNum,
-          unitId: f.unitId || f.id || null,
-          buildingId: b.id
-        };
-
-        return {
-          flatNum: f.flatNum,
-          rawFlat: f,
-          ownerNames,
-          allEmails,
-          allPhones,
-          balance: f.balance || 0,
-          renovationBalance: f.renovationBalance || 0,
-          monthlyFee: f.monthlyFee || 0,
-          renovationFee: f.renovationFee || 0,
-          tenantCount: f.tenantCount || 1,
-          residentUser
-        };
-      });
+      const primaryEmailLower = (allEmails[0] || f.email || '').toLowerCase().trim();
+      const matchedUserRecord = primaryEmailLower
+        ? (users || []).find((u) => u && (u.email || '').toLowerCase().trim() === primaryEmailLower && u.uid)
+        : null;
+      const resolvedUid = matchedUserRecord?.uid || (Array.isArray(f.ownerUids) && f.ownerUids[0]) || null;
+      const residentUser = {
+        id: f.flatNum,
+        ...(resolvedUid ? { uid: resolvedUid } : {}),
+        name: f.owners?.[0]?.name || f.ownerName || `${f.flatNum}. lakó`,
+        email: allEmails[0] || f.email || '',
+        role: 'Owner',
+        flatNum: f.flatNum,
+        unitId: f.unitId || f.id || null,
+        buildingId: b.id,
+      };
 
       return {
-        buildingId: b.id,
-        buildingName: b.name || 'Társasház',
-        buildingAddress: b.address || '',
-        repUser,
-        flats,
-        totalFlats: flats.length,
-        reservesCommon: b.buildingInitialReserveCommon || 0,
-        reservesRenovation: b.buildingInitialReserveRenovation || 0
+        flatNum: f.flatNum,
+        rawFlat: f,
+        ownerNames,
+        allEmails,
+        allPhones,
+        balance: f.balance || 0,
+        renovationBalance: f.renovationBalance || 0,
+        monthlyFee: f.monthlyFee || 0,
+        renovationFee: f.renovationFee || 0,
+        tenantCount: f.tenantCount || 1,
+        residentUser,
       };
     });
-  }, [activeBuildings, users, organizations]);
 
-  // Global Statistics
+    return {
+      buildingId: b.id,
+      buildingName: b.name || 'Társasház',
+      buildingAddress: b.address || '',
+      repUser,
+      flats,
+      totalFlats: flats.length,
+      reservesCommon: b.buildingInitialReserveCommon || 0,
+      reservesRenovation: b.buildingInitialReserveRenovation || 0,
+    };
+  };
+
+  // Build true 3-level hierarchy: Common Representatives (KK) -> Active Buildings -> Flats
+  // Strictly excludes archived buildings (and isolates any KK-less unassigned buildings into the Archive tab).
+  const { repGroups, unassignedActiveBuildings } = useMemo(() => {
+    const groupsByKey = new Map();
+
+    // Seed every known KK/Owner so even a KK with 0 active buildings is cleanly represented
+    ownersList.forEach((owner) => {
+      groupsByKey.set(owner.key, {
+        key: owner.key,
+        orgId: owner.orgId,
+        name: owner.name,
+        companyName: owner.companyName || '',
+        email: owner.email || '',
+        phone: owner.phone || '',
+        staffCount: owner.staffCount || 0,
+        userObj: owner.userObj,
+        buildings: [],
+      });
+    });
+
+    const unassigned = [];
+
+    activeBuildings.forEach((b) => {
+      // 1. Match explicit organization owner
+      const matchedOrg = (organizations || []).find(
+        (o) =>
+          o &&
+          ((b.organizationId && o.id === b.organizationId) ||
+            (!b.organizationId && o.includeLegacyBuildings !== false))
+      );
+
+      if (matchedOrg) {
+        const key = `org:${matchedOrg.id}`;
+        let grp = groupsByKey.get(key);
+        if (!grp) {
+          grp = {
+            key,
+            orgId: matchedOrg.id,
+            name: matchedOrg.ownerName || matchedOrg.name || matchedOrg.ownerEmail || 'Közös Képviselő',
+            companyName: matchedOrg.name || '',
+            email: matchedOrg.ownerEmail || '',
+            phone: matchedOrg.centralContact?.phone || '',
+            staffCount: (matchedOrg.members || []).filter((m) => m && m.orgRole !== 'owner').length,
+            userObj: {
+              id: `owner-${matchedOrg.id}`,
+              name: matchedOrg.ownerName || matchedOrg.name || matchedOrg.ownerEmail || 'Közös Képviselő',
+              email: matchedOrg.ownerEmail || '',
+              phone: matchedOrg.centralContact?.phone || '',
+              role: 'admin',
+              flatNum: '0',
+              orgId: matchedOrg.id,
+              orgRole: 'owner',
+              isAdminUser: true,
+            },
+            buildings: [],
+          };
+          groupsByKey.set(key, grp);
+        }
+        grp.buildings.push(formatBuildingNode(b, { ...grp.userObj, buildingId: b.id }));
+        return;
+      }
+
+      // 2. Fallback: legacy admin user directly bound to this building
+      const legacyAdmin = (users || []).find(
+        (u) =>
+          u &&
+          u.role === 'admin' &&
+          (u.buildingId === b.id || (!b.organizationId && !u.buildingId && b.id === activeBuildings?.[0]?.id))
+      );
+
+      if (legacyAdmin) {
+        const emailNorm = normalizeEmail(legacyAdmin.email);
+        const key = emailNorm ? `implicit:${emailNorm}` : `rep:${b.id}`;
+        let grp = groupsByKey.get(key);
+        if (!grp) {
+          grp = {
+            key,
+            orgId: null,
+            name: legacyAdmin.name || legacyAdmin.email || 'Közös Képviselő',
+            companyName: '',
+            email: legacyAdmin.email || '',
+            phone: legacyAdmin.phone || '',
+            staffCount: 0,
+            userObj: { ...legacyAdmin, role: 'admin', flatNum: '0', isAdminUser: true },
+            buildings: [],
+          };
+          groupsByKey.set(key, grp);
+        }
+        grp.buildings.push(formatBuildingNode(b, { ...grp.userObj, buildingId: b.id }));
+        return;
+      }
+
+      // 3. No KK attached at all -> surface in Archive / Unassigned tab (never inflate active KK stats)
+      unassigned.push(b);
+    });
+
+    const groups = Array.from(groupsByKey.values()).map((grp) => ({
+      ...grp,
+      totalBuildings: grp.buildings.length,
+      totalFlats: grp.buildings.reduce((sum, b) => sum + b.totalFlats, 0),
+    }));
+
+    return { repGroups: groups, unassignedActiveBuildings: unassigned };
+  }, [activeBuildings, ownersList, organizations, users]);
+
+  // Unified Archive tab items: archived buildings + any active building that has no KK assigned
+  const archiveTabBuildings = useMemo(() => {
+    const items = [
+      ...archivedBuildings.map((b) => ({ ...b, _isUnassignedOnly: false })),
+      ...unassignedActiveBuildings.map((b) => ({ ...b, _isUnassignedOnly: true })),
+    ];
+    return items;
+  }, [archivedBuildings, unassignedActiveBuildings]);
+
+  // Global Statistics — strictly active KK-managed buildings & flats ONLY (archived/unassigned excluded!)
   const stats = useMemo(() => {
+    let totalBuildings = 0;
     let totalFlats = 0;
     const emailSet = new Set();
-    const repEmailSet = new Set();
 
-    treeData.forEach(b => {
-      totalFlats += b.totalFlats;
-      if (b.repUser?.email) repEmailSet.add(b.repUser.email.toLowerCase().trim());
-      b.flats.forEach(f => {
-        f.allEmails.forEach(em => emailSet.add(em.toLowerCase().trim()));
+    repGroups.forEach((grp) => {
+      if (grp.email) emailSet.add(grp.email.toLowerCase().trim());
+      grp.buildings.forEach((b) => {
+        totalBuildings += 1;
+        totalFlats += b.totalFlats;
+        b.flats.forEach((f) => {
+          f.allEmails.forEach((em) => emailSet.add(em.toLowerCase().trim()));
+        });
       });
     });
 
     return {
-      totalReps: ownersList.length || treeData.length,
-      totalBuildings: treeData.length,
-      totalArchived: archivedBuildings.length,
+      totalReps: repGroups.length,
+      totalBuildings,
+      totalArchived: archiveTabBuildings.length,
       totalFlats,
-      totalEmails: emailSet.size + repEmailSet.size
+      totalEmails: emailSet.size,
     };
-  }, [treeData, ownersList, archivedBuildings]);
+  }, [repGroups, archiveTabBuildings]);
 
-  // Filtered tree based on search query
-  const filteredTree = useMemo(() => {
-    if (!searchQuery.trim()) return treeData;
+  // Filtered 3-level hierarchy based on live search query
+  const filteredRepGroups = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
+    if (!q) return repGroups;
 
-    return treeData.map(b => {
-      const matchRepName = b.repUser?.name?.toLowerCase().includes(q);
-      const matchRepEmail = b.repUser?.email?.toLowerCase().includes(q);
-      const matchBuildingName = b.buildingName.toLowerCase().includes(q);
-      const matchBuildingAddress = b.buildingAddress.toLowerCase().includes(q);
+    return repGroups
+      .map((grp) => {
+        const matchRep =
+          (grp.name || '').toLowerCase().includes(q) ||
+          (grp.companyName || '').toLowerCase().includes(q) ||
+          (grp.email || '').toLowerCase().includes(q) ||
+          (grp.phone || '').replace(/\s+/g, '').includes(q.replace(/\s+/g, ''));
 
-      const matchingFlats = b.flats.filter(f => {
-        const matchFlatNum = f.flatNum.toLowerCase().includes(q);
-        const matchOwners = f.ownerNames.toLowerCase().includes(q);
-        const matchEmail = f.allEmails.some(em => em.toLowerCase().includes(q));
-        const matchPhone = f.allPhones.some(ph => ph.replace(/\s+/g, '').includes(q.replace(/\s+/g, '')));
-        return matchFlatNum || matchOwners || matchEmail || matchPhone;
-      });
+        const matchedBuildings = grp.buildings
+          .map((b) => {
+            const matchBuilding =
+              (b.buildingName || '').toLowerCase().includes(q) ||
+              (b.buildingAddress || '').toLowerCase().includes(q);
 
-      if (matchRepName || matchRepEmail || matchBuildingName || matchBuildingAddress) {
-        // If the KK or building matches, include all or matching flats
-        return {
-          ...b,
-          flats: matchingFlats.length > 0 ? matchingFlats : b.flats,
-          isExplicitMatch: true
-        };
-      }
+            const matchedFlats = b.flats.filter((f) => {
+              const matchFlatNum = String(f.flatNum || '').toLowerCase().includes(q);
+              const matchOwners = (f.ownerNames || '').toLowerCase().includes(q);
+              const matchEmail = f.allEmails.some((em) => em.toLowerCase().includes(q));
+              const matchPhone = f.allPhones.some((ph) =>
+                ph.replace(/\s+/g, '').includes(q.replace(/\s+/g, ''))
+              );
+              return matchFlatNum || matchOwners || matchEmail || matchPhone;
+            });
 
-      if (matchingFlats.length > 0) {
-        return {
-          ...b,
-          flats: matchingFlats,
-          isExplicitMatch: false
-        };
-      }
+            if (matchBuilding || matchedFlats.length > 0) {
+              return {
+                ...b,
+                flats: matchedFlats.length > 0 ? matchedFlats : b.flats,
+                _forceExpand: matchedFlats.length > 0,
+              };
+            }
+            return null;
+          })
+          .filter(Boolean);
 
-      return null;
-    }).filter(Boolean);
-  }, [treeData, searchQuery]);
+        if (matchRep) {
+          return {
+            ...grp,
+            buildings: matchedBuildings.length > 0 ? matchedBuildings : grp.buildings,
+          };
+        }
+        if (matchedBuildings.length > 0) {
+          return {
+            ...grp,
+            buildings: matchedBuildings,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [repGroups, searchQuery]);
+
+  // Flattened active buildings for Table view
+  const filteredTableBuildings = useMemo(
+    () => filteredRepGroups.flatMap((grp) => grp.buildings),
+    [filteredRepGroups]
+  );
 
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-6 md:px-8 py-6 space-y-6 animate-fadeIn">
+    <div className="max-w-7xl mx-auto px-3 sm:px-5 md:px-6 py-4 space-y-4 animate-fadeIn">
       
-      {/* Top Banner: SuperAdmin Dashboard Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-5 sm:p-7 text-white shadow-xl border border-indigo-800/30 relative overflow-hidden">
-        <div className="absolute right-0 top-0 translate-x-10 -translate-y-10 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1.5 min-w-0">
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-400/30">
-              <GitBranch className="w-3.5 h-3.5" />
-              <span>{isEn ? "SuperAdmin Control Center" : "Rendszergazda Felügyelet"}</span>
-            </div>
-            <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold font-display tracking-tight text-white">
-              {t.superadmin_title || "Rendszergazda Központ"}
+      {/* Compact Top Banner: SuperAdmin Dashboard Header & Active vs. Archive KPIs */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl px-4 py-3 sm:px-5 sm:py-3.5 text-white shadow-md border border-indigo-800/30 relative overflow-hidden">
+        <div className="absolute right-0 top-0 translate-x-10 -translate-y-10 w-44 h-44 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-lg font-extrabold font-display tracking-tight text-white leading-tight flex items-center gap-2">
+              <GitBranch className="w-4 h-4 text-indigo-300 shrink-0" />
+              <span>{t.superadmin_title || (isEn ? "System Administrator Center" : "Rendszergazda Központ")}</span>
             </h2>
-            <p className="text-xs sm:text-sm text-indigo-200/80 max-w-2xl">
-              {t.superadmin_subtitle || "Közös képviselők és leágazó albetétek interaktív hierarchia diagramja, teljes körű profil-átvételi lehetőséggel."}
+            <p className="text-[11px] text-indigo-200/75 truncate max-w-xl mt-0.5">
+              {t.superadmin_subtitle || (isEn
+                ? "Property management hierarchy, representatives, and branching apartments"
+                : "Társasházkezelői hierarchia, képviselők és leágazó lakások diagramja")}
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="bg-white/10 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-white/10 text-center">
-              <span className="block text-[10px] text-indigo-200 uppercase font-bold tracking-wider">{t.total_reps || "Képviselők"}</span>
-              <span className="text-base sm:text-lg font-black text-white">{stats.totalReps}</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 text-center min-w-[66px]">
+              <span className="block text-[9px] text-indigo-200 uppercase font-bold tracking-wider leading-tight">
+                {t.total_reps || (isEn ? "Reps" : "Képviselők")}
+              </span>
+              <span className="text-sm sm:text-base font-black text-white leading-tight">{stats.totalReps}</span>
             </div>
-            <div className="bg-white/10 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-white/10 text-center">
-              <span className="block text-[10px] text-indigo-200 uppercase font-bold tracking-wider">{t.total_buildings || "Házak"}</span>
-              <span className="text-base sm:text-lg font-black text-white">{stats.totalBuildings}</span>
+            <div className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 text-center min-w-[66px]">
+              <span className="block text-[9px] text-indigo-200 uppercase font-bold tracking-wider leading-tight">
+                {t.total_buildings || (isEn ? "Buildings" : "Kezelt házak")}
+              </span>
+              <span className="text-sm sm:text-base font-black text-white leading-tight">{stats.totalBuildings}</span>
             </div>
-            <div className="bg-white/10 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-white/10 text-center">
-              <span className="block text-[10px] text-indigo-200 uppercase font-bold tracking-wider">{t.total_all_flats || "Lakások"}</span>
-              <span className="text-base sm:text-lg font-black text-amber-300">{stats.totalFlats}</span>
+            <div className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 text-center min-w-[66px]">
+              <span className="block text-[9px] text-indigo-200 uppercase font-bold tracking-wider leading-tight">
+                {t.total_all_flats || (isEn ? "Flats" : "Lakások")}
+              </span>
+              <span className="text-sm sm:text-base font-black text-amber-300 leading-tight">{stats.totalFlats}</span>
             </div>
-            <div className="bg-white/10 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-white/10 text-center">
-              <span className="block text-[10px] text-indigo-200 uppercase font-bold tracking-wider">{t.total_registered_emails || "E-mailek"}</span>
-              <span className="text-base sm:text-lg font-black text-emerald-300">{stats.totalEmails}</span>
+            <div className="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 text-center min-w-[66px]">
+              <span className="block text-[9px] text-indigo-200 uppercase font-bold tracking-wider leading-tight">
+                {t.total_registered_emails || (isEn ? "Emails" : "E-mailek")}
+              </span>
+              <span className="text-sm sm:text-base font-black text-emerald-300 leading-tight">{stats.totalEmails}</span>
             </div>
+            <button
+              type="button"
+              onClick={() => setViewMode('archive')}
+              className={`px-2.5 py-1 rounded-xl border text-center min-w-[74px] transition-all cursor-pointer ${
+                viewMode === 'archive'
+                  ? 'bg-rose-500/35 border-rose-300/60 ring-1 ring-rose-300/40'
+                  : 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-400/30'
+              }`}
+              title={isEn ? "View archived / unassigned condominiums" : "Archivált és KK nélküli társasházak megtekintése"}
+            >
+              <span className="block text-[9px] text-rose-200 uppercase font-bold tracking-wider leading-tight">
+                {t.total_archived_buildings || (isEn ? "Archived" : "Archív házak")}
+              </span>
+              <span className="text-sm sm:text-base font-black text-rose-200 leading-tight">{stats.totalArchived}</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Controls Bar: Live Search, View Toggle, Expand/Collapse */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-3 sm:p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+      {/* Controls Bar: Live Search & View Tabs (no expand/collapse all buttons) */}
+      <div className="bg-white rounded-2xl border border-gray-200 px-3 py-2.5 shadow-xs flex flex-wrap items-center justify-between gap-2.5">
         {/* Live Search Input */}
-        <div className="relative flex-1 min-w-[240px] max-w-lg">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t.search_superadmin_placeholder || "Keresés KK név, ház, lakásszám vagy e-mail alapján..."}
-            className="w-full pl-10 pr-4 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-indigo-600 focus:bg-white transition-colors"
+            className="w-full pl-9 pr-7 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-indigo-600 focus:bg-white transition-colors"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-700 cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-700 cursor-pointer"
             >
               ✕
             </button>
           )}
         </div>
 
-        {/* View mode toggle & collapse/expand */}
+        {/* View mode toggle & New Owner CTA */}
         <div className="flex items-center gap-2 flex-wrap">
-          {viewMode === 'diagram' && (
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={expandAll}
-                className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-200 cursor-pointer transition-colors"
-                title={t.expand_all || "Összes kinyitása"}
-              >
-                {t.expand_all || "Kinyitás"}
-              </button>
-              <button
-                onClick={collapseAll}
-                className="px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-200 cursor-pointer transition-colors"
-                title={t.collapse_all || "Összes becsukása"}
-              >
-                {t.collapse_all || "Becsukás"}
-              </button>
-            </div>
-          )}
-
-          <div className="inline-flex flex-wrap rounded-xl bg-gray-100 p-1 border border-gray-200 gap-0.5">
+          <div className="inline-flex flex-wrap rounded-xl bg-gray-100 p-0.5 border border-gray-200 gap-0.5">
             <button
               type="button"
               onClick={() => setViewMode('diagram')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'diagram' ? 'bg-white text-indigo-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               <GitBranch className="w-3.5 h-3.5" />
-              <span>{t.view_diagram || "Diagram"}</span>
+              <span>{t.superadmin_tab_hierarchy || (isEn ? "Hierarchy" : "Hierarchia")}</span>
             </button>
             <button
               type="button"
               onClick={() => setViewMode('table')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'table' ? 'bg-white text-indigo-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -487,7 +596,7 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
             <button
               type="button"
               onClick={() => setViewMode('owners')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'owners' ? 'bg-white text-indigo-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -500,15 +609,15 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
             <button
               type="button"
               onClick={() => setViewMode('archive')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 viewMode === 'archive' ? 'bg-white text-rose-800 shadow-xs' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               <Archive className="w-3.5 h-3.5 text-rose-600" />
               <span>{t.superadmin_tab_archive || (isEn ? "Archive" : "Archívum")}</span>
-              {archivedBuildings.length > 0 && (
+              {archiveTabBuildings.length > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-100 text-rose-700 font-extrabold">
-                  {archivedBuildings.length}
+                  {archiveTabBuildings.length}
                 </span>
               )}
             </button>
@@ -524,7 +633,7 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
               setNewOwnerSendEmail(true);
               setIsCreateOwnerOpen(true);
             }}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
           >
             <UserPlus className="w-3.5 h-3.5" />
             <span>{t.superadmin_create_owner_btn || (isEn ? "+ New Owner" : "+ Új tulajdonos (Owner)")}</span>
@@ -668,23 +777,23 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
           )}
         </div>
       ) : viewMode === 'archive' ? (
-        /* ==================== 4. ARCHIVED CONDOMINIUMS VIEW ==================== */
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        /* ==================== 4. ARCHIVED & UNASSIGNED CONDOMINIUMS VIEW ==================== */
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-base font-bold text-gray-900 font-display flex items-center gap-2">
-                <Archive className="w-5 h-5 text-rose-600" />
+              <h3 className="text-sm font-bold text-gray-900 font-display flex items-center gap-2">
+                <Archive className="w-4 h-4 text-rose-600" />
                 <span>{t.superadmin_archive_title || (isEn ? "Archived (Deleted) Condominiums" : "Archivált (törölt) társasházak")}</span>
               </h3>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-[11px] text-gray-500 mt-0.5">
                 {t.superadmin_archive_subtitle || (isEn
-                  ? "Condominiums deleted by Owners are safely preserved here with all flats, finances, and documents. You can restore and assign them to the original owner or transfer them to another owner."
-                  : "A tulajdonosok által törölt társasházak minden lakással, könyveléssel és dokumentummal együtt biztonságban megmaradnak itt. Visszaadhatod őket az eredeti tulajdonosnak vagy átadhatod egy másiknak.")}
+                  ? "Condominiums deleted by Owners or without a Common Representative are safely preserved here. They are excluded from active counts."
+                  : "A törölt vagy KK nélküli társasházak minden adatukkal biztonságban itt maradnak, és nem számítanak bele az aktív statisztikákba.")}
               </p>
             </div>
           </div>
 
-          {archivedBuildings.filter(b => {
+          {archiveTabBuildings.filter((b) => {
             if (!searchQuery.trim()) return true;
             const q = searchQuery.toLowerCase().trim();
             return (
@@ -693,9 +802,9 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
               (b.archivedFromOwnerEmail || '').toLowerCase().includes(q)
             );
           }).length === 0 ? (
-            <div className="bg-white rounded-3xl border border-gray-200 p-12 text-center shadow-xs">
-              <Archive className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <h4 className="text-base font-bold text-gray-800 mb-1">
+            <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center shadow-xs">
+              <Archive className="w-10 h-10 text-gray-300 mx-auto mb-2.5" />
+              <h4 className="text-sm font-bold text-gray-800 mb-1">
                 {t.superadmin_archive_empty_title || (isEn ? "The archive is currently empty" : "Az archívum jelenleg üres")}
               </h4>
               <p className="text-xs text-gray-500">
@@ -703,9 +812,9 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {archivedBuildings
-                .filter(b => {
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {archiveTabBuildings
+                .filter((b) => {
                   if (!searchQuery.trim()) return true;
                   const q = searchQuery.toLowerCase().trim();
                   return (
@@ -714,70 +823,89 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
                     (b.archivedFromOwnerEmail || '').toLowerCase().includes(q)
                   );
                 })
-                .map(b => {
+                .map((b) => {
                   const archivedDateStr = b.archivedAt ? new Date(b.archivedAt).toLocaleString(isEn ? 'en-US' : 'hu-HU') : '—';
-                  const flatCount = (b.flats || []).length;
+                  const flatCount = (b.flats || []).length || b.aggregates?.unitCount || 0;
                   const txCount = (b.transactions || []).length + (b.expenses || []).length;
 
                   return (
                     <div
                       key={b.id}
-                      className="bg-white rounded-2xl border border-rose-200/80 hover:border-rose-300 p-5 shadow-xs transition-all flex flex-col justify-between gap-4"
+                      className={`bg-white rounded-2xl border p-3.5 shadow-xs transition-all flex flex-col justify-between gap-3 ${
+                        b._isUnassignedOnly
+                          ? 'border-amber-200 hover:border-amber-300'
+                          : 'border-rose-200/80 hover:border-rose-300'
+                      }`}
                     >
-                      <div className="space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0">
-                              <Building2 className="w-5 h-5" />
+                      <div className="space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                                b._isUnassignedOnly
+                                  ? 'bg-amber-50 text-amber-600 border-amber-200'
+                                  : 'bg-rose-50 text-rose-600 border-rose-200'
+                              }`}
+                            >
+                              <Building2 className="w-4 h-4" />
                             </div>
                             <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="text-sm font-bold text-gray-900 truncate">{b.name}</h4>
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
-                                  {isEn ? "Archived" : "Archivált"}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <h4 className="text-xs sm:text-sm font-bold text-gray-900 truncate">{b.name}</h4>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                    b._isUnassignedOnly
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-rose-100 text-rose-800'
+                                  }`}
+                                >
+                                  {b._isUnassignedOnly
+                                    ? (t.superadmin_unassigned_badge || (isEn ? "Unassigned" : "KK nélkül"))
+                                    : (isEn ? "Archived" : "Archivált")}
                                 </span>
                               </div>
-                              {b.address && <p className="text-xs text-gray-500 truncate">{b.address}</p>}
+                              {b.address && <p className="text-[11px] text-gray-500 truncate">{b.address}</p>}
                             </div>
                           </div>
                         </div>
 
-                        <div className="p-3 rounded-xl bg-gray-50 border border-gray-100 space-y-1.5 text-xs">
-                          <div className="flex items-center justify-between text-gray-600">
-                            <span>{isEn ? "Previous owner:" : "Korábbi tulajdonos:"}</span>
-                            <strong className="text-gray-900 font-semibold truncate max-w-[60%]">
+                        <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 space-y-1 text-[11px]">
+                          <div className="flex items-center justify-between gap-2 text-gray-600">
+                            <span className="shrink-0">{isEn ? "Previous owner:" : "Korábbi KK:"}</span>
+                            <strong className="text-gray-900 font-semibold truncate">
                               {b.archivedFromOwnerName || b.archivedFromOwnerEmail || '—'}
-                              {b.archivedFromOwnerEmail && b.archivedFromOwnerName ? ` (${b.archivedFromOwnerEmail})` : ''}
                             </strong>
                           </div>
-                          <div className="flex items-center justify-between text-gray-600">
-                            <span>{isEn ? "Deleted at:" : "Törlés időpontja:"}</span>
-                            <span className="font-medium text-gray-800">{archivedDateStr}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-gray-600">
-                            <span>{isEn ? "Preserved data:" : "Megőrzött adatok:"}</span>
+                          {!b._isUnassignedOnly && (
+                            <div className="flex items-center justify-between gap-2 text-gray-600">
+                              <span className="shrink-0">{isEn ? "Deleted at:" : "Törölve:"}</span>
+                              <span className="font-medium text-gray-800 truncate">{archivedDateStr}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between gap-2 text-gray-600">
+                            <span className="shrink-0">{isEn ? "Preserved:" : "Adatok:"}</span>
                             <span className="font-bold text-indigo-700">
-                              {flatCount} {isEn ? "flats" : "lakás"} • {txCount} {isEn ? "records" : "tétel"}
+                              {flatCount} {isEn ? "flats" : "lakás"}{txCount > 0 ? ` • ${txCount} ${isEn ? "records" : "tétel"}` : ''}
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="pt-3 border-t border-gray-100 flex items-center justify-end">
+                      <div className="pt-2 border-t border-gray-100 flex items-center justify-end">
                         <button
                           type="button"
                           onClick={() => {
                             setRestoreTargetBuilding(b);
-                            // Pre-select original owner if still in ownersList
                             const origMatch = ownersList.find(
-                              o => (b.archivedFromOrgId && o.orgId === b.archivedFromOrgId) ||
-                                   (b.archivedFromOwnerEmail && normalizeEmail(o.email) === normalizeEmail(b.archivedFromOwnerEmail))
+                              (o) =>
+                                (b.archivedFromOrgId && o.orgId === b.archivedFromOrgId) ||
+                                (b.archivedFromOwnerEmail && normalizeEmail(o.email) === normalizeEmail(b.archivedFromOwnerEmail))
                             );
                             setRestoreSelectedOwnerKey(origMatch ? origMatch.key : (ownersList[0]?.key || ''));
                           }}
-                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-[11px] font-bold shadow-xs transition-all cursor-pointer active:scale-95"
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
+                          <RotateCcw className="w-3 h-3" />
                           <span>{t.superadmin_restore_transfer_btn || (isEn ? "Restore / Transfer to Owner" : "Visszaállítás / Átadás tulajdonosnak")}</span>
                         </button>
                       </div>
@@ -787,10 +915,10 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
             </div>
           )}
         </div>
-      ) : filteredTree.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-gray-200 p-12 text-center shadow-xs">
-          <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <h4 className="text-base font-bold text-gray-800 mb-1">
+      ) : filteredRepGroups.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center shadow-xs">
+          <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-2.5" />
+          <h4 className="text-sm font-bold text-gray-800 mb-1">
             {isEn ? "No matching records found" : "Nincs találat a megadott feltételekre"}
           </h4>
           <p className="text-xs text-gray-500">
@@ -798,295 +926,323 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
           </p>
         </div>
       ) : viewMode === 'diagram' ? (
-        /* ==================== 1. DIAGRAM / TREE VIEW ==================== */
-        <div className="space-y-8">
-          {filteredTree.map((cluster) => {
-            const isCollapsed = Boolean(collapsedBranches[cluster.buildingId]);
+        /* ==================== 1. COMPACT 3-LEVEL HIERARCHY (KK -> BUILDINGS -> FLATS) ==================== */
+        <div className="space-y-2.5">
+          {filteredRepGroups.map((rep) => {
+            const isRepCollapsed = Boolean(collapsedReps[rep.key]) && !searchQuery.trim();
 
             return (
-              <div 
-                key={cluster.buildingId}
-                className="bg-white rounded-3xl border border-indigo-100 shadow-sm p-4 sm:p-6 transition-all"
+              <div
+                key={rep.key}
+                className="bg-white rounded-2xl border border-gray-200 hover:border-indigo-200 shadow-2xs overflow-hidden transition-colors"
               >
-                {/* ROOT NODE: Condominium Representative (KK) Header Card */}
-                <div className="bg-gradient-to-r from-indigo-50/80 via-blue-50/50 to-indigo-50/80 rounded-2xl border border-indigo-200/90 p-4 sm:p-5 shadow-xs">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    
-                    {/* Left: KK & Condominium Info */}
-                    <div className="flex items-start gap-3.5 min-w-0">
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black text-base shadow-md flex-shrink-0">
-                        KK
-                      </div>
-                      
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-indigo-600 text-white shadow-2xs">
-                            👑 {isEn ? "Condo Representative" : "Közös Képviselő"}
-                          </span>
-                          <span className="text-xs font-semibold text-indigo-900 bg-indigo-100/70 px-2 py-0.5 rounded-md">
-                            {cluster.totalFlats} {isEn ? "flats" : "albetét"}
-                          </span>
-                        </div>
-
-                        <h3 className="text-lg sm:text-xl font-bold text-gray-900 font-display leading-tight truncate">
-                          {cluster.repUser.name}
-                        </h3>
-
-                        {/* Building details */}
-                        <div className="flex items-center gap-1.5 text-xs text-gray-600 font-medium">
-                          <Building className="w-3.5 h-3.5 text-indigo-700 flex-shrink-0" />
-                          <strong className="text-indigo-950 font-bold">{cluster.buildingName}</strong>
-                          {cluster.buildingAddress && (
-                            <span className="text-gray-500 hidden sm:inline">&bull; {cluster.buildingAddress}</span>
-                          )}
-                        </div>
-
-                        {/* Contact details: Email & Phone */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1.5 text-xs">
-                          {/* KK Email with 1-click copy */}
-                          {cluster.repUser.email ? (
-                            <div className="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-indigo-200/80 shadow-2xs">
-                              <Mail className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                              <a 
-                                href={`mailto:${cluster.repUser.email}`} 
-                                className="font-semibold text-gray-800 hover:text-indigo-600 hover:underline truncate"
-                                title={cluster.repUser.email}
-                              >
-                                {cluster.repUser.email}
-                              </a>
-                              <button
-                                type="button"
-                                onClick={() => handleCopy(cluster.repUser.email, `rep-email-${cluster.buildingId}`)}
-                                className="p-0.5 rounded text-gray-400 hover:text-indigo-700 cursor-pointer ml-1"
-                                title="E-mail cím másolása"
-                              >
-                                {copiedId === `rep-email-${cluster.buildingId}` ? (
-                                  <Check className="w-3 h-3 text-emerald-600" />
-                                ) : (
-                                  <Copy className="w-3 h-3" />
-                                )}
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 italic text-[11px]">{t.no_emails_recorded}</span>
-                          )}
-
-                          {/* KK Phone with dialer link */}
-                          {cluster.repUser.phone && (
-                            <div className="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-indigo-200/80 shadow-2xs">
-                              <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                              <a 
-                                href={`tel:${cluster.repUser.phone.replace(/\s+/g, '')}`} 
-                                className="font-semibold text-gray-800 hover:text-emerald-700"
-                              >
-                                {formatPhoneNumber(cluster.repUser.phone)}
-                              </a>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                {/* LEVEL 1: Compact Common Representative (KK) Header Bar */}
+                <div
+                  onClick={() => toggleRep(rep.key)}
+                  className="px-3 py-2.5 bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 hover:from-indigo-50/60 hover:to-blue-50/40 flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <span className="text-indigo-600 shrink-0">
+                      {isRepCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </span>
+                    <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-[11px] shadow-2xs shrink-0">
+                      KK
                     </div>
 
-                    {/* Right: Act-as Impersonation Button & Branch Toggle */}
-                    <div className="flex items-center gap-2.5 flex-wrap flex-shrink-0">
-                      {/* IMPERSONATION BUTTON */}
-                      <button
-                        type="button"
-                        onClick={() => actAsUser(cluster.repUser, cluster.buildingId)}
-                        className="flex items-center gap-2 px-3.5 sm:px-4 py-2 bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition-all cursor-pointer active:scale-95 group"
-                        title={isEn ? "Open representative interface and edit profile" : "Belépés a képviselő felületére"}
-                      >
-                        <ShieldCheck className="w-4 h-4 text-blue-200 group-hover:scale-110 transition-transform" />
-                        <span>{t.act_as_rep || "Belépés KK-ként (Profil módosítása)"}</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="min-w-0 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                      <h3 className="text-xs sm:text-sm font-bold text-gray-900 font-display truncate">
+                        {rep.name}
+                      </h3>
+                      {rep.companyName && rep.companyName !== rep.name && (
+                        <span className="text-[11px] text-gray-500 truncate hidden sm:inline">
+                          ({rep.companyName})
+                        </span>
+                      )}
 
-                      {/* Collapse / Expand Branch Toggle */}
-                      <button
-                        type="button"
-                        onClick={() => toggleBranch(cluster.buildingId)}
-                        className="p-2 rounded-xl bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 shadow-2xs transition-all cursor-pointer"
-                        title={isCollapsed ? "Lakások lenyitása" : "Lakások becsukása"}
-                      >
-                        <ChevronDown className={`w-4 h-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
-                      </button>
+                      {rep.email && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded-md border border-gray-200/90 text-[11px]"
+                        >
+                          <Mail className="w-3 h-3 text-indigo-500 shrink-0" />
+                          <span className="font-mono text-gray-700 truncate max-w-[180px] sm:max-w-none">{rep.email}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(rep.email, `rep-em-${rep.key}`)}
+                            className="p-0.5 text-gray-400 hover:text-indigo-600 cursor-pointer"
+                            title={isEn ? "Copy email" : "E-mail másolása"}
+                          >
+                            {copiedId === `rep-em-${rep.key}` ? (
+                              <Check className="w-2.5 h-2.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-2.5 h-2.5" />
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                      {rep.phone && (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-gray-600 hidden lg:inline-flex">
+                          <Phone className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span>{formatPhoneNumber(rep.phone)}</span>
+                        </span>
+                      )}
                     </div>
+                  </div>
 
+                  {/* Right side: compact stats + Act as KK button */}
+                  <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100/80 text-indigo-900">
+                      {rep.buildings.length} {isEn ? "condos" : "ház"}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80">
+                      {rep.buildings.reduce((s, b) => s + b.totalFlats, 0)} {isEn ? "flats" : "lakás"}
+                    </span>
+                    {rep.staffCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200/80 hidden sm:inline-flex">
+                        {rep.staffCount} {isEn ? "staff" : "munkatárs"}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => actAsUser(rep.userObj, null)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-[11px] font-bold rounded-lg shadow-2xs transition-all cursor-pointer active:scale-95"
+                      title={isEn ? "Enter as Common Representative" : "Belépés KK-ként (Portfólió)"}
+                    >
+                      <ShieldCheck className="w-3 h-3 text-blue-200" />
+                      <span className="hidden xs:inline">{isEn ? "Enter as KK" : "Belépés KK-ként"}</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
                   </div>
                 </div>
 
-                {/* BRANCHING CONTAINER: Connecting Tree Spine & Flats Grid */}
-                {!isCollapsed && (
-                  <div className="relative pl-4 sm:pl-8 pt-4">
-                    {/* Vertical Tree Spine Line */}
-                    <div className="absolute left-2 sm:left-4 top-0 bottom-6 w-0.5 bg-indigo-200" />
+                {/* LEVEL 2: Compact Buildings List inside this KK */}
+                {!isRepCollapsed && (
+                  <div className="border-t border-gray-100 px-3 py-2 pl-5 sm:pl-7 bg-white">
+                    {rep.buildings.length === 0 ? (
+                      <p className="text-[11px] text-gray-400 italic py-1 pl-2">
+                        {t.superadmin_no_buildings_for_rep || (isEn ? "No active condominiums assigned to this representative." : "Nincs aktív társasház rendelve ehhez a képviselőhöz.")}
+                      </p>
+                    ) : (
+                      <div className="border-l-2 border-indigo-200/80 pl-3 space-y-1.5">
+                        {rep.buildings.map((b) => {
+                          const isBuildingExpanded = Boolean(expandedBuildings[b.buildingId]) || Boolean(b._forceExpand);
 
-                    <div className="space-y-2 mb-3">
-                      <div className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                        <GitBranch className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>{isEn ? "Branching Apartments" : "Leágazó Lakások"} ({cluster.flats.length} {isEn ? "units" : "albetét"})</span>
-                      </div>
-                    </div>
-
-                    {/* Flats Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                      {cluster.flats.map((flat) => {
-                        const isArrears = (flat.balance + flat.renovationBalance) < 0;
-                        const isOverpaid = (flat.balance + flat.renovationBalance) > 0;
-
-                        return (
-                          <div
-                            key={flat.flatNum}
-                            className="bg-white rounded-2xl border border-gray-200 hover:border-indigo-300 p-4 shadow-2xs hover:shadow-sm transition-all space-y-3 relative group"
-                          >
-                            {/* Flat Header: Number & Financial Badge */}
-                            <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs shrink-0">
-                                  <Home className="w-3.5 h-3.5" />
+                          return (
+                            <div key={b.buildingId} className="space-y-1.5">
+                              {/* Slim Condominium Row */}
+                              <div
+                                onClick={() => toggleBuilding(b.buildingId)}
+                                className={`px-2.5 py-1.5 rounded-xl border flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none transition-colors ${
+                                  isBuildingExpanded
+                                    ? 'bg-indigo-50/70 border-indigo-200'
+                                    : 'bg-slate-50/70 hover:bg-indigo-50/40 border-gray-200/80'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span className="text-indigo-500 shrink-0">
+                                    {isBuildingExpanded ? (
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <ChevronRight className="w-3.5 h-3.5" />
+                                    )}
+                                  </span>
+                                  <Building2 className="w-3.5 h-3.5 text-indigo-700 shrink-0" />
+                                  <span className="text-xs sm:text-sm font-bold text-gray-900 truncate">
+                                    {b.buildingName}
+                                  </span>
+                                  {b.buildingAddress && (
+                                    <span className="text-[11px] text-gray-500 truncate hidden md:inline">
+                                      • {b.buildingAddress}
+                                    </span>
+                                  )}
                                 </div>
-                                <h4 className="text-sm font-bold text-gray-900 truncate">
-                                  {flat.flatNum}. {isEn ? "Flat" : "lakás"}
-                                </h4>
+
+                                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleBuilding(b.buildingId)}
+                                    className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white border border-gray-200 text-gray-700 hover:border-indigo-300 hover:text-indigo-700 cursor-pointer transition-colors"
+                                  >
+                                    {b.flats.length} {isEn ? "flats" : "lakás"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => actAsUser(b.repUser, b.buildingId)}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 text-[#1E3A8A] border border-blue-200/80 text-[11px] font-bold transition-colors cursor-pointer"
+                                    title={isEn ? "Open this building as KK" : "Ház megnyitása KK-ként"}
+                                  >
+                                    <span>{isEn ? "Open" : "Megnyitás"}</span>
+                                    <ArrowRight className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
                               </div>
 
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                isArrears ? 'bg-red-50 text-red-700 border-red-200' :
-                                isOverpaid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                'bg-blue-50 text-blue-700 border-blue-200'
-                              }`}>
-                                {isArrears ? (isEn ? "Arrears" : "Hátralék") :
-                                 isOverpaid ? (isEn ? "Overpaid" : "Túlfizetés") :
-                                 (isEn ? "Settled" : "Rendezett")}
-                              </span>
-                            </div>
+                              {/* LEVEL 3: Compact Flats Grid inside expanded Condominium */}
+                              {isBuildingExpanded && (
+                                <div className="ml-2.5 pl-3 border-l-2 border-indigo-100 pt-1 pb-1.5">
+                                  {b.flats.length === 0 ? (
+                                    <p className="text-[11px] text-gray-400 italic py-1">
+                                      {isEn ? "No flats recorded in this condominium." : "Nincs rögzített lakás ebben a társasházban."}
+                                    </p>
+                                  ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                                      {b.flats.map((flat) => {
+                                        const isArrears = flat.balance + flat.renovationBalance < 0;
+                                        const isOverpaid = flat.balance + flat.renovationBalance > 0;
 
-                            {/* Owner Names */}
-                            <div className="text-xs">
-                              <span className="text-[10px] uppercase font-bold text-gray-400 block mb-0.5">
-                                {t.owners_label || "Tulajdonos(ok)"}
-                              </span>
-                              <p className="font-semibold text-gray-800 line-clamp-2">
-                                {flat.ownerNames}
-                              </p>
-                            </div>
+                                        return (
+                                          <div
+                                            key={flat.flatNum}
+                                            className="bg-white rounded-xl border border-gray-200 hover:border-indigo-300 p-2.5 shadow-2xs transition-all space-y-1.5"
+                                          >
+                                            {/* Compact Flat Header */}
+                                            <div className="flex items-center justify-between gap-1.5 pb-1 border-b border-gray-100">
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <Home className="w-3 h-3 text-indigo-600 shrink-0" />
+                                                <h4 className="text-xs font-bold text-gray-900 truncate">
+                                                  {flat.flatNum}. {isEn ? "Flat" : "lakás"}
+                                                </h4>
+                                              </div>
+                                              <span
+                                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${
+                                                  isArrears
+                                                    ? 'bg-red-50 text-red-700 border-red-200'
+                                                    : isOverpaid
+                                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                      : 'bg-blue-50 text-blue-700 border-blue-200'
+                                                }`}
+                                              >
+                                                {isArrears
+                                                  ? (isEn ? "Arrears" : "Hátralék")
+                                                  : isOverpaid
+                                                    ? (isEn ? "Overpaid" : "Túlfizetés")
+                                                    : (isEn ? "Settled" : "Rendezett")}
+                                              </span>
+                                            </div>
 
-                            {/* ALL ASSOCIATED EMAILS ("ha több van akkor mindegyiket") */}
-                            <div className="text-xs space-y-1 bg-gray-50/90 rounded-xl p-2.5 border border-gray-100">
-                              <span className="text-[10px] uppercase font-bold text-gray-500 block">
-                                {t.all_associated_emails || "Csatolt e-mail címek"} ({flat.allEmails.length}):
-                              </span>
+                                            {/* Owner Name(s) */}
+                                            <p className="text-[11px] font-semibold text-gray-800 truncate" title={flat.ownerNames}>
+                                              {flat.ownerNames}
+                                            </p>
 
-                              {flat.allEmails.length > 0 ? (
-                                <div className="space-y-1">
-                                  {flat.allEmails.map((em, eIdx) => (
-                                    <div 
-                                      key={eIdx} 
-                                      className="flex items-center justify-between gap-1.5 text-[11px] bg-white px-2 py-1 rounded-md border border-gray-200/80 shadow-2xs"
-                                    >
-                                      <div className="flex items-center gap-1.5 min-w-0">
-                                        <Mail className="w-3 h-3 text-indigo-500 shrink-0" />
-                                        <a 
-                                          href={`mailto:${em}`}
-                                          className="text-gray-800 hover:text-indigo-600 hover:underline truncate font-medium"
-                                          title={em}
-                                        >
-                                          {em}
-                                        </a>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCopy(em, `em-${cluster.buildingId}-${flat.flatNum}-${eIdx}`)}
-                                        className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-indigo-600 cursor-pointer shrink-0"
-                                        title="Másolás"
-                                      >
-                                        {copiedId === `em-${cluster.buildingId}-${flat.flatNum}-${eIdx}` ? (
-                                          <Check className="w-3 h-3 text-emerald-600" />
-                                        ) : (
-                                          <Copy className="w-3 h-3" />
-                                        )}
-                                      </button>
+                                            {/* Associated Emails */}
+                                            {flat.allEmails.length > 0 ? (
+                                              <div className="space-y-0.5">
+                                                {flat.allEmails.map((em, eIdx) => (
+                                                  <div
+                                                    key={eIdx}
+                                                    className="flex items-center justify-between gap-1 text-[10px] bg-gray-50 px-1.5 py-0.5 rounded border border-gray-200/70"
+                                                  >
+                                                    <div className="flex items-center gap-1 min-w-0">
+                                                      <Mail className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
+                                                      <a
+                                                        href={`mailto:${em}`}
+                                                        className="text-gray-700 hover:text-indigo-600 hover:underline truncate font-mono"
+                                                        title={em}
+                                                      >
+                                                        {em}
+                                                      </a>
+                                                    </div>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleCopy(em, `em-${b.buildingId}-${flat.flatNum}-${eIdx}`)}
+                                                      className="p-0.5 rounded hover:bg-gray-200/60 text-gray-400 hover:text-indigo-600 cursor-pointer shrink-0"
+                                                      title={isEn ? "Copy" : "Másolás"}
+                                                    >
+                                                      {copiedId === `em-${b.buildingId}-${flat.flatNum}-${eIdx}` ? (
+                                                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                                      ) : (
+                                                        <Copy className="w-2.5 h-2.5" />
+                                                      )}
+                                                    </button>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <span className="text-gray-400 italic text-[10px] block">
+                                                {t.no_emails_recorded || (isEn ? "No email" : "Nincs e-mail")}
+                                              </span>
+                                            )}
+
+                                            {/* Phone if available */}
+                                            {flat.allPhones.length > 0 && (
+                                              <div className="flex items-center gap-1 text-[10px] text-gray-500 truncate">
+                                                <Phone className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                                                <span className="truncate">{flat.allPhones.map((ph) => formatPhoneNumber(ph)).join(', ')}</span>
+                                              </div>
+                                            )}
+
+                                            {/* Compact Footer Actions */}
+                                            <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-gray-100 text-[11px] font-semibold">
+                                              <button
+                                                type="button"
+                                                onClick={() => onOpenEditFlatMaster(b.buildingId, flat.flatNum)}
+                                                className="text-gray-500 hover:text-indigo-700 hover:underline cursor-pointer"
+                                              >
+                                                {isEn ? "Master Data" : "Törzsadatok"}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => actAsUser(flat.residentUser, b.buildingId)}
+                                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-md transition-colors cursor-pointer"
+                                                title={isEn ? "Act as this resident" : "Belépés lakóként"}
+                                              >
+                                                <span>{isEn ? "Resident" : "Lakóként"}</span>
+                                                <ArrowRight className="w-2.5 h-2.5" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
-                                  ))}
+                                  )}
                                 </div>
-                              ) : (
-                                <span className="text-gray-400 italic text-[11px] block">{t.no_emails_recorded}</span>
                               )}
                             </div>
-
-                            {/* Phone numbers if available */}
-                            {flat.allPhones.length > 0 && (
-                              <div className="flex flex-wrap items-center gap-1 text-[11px] text-gray-600">
-                                <Phone className="w-3 h-3 text-emerald-600 shrink-0" />
-                                <span>{flat.allPhones.map(ph => formatPhoneNumber(ph)).join(', ')}</span>
-                              </div>
-                            )}
-
-                            {/* Action Buttons: Törzsadatok & Belépés lakóként */}
-                            <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100 text-xs font-semibold">
-                              <button
-                                type="button"
-                                onClick={() => onOpenEditFlatMaster(cluster.buildingId, flat.flatNum)}
-                                className="text-gray-600 hover:text-indigo-700 hover:underline cursor-pointer"
-                              >
-                                {isEn ? "Master Data" : "Törzsadatok"}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => actAsUser(flat.residentUser, cluster.buildingId)}
-                                className="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-lg transition-colors cursor-pointer"
-                                title={isEn ? "Act as this resident" : "Belépés lakóként"}
-                              >
-                                <span>{t.act_as_owner || "Belépés lakóként"}</span>
-                                <ArrowRight className="w-3 h-3" />
-                              </button>
-                            </div>
-
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
-
               </div>
             );
           })}
         </div>
       ) : (
         /* ==================== 2. TABULAR MATRIX VIEW ==================== */
-        <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-xs">
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="py-3 px-4">{t.rep_building_name || "Társasház"}</th>
-                  <th className="py-3 px-4">{isEn ? "Representative" : "Közös Képviselő"}</th>
-                  <th className="py-3 px-4">{t.flat_label || "Lakás"}</th>
-                  <th className="py-3 px-4">{t.owners_label || "Tulajdonos"}</th>
-                  <th className="py-3 px-4">{t.all_associated_emails || "Csatolt e-mail címek"}</th>
-                  <th className="py-3 px-4 text-right">{isEn ? "Actions" : "Műveletek"}</th>
+                  <th className="py-2.5 px-3">{t.rep_building_name || "Társasház"}</th>
+                  <th className="py-2.5 px-3">{isEn ? "Representative" : "Közös Képviselő"}</th>
+                  <th className="py-2.5 px-3">{t.flat_label || "Lakás"}</th>
+                  <th className="py-2.5 px-3">{t.owners_label || "Tulajdonos"}</th>
+                  <th className="py-2.5 px-3">{t.all_associated_emails || "Csatolt e-mail címek"}</th>
+                  <th className="py-2.5 px-3 text-right">{isEn ? "Actions" : "Műveletek"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredTree.flatMap(cluster => 
-                  cluster.flats.map(flat => (
+                {filteredTableBuildings.flatMap((cluster) =>
+                  cluster.flats.map((flat) => (
                     <tr key={`${cluster.buildingId}-${flat.flatNum}`} className="hover:bg-indigo-50/40 transition-colors">
-                      <td className="py-3 px-4 font-bold text-gray-900">
+                      <td className="py-2 px-3 font-bold text-gray-900">
                         {cluster.buildingName}
                       </td>
-                      <td className="py-3 px-4">
+                      <td className="py-2 px-3">
                         <span className="font-semibold text-gray-800 block">{cluster.repUser.name}</span>
                         <span className="text-[11px] text-gray-500">{cluster.repUser.email}</span>
                       </td>
-                      <td className="py-3 px-4 font-bold text-indigo-700">
+                      <td className="py-2 px-3 font-bold text-indigo-700">
                         {flat.flatNum}.
                       </td>
-                      <td className="py-3 px-4 text-gray-800">
+                      <td className="py-2 px-3 text-gray-800">
                         {flat.ownerNames}
                       </td>
-                      <td className="py-3 px-4">
+                      <td className="py-2 px-3">
                         {flat.allEmails.length > 0 ? (
                           <div className="space-y-0.5">
                             {flat.allEmails.map((em, idx) => (
@@ -1094,10 +1250,10 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
                                 <span className="font-mono text-[11px] text-gray-700">{em}</span>
                                 <button
                                   type="button"
-                                  onClick={() => handleCopy(em, `tbl-em-${flat.flatNum}-${idx}`)}
+                                  onClick={() => handleCopy(em, `tbl-em-${cluster.buildingId}-${flat.flatNum}-${idx}`)}
                                   className="text-gray-400 hover:text-indigo-600 cursor-pointer"
                                 >
-                                  {copiedId === `tbl-em-${flat.flatNum}-${idx}` ? (
+                                  {copiedId === `tbl-em-${cluster.buildingId}-${flat.flatNum}-${idx}` ? (
                                     <Check className="w-2.5 h-2.5 text-emerald-600" />
                                   ) : (
                                     <Copy className="w-2.5 h-2.5" />
@@ -1110,20 +1266,20 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
                           <span className="text-gray-400 italic text-[11px]">-</span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-right space-x-1.5">
+                      <td className="py-2 px-3 text-right space-x-1.5">
                         <button
                           type="button"
                           onClick={() => actAsUser(cluster.repUser, cluster.buildingId)}
                           className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded text-[11px] cursor-pointer"
                         >
-                          KK profil
+                          {isEn ? "KK profile" : "KK profil"}
                         </button>
                         <button
                           type="button"
                           onClick={() => actAsUser(flat.residentUser, cluster.buildingId)}
                           className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded text-[11px] cursor-pointer"
                         >
-                          Lakóként
+                          {isEn ? "Resident" : "Lakóként"}
                         </button>
                       </td>
                     </tr>
