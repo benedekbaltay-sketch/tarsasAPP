@@ -980,7 +980,7 @@ export function CommunicationCenterModal({
                 <Send className="w-3.5 h-3.5" />
                 <span>
                   {isResident
-                    ? (t.mail_compose_to_kk_btn || (isEn ? "Write to Management" : "Levél írása a KK-nak"))
+                    ? (t.mail_compose_to_kk_btn || (isEn ? "Write Message" : "Levél írása"))
                     : (t.comm_compose_btn || (isEn ? "New Message" : "Új levél írása"))}
                 </span>
               </button>
