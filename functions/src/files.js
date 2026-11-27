@@ -31,10 +31,13 @@ const ALLOWED_MIME_TYPES = new Set([
  */
 function parseBuildingStoragePath(rawPath) {
   const clean = String(rawPath || '').trim().replace(/^\/+/, '');
-  if (!clean || clean.includes('..') || clean.includes('\\')) {
+  if (!clean || clean.includes('\\') || clean.includes('\0')) {
     throw new HttpsError('invalid-argument', 'Invalid storage path.');
   }
   const parts = clean.split('/').filter(Boolean);
+  if (parts.some((seg) => seg === '..' || seg === '.')) {
+    throw new HttpsError('invalid-argument', 'Invalid storage path.');
+  }
   if (parts.length < 5 || parts[0] !== 'buildings') {
     throw new HttpsError('invalid-argument', 'Storage path must follow buildings/{buildingId}/{category}/{entityId}/{fileName}.');
   }
