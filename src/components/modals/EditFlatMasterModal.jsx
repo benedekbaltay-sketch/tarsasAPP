@@ -113,6 +113,7 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
 
   // Accordion expanded person IDs
   const [expandedIds, setExpandedIds] = useState(new Set());
+  const [pendingChairReplace, setPendingChairReplace] = useState(null); // { ownerId, existingChairName }
 
   // Tab A: Basic Data
   const [unitType, setUnitType] = useState('flat');
@@ -456,8 +457,6 @@ export function EditFlatMasterModal({ buildingId, flatNum, isOpen, onClose, isRe
   const handleOwnerChange = (id, field, value) => {
     setOwners(prev => prev.map(o => o.id === id ? { ...o, [field]: value } : o));
   };
-
-  const [pendingChairReplace, setPendingChairReplace] = useState(null); // { ownerId, existingChairName }
 
   const handleToggleOwnerFlag = (ownerId, field) => {
     if (!isEditMode) return;
