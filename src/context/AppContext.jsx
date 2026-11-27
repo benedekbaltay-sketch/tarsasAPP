@@ -410,13 +410,40 @@ export function AppProvider({ children }) {
       }
     }
     if (buildingId) {
-      await reloadCurrentBuilding(buildingId);
-      setState(prev => ({
-        ...prev,
-        currentBuildingId: buildingId,
-        isPortfolioView: Boolean(isPortfolio),
-        currentUser: prev.currentUser ? { ...prev.currentUser, buildingId } : prev.currentUser,
-      }));
+      // Switch into the building IMMEDIATELY (0ms latency) using cached/hydrated data in memory,
+      // then silently reconcile fresh Firestore data in the background without blocking navigation!
+      let wasAlreadyHydrated = false;
+      setState(prev => {
+        const targetB = (prev.buildings || []).find(b => b && b.id === buildingId);
+        wasAlreadyHydrated = Boolean(targetB?.hydrated);
+        const next = {
+          ...prev,
+          currentBuildingId: buildingId,
+          isPortfolioView: Boolean(isPortfolio),
+          currentUser: prev.currentUser ? { ...prev.currentUser, buildingId } : prev.currentUser,
+          ...(targetB ? {
+            flats: Array.isArray(targetB.flats) ? targetB.flats : prev.flats,
+            transactions: Array.isArray(targetB.transactions) ? targetB.transactions : prev.transactions,
+            expenses: Array.isArray(targetB.expenses) ? targetB.expenses : prev.expenses,
+            manualDebits: Array.isArray(targetB.manualDebits) ? targetB.manualDebits : prev.manualDebits,
+            documents: Array.isArray(targetB.documents) ? targetB.documents : prev.documents,
+            docFolders: Array.isArray(targetB.docFolders) ? targetB.docFolders : prev.docFolders,
+            loans: Array.isArray(targetB.loans) ? targetB.loans : prev.loans,
+            infoSections: Array.isArray(targetB.infoSections) ? targetB.infoSections : prev.infoSections,
+            buildingInitialReserveCommon: targetB.buildingInitialReserveCommon !== undefined ? targetB.buildingInitialReserveCommon : prev.buildingInitialReserveCommon,
+            buildingInitialReserveRenovation: targetB.buildingInitialReserveRenovation !== undefined ? targetB.buildingInitialReserveRenovation : prev.buildingInitialReserveRenovation,
+          } : {}),
+        };
+        recalculateFlatBalances(next);
+        return next;
+      });
+
+      // Background refresh: lightweight 3-read financials if already hydrated, full hydrate if first visit
+      if (wasAlreadyHydrated) {
+        refreshBuildingFinancials(buildingId).catch(() => {});
+      } else {
+        reloadCurrentBuilding(buildingId).catch(() => {});
+      }
     }
   };
 
