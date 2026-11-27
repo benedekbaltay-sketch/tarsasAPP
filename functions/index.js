@@ -24,3 +24,4 @@ export {
   acceptOrganizationInvite,
   notifyBankAccountChange,
 } from './src/organizations.js';
+export { downloadBuildingFile, uploadBuildingFile } from './src/files.js';

@@ -705,63 +705,109 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
 
       // In Cloud Firestore mode, commit metadata & SZVB via server-verified paths (zero RTDB writes)
       if (IS_FIRESTORE_MODE && targetBuildingId) {
+        const bgTasks = [];
         if (saveSzvb && nextSzvbPayload) {
-          await callManageSzvbMembers({
-            buildingId: targetBuildingId,
-            chairperson: nextSzvbPayload.chairperson || null,
-            members: nextSzvbPayload.members || [],
-          });
+          bgTasks.push(
+            callManageSzvbMembers({
+              buildingId: targetBuildingId,
+              chairperson: nextSzvbPayload.chairperson || null,
+              members: nextSzvbPayload.members || [],
+            })
+          );
         }
         if (saveMaster) {
-          await updateBuildingMetadata(targetBuildingId, {
-            name: buildingName.trim() || targetBuilding?.name || '',
-            officialName: buildingOfficialName.trim(),
-            address: buildingAddress.trim() || targetBuilding?.address || '',
-            taxNumber: formatTaxNumber(buildingTaxNumber).trim(),
-            hrsz: buildingHrsz.trim(),
-            totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000,
-          });
+          bgTasks.push(
+            updateBuildingMetadata(targetBuildingId, {
+              name: buildingName.trim() || targetBuilding?.name || '',
+              officialName: buildingOfficialName.trim(),
+              address: buildingAddress.trim() || targetBuilding?.address || '',
+              taxNumber: formatTaxNumber(buildingTaxNumber).trim(),
+              hrsz: buildingHrsz.trim(),
+              totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000,
+            })
+          );
         }
         if (saveApi) {
-          await updateBuildingMetadata(targetBuildingId, {
-            bankApi: {
-              provider: apiProvider,
-              environment: apiEnv,
-              clientId: apiClientId.trim(),
-              autoSync: Boolean(apiAutoSync),
-              syncInterval: 'daily',
-              secretManagedServerSide: true,
-            },
-          });
+          bgTasks.push(
+            updateBuildingMetadata(targetBuildingId, {
+              bankApi: {
+                provider: apiProvider,
+                environment: apiEnv,
+                clientId: apiClientId.trim(),
+                autoSync: Boolean(apiAutoSync),
+                syncInterval: 'daily',
+                secretManagedServerSide: true,
+              },
+            })
+          );
         }
         if (isAccountsOnly && canEditBankAcc) {
           const customTargets = {};
           updatedCustomAccounts.forEach((acc) => {
             customTargets[acc.id] = Math.round(parseCleanNumber(customBalances[acc.id]));
           });
-          await updateBuildingMetadata(targetBuildingId, {
-            bankAccounts: {
-              KK: nextBankKK,
-              FA: nextBankFA,
-              custom: updatedCustomAccounts,
-            },
-          });
-          await callCalibrateBuildingBalances({
-            buildingId: targetBuildingId,
-            targetKK: Math.round(cleanCommon),
-            targetFA: Math.round(cleanRenovation),
-            customTargets,
-          });
+          bgTasks.push(
+            updateBuildingMetadata(targetBuildingId, {
+              bankAccounts: {
+                KK: nextBankKK,
+                FA: nextBankFA,
+                custom: updatedCustomAccounts,
+              },
+            }),
+            callCalibrateBuildingBalances({
+              buildingId: targetBuildingId,
+              targetKK: Math.round(cleanCommon),
+              targetFA: Math.round(cleanRenovation),
+              customTargets,
+            })
+          );
         }
         if (saveSzvb && nextAuditorPayload && typeof updateBuildingEconomicAuditor === 'function') {
-          await updateBuildingEconomicAuditor(targetBuildingId, nextAuditorPayload, {
-            sendInviteEmail: true,
-            silent: true,
+          bgTasks.push(
+            updateBuildingEconomicAuditor(targetBuildingId, nextAuditorPayload, {
+              sendInviteEmail: true,
+              silent: true,
+            })
+          );
+        }
+
+        // Apply optimistic local update & exit edit mode IMMEDIATELY (0ms latency)
+        await persistState((s) => {
+          const updatedBuildings = (s.buildings || []).map((b) => {
+            if (!b || b.id !== targetBuildingId) return b;
+            return {
+              ...b,
+              ...(saveMaster ? {
+                name: buildingName.trim() || b.name,
+                officialName: buildingOfficialName.trim(),
+                address: buildingAddress.trim() || b.address,
+                taxNumber: formatTaxNumber(buildingTaxNumber).trim(),
+                hrsz: buildingHrsz.trim(),
+                totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000,
+              } : {}),
+              ...(saveSzvb && nextSzvbPayload ? { szvb: nextSzvbPayload } : {}),
+              ...(saveApi ? {
+                bankApi: {
+                  provider: apiProvider,
+                  environment: apiEnv,
+                  clientId: apiClientId.trim(),
+                  autoSync: Boolean(apiAutoSync),
+                  syncInterval: 'daily',
+                  secretManagedServerSide: true,
+                },
+              } : {}),
+              ...(isAccountsOnly && canEditBankAcc ? {
+                bankKK: nextBankKK,
+                bankFA: nextBankFA,
+                buildingInitialReserveCommon: calculatedInitKK,
+                buildingInitialReserveRenovation: calculatedInitFA,
+                customBankAccounts: updatedCustomAccounts,
+              } : {}),
+            };
           });
-        }
-        if (typeof reloadCurrentBuilding === 'function') {
-          await reloadCurrentBuilding(targetBuildingId);
-        }
+          return { ...s, buildings: updatedBuildings };
+        }, 'localOnly');
+
         if (saveMaster) setIsEditingMasterData(false);
         if (saveSzvb) setIsEditingSzvb(false);
         if (saveApi) setIsEditingApi(false);
@@ -774,6 +820,23 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                 ? (isEn ? "Banking API settings saved!" : "A banki API beállítások sikeresen elmentve!")
                 : (isEn ? "Condominium master data saved!" : "A társasház alapadatai sikeresen elmentve!")
         );
+
+        Promise.all(bgTasks)
+          .then(() => {
+            if (typeof reloadCurrentBuilding === 'function') {
+              reloadCurrentBuilding(targetBuildingId).catch(() => {});
+            }
+          })
+          .catch((bgErr) => {
+            console.error('Background Firestore GlobalBalancesModal save error:', bgErr);
+            if (typeof reloadCurrentBuilding === 'function') {
+              reloadCurrentBuilding(targetBuildingId).catch(() => {});
+            }
+            showToast(
+              isEn ? 'Failed to sync settings to cloud. Please try again.' : 'Hiba történt a felhőbe mentés során. Kérjük, próbálja újra!',
+              'error'
+            );
+          });
         return;
       }
 

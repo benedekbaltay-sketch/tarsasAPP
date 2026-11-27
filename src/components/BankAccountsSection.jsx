@@ -318,27 +318,67 @@ export function BankAccountsSection({ buildingId = null, isReadOnly = false }) {
         updatedCustomAccounts.forEach((acc) => {
           customTargets[acc.id] = Math.round(parseCleanNumber(customBalances[acc.id]));
         });
-        await updateBuildingMetadata(targetBuildingId, {
-          bankAccounts: {
-            KK: nextBankKK,
-            FA: nextBankFA,
-            custom: updatedCustomAccounts,
-          },
-        });
-        await callCalibrateBuildingBalances({
-          buildingId: targetBuildingId,
-          targetKK: Math.round(cleanCommon),
-          targetFA: Math.round(cleanRenovation),
-          customTargets,
-        });
-        if (typeof reloadCurrentBuilding === 'function') {
-          await reloadCurrentBuilding(targetBuildingId);
-        }
+
+        // Optimistic instant local update (0ms latency)
+        await persistState((s) => ({
+          ...s,
+          buildings: (s.buildings || []).map((b) => {
+            if (!b || b.id !== targetBuildingId) return b;
+            const { firestoreBalances, ...restB } = b;
+            return {
+              ...restB,
+              bankKK: nextBankKK,
+              bankFA: nextBankFA,
+              buildingInitialReserveCommon: calculatedInitKK,
+              buildingInitialReserveRenovation: calculatedInitFA,
+              customBankAccounts: updatedCustomAccounts,
+              lastUpdated: nowTs,
+            };
+          }),
+          ...(s.currentBuildingId === targetBuildingId
+            ? {
+                buildingInitialReserveCommon: calculatedInitKK,
+                buildingInitialReserveRenovation: calculatedInitFA,
+              }
+            : {}),
+        }), 'localOnly');
+
         setIsDirty(false);
         showToast(
           t.bank_accounts_saved_toast ||
             (isEn ? 'Bank accounts & reserves saved!' : 'A bankszámlák és tartalékok adatai sikeresen elmentve!')
         );
+
+        Promise.all([
+          updateBuildingMetadata(targetBuildingId, {
+            bankAccounts: {
+              KK: nextBankKK,
+              FA: nextBankFA,
+              custom: updatedCustomAccounts,
+            },
+          }),
+          callCalibrateBuildingBalances({
+            buildingId: targetBuildingId,
+            targetKK: Math.round(cleanCommon),
+            targetFA: Math.round(cleanRenovation),
+            customTargets,
+          }),
+        ])
+          .then(() => {
+            if (typeof reloadCurrentBuilding === 'function') {
+              reloadCurrentBuilding(targetBuildingId).catch(() => {});
+            }
+          })
+          .catch((bgErr) => {
+            console.error('Background bank accounts save error:', bgErr);
+            if (typeof reloadCurrentBuilding === 'function') {
+              reloadCurrentBuilding(targetBuildingId).catch(() => {});
+            }
+            showToast(
+              isEn ? 'Failed to save bank accounts. Please try again.' : 'Hiba történt a számlák mentése során.',
+              'error'
+            );
+          });
         return;
       }
 

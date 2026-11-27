@@ -662,19 +662,33 @@ function decodeBase64DataUrl(dataUrl) {
   const match = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error('Invalid Base64 data URL.');
   const mimeType = match[1];
-  const binaryStr = atob(match[2]);
+  const base64 = match[2];
+  const binaryStr = atob(base64);
   const bytes = new Uint8Array(binaryStr.length);
   for (let i = 0; i < binaryStr.length; i++) {
     bytes[i] = binaryStr.charCodeAt(i);
   }
-  return { mimeType, bytes };
+  return { mimeType, base64, bytes };
 }
 
 export async function uploadBase64ToStorage(storagePath, dataUrl, fallbackMimeType = 'application/octet-stream') {
   if (!storagePath || !dataUrl) return null;
-  const storage = requireStorage();
-  const { mimeType, bytes } = decodeBase64DataUrl(dataUrl);
+  const { mimeType, base64, bytes } = decodeBase64DataUrl(dataUrl);
   const contentType = mimeType || fallbackMimeType;
+  try {
+    const fn = httpsCallable(requireFunctions(), 'uploadBuildingFile');
+    const res = await fn({ storagePath, base64, contentType });
+    if (res?.data?.success) {
+      return {
+        storagePath: res.data.storagePath || storagePath,
+        mimeType: res.data.mimeType || contentType,
+        sizeBytes: res.data.sizeBytes || bytes.length,
+      };
+    }
+  } catch (fnErr) {
+    console.warn('uploadBuildingFile callable fallback to direct Storage SDK:', fnErr?.code || fnErr?.message);
+  }
+  const storage = requireStorage();
   const objRef = storageRef(storage, storagePath);
   await uploadBytes(objRef, bytes, { contentType });
   return {
@@ -698,11 +712,32 @@ export async function deleteFromStorage(storagePath) {
 
 export async function getSecureStorageDownloadUrl(storagePath) {
   if (!storagePath) return null;
+  // Primary path: RBAC-verified Cloud Function returns Base64 -> same-origin blob: URL
+  // (works cleanly for ALL roles without cross-service Storage Rules 403 or CORS issues).
+  try {
+    const fn = httpsCallable(requireFunctions(), 'downloadBuildingFile');
+    const res = await fn({ storagePath });
+    const data = res?.data;
+    if (data?.success && typeof data.base64 === 'string') {
+      const binaryStr = atob(data.base64);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: data.contentType || 'application/octet-stream' });
+      if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        return URL.createObjectURL(blob);
+      }
+      return `data:${data.contentType || 'application/octet-stream'};base64,${data.base64}`;
+    }
+  } catch (fnErr) {
+    console.warn('downloadBuildingFile callable fallback:', fnErr?.code || fnErr?.message);
+  }
+
+  // Fallback: direct Storage SDK getBlob / getDownloadURL (works for SuperAdmin / emulators)
   const storage = requireStorage();
   const refObj = storageRef(storage, storagePath);
   try {
-    // Authenticate directly with Firebase Auth + storage.rules and return a same-origin blob: URL
-    // so both <a download> and in-app PDF/Image/XLSX/DOCX previews work cleanly without CORS/cross-origin issues.
     const blob = await getBlob(refObj);
     if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
       return URL.createObjectURL(blob);
