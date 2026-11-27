@@ -2048,6 +2048,33 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                         </div>
                       )}
                     </div>
+
+                    {/* Bottom Save / Cancel bar inside SZVB & Financial Audit bubble (so user doesn't have to scroll back up) */}
+                    {!isEffectiveReadOnly && isEditingSzvb && (
+                      <div className="pt-3 border-t border-indigo-200/70 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => {
+                            resetSzvbAndAuditorDraft();
+                            setIsEditingSzvb(false);
+                          }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 text-gray-600 text-[11px] font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>{t.cancel || (isEn ? "Cancel" : "Mégse")}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => handleSaveSection('szvb')}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#1E3A8A] hover:bg-[#1e40af] text-white text-[11px] font-bold transition-colors cursor-pointer shadow-xs disabled:opacity-60"
+                        >
+                          {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                          <span>{t.save || (isEn ? "Save" : "Mentés")}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
