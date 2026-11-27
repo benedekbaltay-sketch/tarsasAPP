@@ -29,7 +29,7 @@ function makeId(prefix) {
  * Resolve Firebase Auth UIDs for a set of normalized emails.
  * Missing accounts are simply omitted so the caller receives them in `unresolvedEmails`.
  */
-async function resolveUidsByEmails(emails = []) {
+async function resolveUidsByEmails(db, emails = []) {
   const map = new Map();
   const unique = Array.from(new Set(emails.map(normalizeEmail).filter(Boolean)));
   if (unique.length === 0) return map;
@@ -41,9 +41,18 @@ async function resolveUidsByEmails(emails = []) {
         const userRec = await auth.getUserByEmail(email);
         if (userRec?.uid) {
           map.set(email, userRec.uid);
+          return;
         }
       } catch {
-        // Owner does not have a provisioned Firebase Auth account yet
+        // Fallback to Firestore users collection below
+      }
+      try {
+        const uSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+        if (!uSnap.empty) {
+          map.set(email, uSnap.docs[0].id);
+        }
+      } catch {
+        // Owner does not have a provisioned account yet
       }
     })
   );
@@ -80,7 +89,7 @@ export const manageSzvbMembers = onCall(
       ...prevSzvbPre.members.map((m) => m.email),
     ].filter(Boolean);
 
-    const resolvedUidByEmail = await resolveUidsByEmails(emailsToResolve);
+    const resolvedUidByEmail = await resolveUidsByEmails(db, emailsToResolve);
 
     // Collect every UID that will be read/updated inside the atomic transaction
     const touchedUidSet = new Set();

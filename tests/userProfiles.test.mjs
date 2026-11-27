@@ -379,3 +379,53 @@ test('8. Zero false-positive ejections: SuperAdmin in flat/KK mode, active KK ad
     true
   );
 });
+
+test('9. SZVB & Financial Auditor grant/revocation notifications route directly into the resident Owner apartment profile', () => {
+  const { allProfiles } = resolveUserProfiles(
+    { email: 'janos@example.com' },
+    { buildings, organizations: [], users: [] }
+  );
+
+  const ownerB1User = { email: 'janos@example.com', role: 'Owner', buildingId: 'b1', flatNum: '14' };
+  const ownerB2User = { email: 'janos@example.com', role: 'Owner', buildingId: 'b2', flatNum: '3' };
+
+  const auditorGrant = {
+    id: 'notif-aud-grant',
+    type: 'auditor_updated',
+    buildingId: 'b1',
+    flatNum: '14',
+    recipientEmail: 'janos@example.com',
+    targetProfile: { type: 'owner', buildingId: 'b1', flatNum: '14' },
+    titleHu: 'Gazdasági ellenőri megbízás',
+    read: false,
+    meta: { action: 'granted', flatNum: '14' },
+  };
+  const auditorRevokeLegacy = {
+    id: 'notif-aud-revoke-legacy',
+    type: 'auditor_updated',
+    buildingId: 'b1',
+    recipientEmail: 'janos@example.com',
+    // Even without explicit targetProfile, revoked auditor notices must still land in the building's Owner profile
+    titleHu: 'Gazdasági ellenőri megbízás megszűnt',
+    read: false,
+    meta: { action: 'revoked' },
+  };
+  const szvbRevoke = {
+    id: 'notif-szvb-revoke',
+    type: 'szvb_updated',
+    buildingId: 'b1',
+    flatNum: '14',
+    recipientEmail: 'janos@example.com',
+    targetProfile: { type: 'owner', buildingId: 'b1', flatNum: '14' },
+    titleHu: 'SZVB jogosultságod visszavonva',
+    read: false,
+    meta: { szvbAction: 'revoked', flatNum: '14' },
+  };
+
+  const b1Inbox = getNotificationsForActiveProfile([auditorGrant, auditorRevokeLegacy, szvbRevoke], ownerB1User, allProfiles);
+  assert.equal(b1Inbox.length, 3);
+
+  // Must NOT leak into a different building's apartment profile
+  const b2Inbox = getNotificationsForActiveProfile([auditorGrant, auditorRevokeLegacy, szvbRevoke], ownerB2User, allProfiles);
+  assert.equal(b2Inbox.length, 0);
+});

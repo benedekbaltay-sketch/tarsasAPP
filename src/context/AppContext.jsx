@@ -1449,19 +1449,85 @@ export function AppProvider({ children }) {
     .join(',');
 
   const isImpersonating = Boolean(state.impersonatedFrom);
-  useEffect(() => {
-    if (!IS_FIRESTORE_MODE || !state.currentUser?.uid || isImpersonating) return;
-    const uid = state.currentUser.uid;
-    const unsubs = [];
+  const currentUserUid = state.currentUser?.uid || null;
+  const hasCurrentUser = Boolean(state.currentUser);
 
-    unsubs.push(
-      subscribeUserNotifications(uid, (liveNotifs) => {
-        setState((prev) => ({
-          ...prev,
-          notifications: liveNotifs,
-        }));
-      })
+  // Live notifications listener: runs BOTH for normal logged-in users AND for SuperAdmin
+  // impersonating a resident/admin whose UID is resolved (firestore.rules grants SuperAdmin read).
+  useEffect(() => {
+    if (!IS_FIRESTORE_MODE || !currentUserUid) return;
+    return subscribeUserNotifications(currentUserUid, (liveNotifs) => {
+      setState((prev) => ({
+        ...prev,
+        notifications: liveNotifs,
+      }));
+    });
+  }, [currentUserUid]);
+
+  // Live building root metadata listener (`szvb`, `economicAuditor`, `archived`):
+  // runs BOTH for normal sessions AND during SuperAdmin impersonation so role revocations
+  // propagate immediately (<200ms) across open tabs!
+  useEffect(() => {
+    if (!IS_FIRESTORE_MODE || !hasCurrentUser || !buildingIdsKey) return;
+    const buildingIds = buildingIdsKey.split(',').filter(Boolean);
+    const unsubs = buildingIds.map((bId) =>
+      subscribeBuilding(
+        bId,
+        (liveBuildingDoc) => {
+          setState((prev) => {
+            const existingList = prev.buildings || [];
+            const existing = existingList.find((b) => b && b.id === liveBuildingDoc.id);
+            if (!existing) return prev;
+            const merged = firestoreBuildingToUiBuilding(liveBuildingDoc, {
+              flats: existing.flats || [],
+              transactions: existing.transactions || [],
+              expenses: existing.expenses || [],
+              manualDebits: existing.manualDebits || [],
+              loans: existing.loans || [],
+              documents: existing.documents || [],
+              infoSections: existing.infoSections || [],
+              categories: existing.categories || [],
+              hydrated: existing.hydrated,
+            });
+            if (!merged) return prev;
+            merged.firestoreMonthlySummaries = existing.firestoreMonthlySummaries || merged.firestoreMonthlySummaries || {};
+            return {
+              ...prev,
+              buildings: existingList.map((b) => (b && b.id === liveBuildingDoc.id ? merged : b)),
+            };
+          });
+        },
+        (deniedBuildingId) => {
+          // Building membership was revoked completely (e.g. external auditor removed):
+          // NEVER drop buildings during SuperAdmin sessions or impersonation.
+          setState((prev) => {
+            if (
+              prev.impersonatedFrom ||
+              prev.currentUser?.role === 'superadmin' ||
+              prev.currentUser?.isSuperAdmin === true
+            ) {
+              return prev;
+            }
+            return {
+              ...prev,
+              buildings: (prev.buildings || []).filter((b) => b && b.id !== deniedBuildingId),
+            };
+          });
+        }
+      )
     );
+    return () => {
+      unsubs.forEach((fn) => {
+        try { fn(); } catch {}
+      });
+    };
+  }, [hasCurrentUser, buildingIdsKey]);
+
+  // Live user profile (memberships) & organization listeners (non-impersonated sessions only)
+  useEffect(() => {
+    if (!IS_FIRESTORE_MODE || !currentUserUid || isImpersonating) return;
+    const uid = currentUserUid;
+    const unsubs = [];
 
     unsubs.push(
       subscribeUserProfile(uid, (liveUserDoc) => {
@@ -1522,76 +1588,36 @@ export function AppProvider({ children }) {
       );
     }
 
-    const buildingIds = buildingIdsKey ? buildingIdsKey.split(',').filter(Boolean) : [];
-    for (const bId of buildingIds) {
-      unsubs.push(
-        subscribeBuilding(
-          bId,
-          (liveBuildingDoc) => {
-            setState((prev) => {
-              const existingList = prev.buildings || [];
-              const existing = existingList.find((b) => b && b.id === liveBuildingDoc.id);
-              if (!existing) return prev;
-              const merged = firestoreBuildingToUiBuilding(liveBuildingDoc, {
-                flats: existing.flats || [],
-                transactions: existing.transactions || [],
-                expenses: existing.expenses || [],
-                manualDebits: existing.manualDebits || [],
-                loans: existing.loans || [],
-                documents: existing.documents || [],
-                infoSections: existing.infoSections || [],
-                categories: existing.categories || [],
-                hydrated: existing.hydrated,
-              });
-              if (!merged) return prev;
-              merged.firestoreMonthlySummaries = existing.firestoreMonthlySummaries || merged.firestoreMonthlySummaries || {};
-              return {
-                ...prev,
-                buildings: existingList.map((b) => (b && b.id === liveBuildingDoc.id ? merged : b)),
-              };
-            });
-          },
-          (deniedBuildingId) => {
-            // Building membership was revoked completely (e.g. external auditor removed):
-            // NEVER drop buildings during SuperAdmin sessions or impersonation.
-            setState((prev) => {
-              if (
-                prev.impersonatedFrom ||
-                prev.currentUser?.role === 'superadmin' ||
-                prev.currentUser?.isSuperAdmin === true
-              ) {
-                return prev;
-              }
-              return {
-                ...prev,
-                buildings: (prev.buildings || []).filter((b) => b && b.id !== deniedBuildingId),
-              };
-            });
-          }
-        )
-      );
-    }
-
     return () => {
       unsubs.forEach((fn) => {
         try { fn(); } catch {}
       });
     };
-  }, [state.currentUser?.uid, orgIdsKey, buildingIdsKey, isImpersonating]);
+  }, [currentUserUid, orgIdsKey, buildingIdsKey, isImpersonating]);
 
   // Reactive Active-Profile Revocation Guard:
   // If the user's currently active profile (SZVB, Financial Auditor, or offboarded KK) is revoked
   // in real time while they are inside it, IMMEDIATELY eject them back to their valid apartment
   // Owner profile (or sign them out cleanly if no profiles remain) so they can never view stale
   // privileged screens or submit actions with revoked authority.
+  // Also runs during SuperAdmin impersonation strictly for delegated SZVB/Auditor views
+  // (preserving `impersonatedFrom` and never signing out the SuperAdmin).
   const lastRevocationSigRef = useRef('');
   useEffect(() => {
     if (
       !isInitialSyncDone ||
       !state.currentUser ||
-      state.impersonatedFrom ||
       state.currentUser.role === 'superadmin' ||
       state.currentUser.isSuperAdmin === true
+    ) {
+      return;
+    }
+
+    const isImpersonatedSession = Boolean(state.impersonatedFrom);
+    if (
+      isImpersonatedSession &&
+      state.currentUser.role !== 'szvb' &&
+      state.currentUser.role !== 'auditor'
     ) {
       return;
     }
@@ -1632,8 +1658,26 @@ export function AppProvider({ children }) {
     const fallback = validity.fallbackProfile;
 
     if (!fallback) {
-      // Only auto-signout external SZVB/Auditor accounts whose sole access was revoked (never admin/superadmin!)
+      // Only auto-eject external SZVB/Auditor accounts whose sole access was revoked (never admin/superadmin!)
       if (revokedRole !== 'szvb' && revokedRole !== 'auditor') return;
+      if (isImpersonatedSession) {
+        // SuperAdmin impersonating a now-revoked external auditor: exit back to SuperAdmin (NEVER signOut!)
+        const originalUser = stripSensitiveUserFields(state.impersonatedFrom?.originalUser || {});
+        setState((prev) => ({
+          ...prev,
+          currentUser: originalUser?.email ? originalUser : prev.currentUser,
+          impersonatedFrom: null,
+          activeRoleMode: 'kk',
+          isPortfolioView: true,
+        }));
+        showToast(
+          isEn
+            ? 'The impersonated role was revoked — returned to SuperAdmin Center.'
+            : 'A megtekintett szerepkör visszavonásra került — visszairányítottunk a Rendszergazda felületre.',
+          'warning'
+        );
+        return;
+      }
       if (IS_FIRESTORE_MODE) {
         const { auth } = getFirebaseInstance();
         if (auth) signOut(auth).catch(() => {});
@@ -1744,22 +1788,24 @@ export function AppProvider({ children }) {
     }
 
     setCopiedTx(null);
-    saveLastActiveProfile(nextUser.email, {
-      id: fallback.id,
-      type: fallback.type,
-      buildingId: targetBuildingId,
-      flatNum: nextUser.flatNum || '0',
-    });
+    if (!isImpersonatedSession) {
+      saveLastActiveProfile(nextUser.email, {
+        id: fallback.id,
+        type: fallback.type,
+        buildingId: targetBuildingId,
+        flatNum: nextUser.flatNum || '0',
+      });
 
-    if (!IS_FIRESTORE_MODE) {
-      try {
-        if (!isCurrentTabSessionOnly() && localStorage.getItem('tarsashaz_remember_me') === 'true') {
-          localStorage.setItem('tarsashaz_logged_in_user', JSON.stringify(nextUser));
-        }
-        sessionStorage.setItem('tarsashaz_session_user', JSON.stringify(nextUser));
-        localStorage.setItem('tarsashaz_role_mode', nextRoleMode);
-        localStorage.setItem('tarsashaz_is_portfolio', nextIsPortfolio ? 'true' : 'false');
-      } catch {}
+      if (!IS_FIRESTORE_MODE) {
+        try {
+          if (!isCurrentTabSessionOnly() && localStorage.getItem('tarsashaz_remember_me') === 'true') {
+            localStorage.setItem('tarsashaz_logged_in_user', JSON.stringify(nextUser));
+          }
+          sessionStorage.setItem('tarsashaz_session_user', JSON.stringify(nextUser));
+          localStorage.setItem('tarsashaz_role_mode', nextRoleMode);
+          localStorage.setItem('tarsashaz_is_portfolio', nextIsPortfolio ? 'true' : 'false');
+        } catch {}
+      }
     }
 
     // Immediately strip privileged SZVB/Auditor building-wide flats & loans from memory when dropping to Owner!
@@ -1792,7 +1838,9 @@ export function AppProvider({ children }) {
     }), 'localOnly');
 
     if (IS_FIRESTORE_MODE && targetBuildingId) {
-      reloadCurrentBuilding(targetBuildingId, { roleOverride: nextUser.role }).catch(() => {});
+      reloadCurrentBuilding(targetBuildingId, {
+        roleOverride: isImpersonatedSession ? 'superadmin' : nextUser.role,
+      }).catch(() => {});
     }
 
     if (revokedRole === 'szvb' && fallback.type === 'owner') {

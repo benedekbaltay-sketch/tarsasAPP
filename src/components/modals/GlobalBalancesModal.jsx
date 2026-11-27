@@ -703,33 +703,56 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
           }
         : null;
 
-      // In Cloud Firestore mode, commit metadata & SZVB via server-verified paths (zero RTDB writes)
+      // In Cloud Firestore mode, commit metadata & SZVB via server-verified paths (zero RTDB writes).
+      // Run SZVB and Financial Auditor transactions SEQUENTIALLY (never concurrently in Promise.all)
+      // because both transactions lock `buildings/{buildingId}` and `buildings/{buildingId}/members/{uid}`.
       if (IS_FIRESTORE_MODE && targetBuildingId) {
-        const bgTasks = [];
-        if (saveSzvb && nextSzvbPayload) {
-          bgTasks.push(
-            callManageSzvbMembers({
+        const prevAud = targetBuilding?.economicAuditor || {};
+        const auditorChanged = Boolean(
+          saveSzvb &&
+          nextAuditorPayload &&
+          (
+            Boolean(prevAud.enabled) !== Boolean(nextAuditorPayload.enabled) ||
+            normalizeEmail(prevAud.email) !== normalizeEmail(nextAuditorPayload.email) ||
+            (prevAud.type || 'external') !== (nextAuditorPayload.type || 'external') ||
+            String(prevAud.name || '').trim() !== String(nextAuditorPayload.name || '').trim() ||
+            String(prevAud.phone || '').trim() !== String(nextAuditorPayload.phone || '').trim() ||
+            String(prevAud.companyName || '').trim() !== String(nextAuditorPayload.companyName || '').trim() ||
+            String(prevAud.registrationNumber || '').trim() !== String(nextAuditorPayload.registrationNumber || '').trim() ||
+            String(prevAud.flatNum || '').trim() !== String(nextAuditorPayload.flatNum || '').trim() ||
+            String(prevAud.validFrom || '').trim() !== String(nextAuditorPayload.validFrom || '').trim() ||
+            String(prevAud.validTo || '').trim() !== String(nextAuditorPayload.validTo || '').trim() ||
+            Boolean(prevAud.isSzvbMember) !== Boolean(nextAuditorPayload.isSzvbMember) ||
+            Boolean(prevAud.exemptQualifiedSzvbMember) !== Boolean(nextAuditorPayload.exemptQualifiedSzvbMember)
+          )
+        );
+
+        const runSequentialBgSaves = async () => {
+          if (saveSzvb && nextSzvbPayload) {
+            await callManageSzvbMembers({
               buildingId: targetBuildingId,
               chairperson: nextSzvbPayload.chairperson || null,
               members: nextSzvbPayload.members || [],
-            })
-          );
-        }
-        if (saveMaster) {
-          bgTasks.push(
-            updateBuildingMetadata(targetBuildingId, {
+            });
+          }
+          if (auditorChanged && typeof updateBuildingEconomicAuditor === 'function') {
+            await updateBuildingEconomicAuditor(targetBuildingId, nextAuditorPayload, {
+              sendInviteEmail: true,
+              silent: true,
+            });
+          }
+          if (saveMaster) {
+            await updateBuildingMetadata(targetBuildingId, {
               name: buildingName.trim() || targetBuilding?.name || '',
               officialName: buildingOfficialName.trim(),
               address: buildingAddress.trim() || targetBuilding?.address || '',
               taxNumber: formatTaxNumber(buildingTaxNumber).trim(),
               hrsz: buildingHrsz.trim(),
               totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000,
-            })
-          );
-        }
-        if (saveApi) {
-          bgTasks.push(
-            updateBuildingMetadata(targetBuildingId, {
+            });
+          }
+          if (saveApi) {
+            await updateBuildingMetadata(targetBuildingId, {
               bankApi: {
                 provider: apiProvider,
                 environment: apiEnv,
@@ -738,38 +761,28 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                 syncInterval: 'daily',
                 secretManagedServerSide: true,
               },
-            })
-          );
-        }
-        if (isAccountsOnly && canEditBankAcc) {
-          const customTargets = {};
-          updatedCustomAccounts.forEach((acc) => {
-            customTargets[acc.id] = Math.round(parseCleanNumber(customBalances[acc.id]));
-          });
-          bgTasks.push(
-            updateBuildingMetadata(targetBuildingId, {
+            });
+          }
+          if (isAccountsOnly && canEditBankAcc) {
+            const customTargets = {};
+            updatedCustomAccounts.forEach((acc) => {
+              customTargets[acc.id] = Math.round(parseCleanNumber(customBalances[acc.id]));
+            });
+            await updateBuildingMetadata(targetBuildingId, {
               bankAccounts: {
                 KK: nextBankKK,
                 FA: nextBankFA,
                 custom: updatedCustomAccounts,
               },
-            }),
-            callCalibrateBuildingBalances({
+            });
+            await callCalibrateBuildingBalances({
               buildingId: targetBuildingId,
               targetKK: Math.round(cleanCommon),
               targetFA: Math.round(cleanRenovation),
               customTargets,
-            })
-          );
-        }
-        if (saveSzvb && nextAuditorPayload && typeof updateBuildingEconomicAuditor === 'function') {
-          bgTasks.push(
-            updateBuildingEconomicAuditor(targetBuildingId, nextAuditorPayload, {
-              sendInviteEmail: true,
-              silent: true,
-            })
-          );
-        }
+            });
+          }
+        };
 
         // Apply optimistic local update & exit edit mode IMMEDIATELY (0ms latency)
         await persistState((s) => {
@@ -786,6 +799,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                 totalOwnershipShare: parseFloat(String(totalOwnershipShare).replace(',', '.')) || 10000,
               } : {}),
               ...(saveSzvb && nextSzvbPayload ? { szvb: nextSzvbPayload } : {}),
+              ...(saveSzvb && nextAuditorPayload ? { economicAuditor: nextAuditorPayload } : {}),
               ...(saveApi ? {
                 bankApi: {
                   provider: apiProvider,
@@ -821,7 +835,7 @@ export function GlobalBalancesModal({ isOpen, onClose, onOpenDrawer, buildingId 
                 : (isEn ? "Condominium master data saved!" : "A társasház alapadatai sikeresen elmentve!")
         );
 
-        Promise.all(bgTasks)
+        runSequentialBgSaves()
           .then(() => {
             if (typeof reloadCurrentBuilding === 'function') {
               reloadCurrentBuilding(targetBuildingId).catch(() => {});

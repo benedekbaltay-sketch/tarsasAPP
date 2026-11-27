@@ -137,8 +137,10 @@ function buildServerSzvbNotification({
           labelEn: 'Financial oversight: income, expenses, bank balances, and resident arrears list',
         },
       ],
-      meta: { szvbAction: 'granted', prevRole: null, nextRole },
+      meta: { szvbAction: 'granted', prevRole: null, nextRole, flatNum: flatNum || null },
       read: false,
+      archived: false,
+      deleted: false,
       dismissed: false,
     };
   }
@@ -176,8 +178,10 @@ function buildServerSzvbNotification({
           labelEn: `SZVB role: ${prevEn} → ${nextEn}`,
         },
       ],
-      meta: { szvbAction: 'modified', prevRole, nextRole },
+      meta: { szvbAction: 'modified', prevRole, nextRole, flatNum: flatNum || null },
       read: false,
+      archived: false,
+      deleted: false,
       dismissed: false,
     };
   }
@@ -213,8 +217,10 @@ function buildServerSzvbNotification({
         labelEn: `${prevEn} role revoked (${bName})`,
       },
     ],
-    meta: { szvbAction: 'revoked', prevRole, nextRole: null },
+    meta: { szvbAction: 'revoked', prevRole, nextRole: null, flatNum: flatNum || null },
     read: false,
+    archived: false,
+    deleted: false,
     dismissed: false,
   };
 }
@@ -281,6 +287,27 @@ export function computeSzvbMembershipPlan({
     return Array.from(owned);
   };
 
+  // Helper: find canonical flat number (unitCode) owned by a uid or email so Owner-profile notifications route reliably
+  const findOwnedFlatNum = (uid, email, fallbackFlatNum = '') => {
+    const normFallback = String(fallbackFlatNum || '').trim();
+    if (normFallback) return normFallback;
+    const normEmail = normalizeEmail(email);
+    for (const u of units || []) {
+      if (!u) continue;
+      const uidMatch = Boolean(uid && Array.isArray(u.ownerUids) && u.ownerUids.includes(uid));
+      const emailMatch = Boolean(
+        normEmail &&
+        Array.isArray(u.owners) &&
+        u.owners.some((o) => collectOwnerEmails(o).includes(normEmail))
+      );
+      if (uidMatch || emailMatch) {
+        const code = String(u.unitCode || u.flatNum || '').trim();
+        if (code) return code;
+      }
+    }
+    return null;
+  };
+
   // Track which UIDs should hold SZVB now, and which previously held SZVB
   const nextSzvbRoleByUid = new Map(); // uid -> { szvbRole, email, person }
   const unresolvedEmails = [];
@@ -337,13 +364,14 @@ export function computeSzvbMembershipPlan({
 
     const isExistingAdmin = existing?.active !== false && existing?.role === 'admin';
     const nextRole = isExistingAdmin ? 'admin' : 'szvb';
+    const resolvedFlatNum = findOwnedFlatNum(uid, email, person?.flatNum || existing?.flatNum || '');
 
     const memberDoc = {
       uid,
       email: email || normalizeEmail(existing?.email),
       role: nextRole,
       szvbRole,
-      flatNum: person?.flatNum || existing?.flatNum || '',
+      flatNum: resolvedFlatNum || '',
       unitIds: mergedUnitIds,
       active: true,
       accessFromDate: existing?.accessFromDate || null,
@@ -379,7 +407,7 @@ export function computeSzvbMembershipPlan({
           nextRole: szvbRole,
           buildingId,
           buildingName,
-          flatNum: person?.flatNum || existing?.flatNum || null,
+          flatNum: resolvedFlatNum,
           actor,
           recipientEmail: email,
         }),
@@ -394,7 +422,7 @@ export function computeSzvbMembershipPlan({
           nextRole: szvbRole,
           buildingId,
           buildingName,
-          flatNum: person?.flatNum || existing?.flatNum || null,
+          flatNum: resolvedFlatNum,
           actor,
           recipientEmail: email,
         }),
@@ -409,6 +437,7 @@ export function computeSzvbMembershipPlan({
     const existing = existingMembersByUid.get(uid) || null;
     const isExistingAdmin = existing?.active !== false && existing?.role === 'admin';
     const resolvedEmail = email || normalizeEmail(existing?.email);
+    const resolvedFlatNum = findOwnedFlatNum(uid, resolvedEmail, existing?.flatNum || '');
     const mergedUnitIds = Array.from(
       new Set([
         ...(Array.isArray(existing?.unitIds) ? existing.unitIds : []),
@@ -423,6 +452,7 @@ export function computeSzvbMembershipPlan({
         email: resolvedEmail,
         role: 'owner',
         szvbRole: null,
+        flatNum: resolvedFlatNum || existing?.flatNum || '',
         unitIds: mergedUnitIds,
         active: stillOwnsUnit,
         accessFromDate: existing?.accessFromDate || null,
@@ -465,7 +495,7 @@ export function computeSzvbMembershipPlan({
         nextRole: null,
         buildingId,
         buildingName,
-        flatNum: existing?.flatNum || null,
+        flatNum: resolvedFlatNum,
         actor,
         recipientEmail: resolvedEmail,
       }),

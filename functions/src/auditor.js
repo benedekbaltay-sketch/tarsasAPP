@@ -55,10 +55,38 @@ export const manageEconomicAuditor = onCall(
 
     const nextAuditor = sanitizeAuditorInput(auditor, actor.email);
     const buildingRef = db.doc(`buildings/${buildingId}`);
-    const buildingPreSnap = await buildingRef.get();
+    const [buildingPreSnap, unitsSnap] = await Promise.all([
+      buildingRef.get(),
+      db.collection(`buildings/${buildingId}/units`).get(),
+    ]);
     if (!buildingPreSnap.exists) {
       throw new HttpsError('not-found', `Building "${buildingId}" not found.`);
     }
+
+    const unitsList = unitsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const findOwnedFlatInfo = (uid, email, fallbackFlatNum = '') => {
+      const normEmail = normalizeEmail(email);
+      for (const u of unitsList) {
+        if (!u) continue;
+        const uidMatch = Boolean(uid && Array.isArray(u.ownerUids) && u.ownerUids.includes(uid));
+        const emailMatch = Boolean(
+          normEmail &&
+          Array.isArray(u.owners) &&
+          u.owners.some((o) => {
+            if (!o) return false;
+            if (normalizeEmail(o.email) === normEmail) return true;
+            return Array.isArray(o.emails) && o.emails.some((em) => normalizeEmail(em) === normEmail);
+          })
+        );
+        if (uidMatch || emailMatch) {
+          return { isOwner: true, flatNum: String(u.unitCode || u.flatNum || fallbackFlatNum || '').trim() || null };
+        }
+      }
+      if (fallbackFlatNum) {
+        return { isOwner: true, flatNum: String(fallbackFlatNum).trim() };
+      }
+      return { isOwner: false, flatNum: null };
+    };
 
     const prevAuditor = buildingPreSnap.data()?.economicAuditor || {};
     const prevEmail = prevAuditor?.enabled ? normalizeEmail(prevAuditor.email) : '';
@@ -69,19 +97,26 @@ export const manageEconomicAuditor = onCall(
       if (!email) return null;
       try {
         const u = await auth.getUserByEmail(email);
-        return u?.uid || null;
+        if (u?.uid) return u.uid;
       } catch {
-        if (!allowCreate) return null;
-        try {
-          const created = await auth.createUser({
-            email,
-            displayName: displayName || email.split('@')[0],
-            emailVerified: false,
-          });
-          return created?.uid || null;
-        } catch {
-          return null;
-        }
+        // Fallback: check Firestore users collection by normalized email before creating
+      }
+      try {
+        const uSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+        if (!uSnap.empty) return uSnap.docs[0].id;
+      } catch {
+        // Ignore lookup error and proceed
+      }
+      if (!allowCreate) return null;
+      try {
+        const created = await auth.createUser({
+          email,
+          displayName: displayName || email.split('@')[0],
+          emailVerified: false,
+        });
+        return created?.uid || null;
+      } catch {
+        return null;
       }
     };
 
@@ -130,6 +165,7 @@ export const manageEconomicAuditor = onCall(
             {
               ...oldMem,
               role: nextRole,
+              isEconomicAuditor: false,
               active: nextActive,
               updatedAt: nowTs,
             },
@@ -141,6 +177,7 @@ export const manageEconomicAuditor = onCall(
               memberships: {
                 [buildingId]: {
                   role: nextRole,
+                  isEconomicAuditor: false,
                   unitIds,
                   active: nextActive,
                   buildingName: bName,
@@ -150,7 +187,40 @@ export const manageEconomicAuditor = onCall(
             },
             { merge: true }
           );
+        } else if (oldMem && oldMem.isEconomicAuditor) {
+          // Resident also holds admin/szvb/owner role: keep their role, clear isEconomicAuditor flag
+          const unitIds = Array.isArray(oldMem.unitIds) ? oldMem.unitIds : [];
+          tx.set(
+            db.doc(`buildings/${buildingId}/members/${prevUid}`),
+            {
+              ...oldMem,
+              isEconomicAuditor: false,
+              updatedAt: nowTs,
+            },
+            { merge: true }
+          );
+          tx.set(
+            db.doc(`users/${prevUid}`),
+            {
+              memberships: {
+                [buildingId]: {
+                  role: oldMem.role || 'owner',
+                  isEconomicAuditor: false,
+                  unitIds,
+                  active: oldMem.active !== false,
+                  buildingName: bName,
+                },
+              },
+              updatedAt: nowTs,
+            },
+            { merge: true }
+          );
         }
+
+        const prevOwnerInfo = findOwnedFlatInfo(prevUid, prevEmail, prevAuditor?.flatNum || '');
+        const prevTargetProfile = prevOwnerInfo.isOwner
+          ? { type: 'owner', buildingId, flatNum: prevOwnerInfo.flatNum }
+          : { type: 'auditor', buildingId, flatNum: null };
 
         const revokeNotifId = makeId('notif');
         tx.set(db.doc(`users/${prevUid}/notifications/${revokeNotifId}`), {
@@ -159,6 +229,8 @@ export const manageEconomicAuditor = onCall(
           severity: 'info',
           buildingId,
           buildingName: bName,
+          flatNum: prevOwnerInfo.flatNum,
+          targetProfile: prevTargetProfile,
           recipientEmail: prevEmail,
           actorName: actor.email,
           actorEmail: actor.email,
@@ -170,7 +242,7 @@ export const manageEconomicAuditor = onCall(
           archived: false,
           deleted: false,
           dismissed: false,
-          meta: { action: 'revoked' },
+          meta: { action: 'revoked', flatNum: prevOwnerInfo.flatNum },
           createdAt: nowTs,
         });
       }
@@ -220,6 +292,11 @@ export const manageEconomicAuditor = onCall(
         );
 
         if (nextEmail !== prevEmail) {
+          const nextOwnerInfo = findOwnedFlatInfo(nextUid, nextEmail, nextAuditor?.flatNum || '');
+          const nextTargetProfile = nextOwnerInfo.isOwner
+            ? { type: 'owner', buildingId, flatNum: nextOwnerInfo.flatNum }
+            : { type: 'auditor', buildingId, flatNum: null };
+
           const grantNotifId = makeId('notif');
           tx.set(db.doc(`users/${nextUid}/notifications/${grantNotifId}`), {
             id: grantNotifId,
@@ -227,6 +304,8 @@ export const manageEconomicAuditor = onCall(
             severity: 'info',
             buildingId,
             buildingName: bName,
+            flatNum: nextOwnerInfo.flatNum,
+            targetProfile: nextTargetProfile,
             recipientEmail: nextEmail,
             actorName: actor.email,
             actorEmail: actor.email,
@@ -238,7 +317,7 @@ export const manageEconomicAuditor = onCall(
             archived: false,
             deleted: false,
             dismissed: false,
-            meta: { action: 'granted' },
+            meta: { action: 'granted', flatNum: nextOwnerInfo.flatNum },
             createdAt: nowTs,
           });
         }

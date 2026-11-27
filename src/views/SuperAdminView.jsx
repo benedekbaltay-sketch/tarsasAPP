@@ -271,13 +271,20 @@ export function SuperAdminView({ onOpenEditFlatMaster }) {
           ownerNames = f.owners.map(o => o.share ? `${o.name} (${o.share})` : o.name).join(', ');
         }
 
-        // Resident user object for impersonation
+        // Resident user object for impersonation (preserving UID so live resident notifications load cleanly)
+        const primaryEmailLower = (allEmails[0] || f.email || '').toLowerCase().trim();
+        const matchedUserRecord = primaryEmailLower
+          ? (users || []).find((u) => u && (u.email || '').toLowerCase().trim() === primaryEmailLower && u.uid)
+          : null;
+        const resolvedUid = matchedUserRecord?.uid || (Array.isArray(f.ownerUids) && f.ownerUids[0]) || null;
         const residentUser = {
           id: f.flatNum,
+          ...(resolvedUid ? { uid: resolvedUid } : {}),
           name: f.owners?.[0]?.name || f.ownerName || `${f.flatNum}. lakó`,
           email: allEmails[0] || f.email || '',
           role: 'Owner',
           flatNum: f.flatNum,
+          unitId: f.unitId || f.id || null,
           buildingId: b.id
         };
 

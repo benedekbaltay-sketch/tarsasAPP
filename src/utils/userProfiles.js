@@ -325,11 +325,12 @@ export function inferNotificationTargetProfile(notif) {
     };
   }
 
-  // Economic Auditor grant/revoke notifications belong to Owner (if internal) or Auditor (if external)
+  // Economic Auditor grant/revoke notifications belong to Owner (if internal/resident) or Auditor (if external)
   if (nType === 'auditor_updated') {
     const flatNum = notif.meta?.flatNum || notif.flatNum || null;
+    const isRevoked = notif.meta?.action === 'revoked';
     return {
-      type: flatNum ? 'owner' : 'auditor',
+      type: (flatNum || isRevoked) ? 'owner' : 'auditor',
       buildingId: notif.buildingId || null,
       flatNum,
     };
