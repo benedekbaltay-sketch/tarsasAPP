@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Menu, Building2, Calendar, ChevronDown, Check, LayoutGrid, Eye, Shield, ClipboardCheck } from 'lucide-react';
+import { Menu, Building2, Calendar, ChevronDown, Eye, Shield, ClipboardCheck } from 'lucide-react';
 import { ProfileSwitcherButton } from './ProfileSwitcherButton';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { CloudSyncBadge } from './CloudSyncBadge';
@@ -104,11 +104,50 @@ export function Header({
     ? userDisplayName
     : (currentUser.flatNum ? `${currentUser.flatNum}. ${isHu ? 'lakás' : 'flat'}` : (t.building_address || ''));
 
+  const otherAccessibleBuildings = (accessibleBuildings || []).filter(
+    (b) => b && b.id !== currentBuilding?.id
+  );
+  const canSwitchBuildings = Boolean(
+    isCurrentlyAdminMode &&
+    isInBuilding &&
+    !isPortfolioView &&
+    onSelectBuilding &&
+    otherAccessibleBuildings.length > 0
+  );
+  const logoClickHandler = isCurrentlyAdminMode && !isPortfolioView && onGoPortfolio ? onGoPortfolio : onGoHome;
+  const logoTooltip =
+    isCurrentlyAdminMode && !isPortfolioView && onGoPortfolio
+      ? (t.portfolio_back_to_buildings || (isHu ? "Társasházaim (Portfólió)" : "My Condos (Portfolio)"))
+      : (isHu ? "Kezdőlap" : "Home");
+
+  const roleBadges = (
+    <>
+      {isViewer && isInBuilding && (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex-shrink-0">
+          <Eye className="w-2.5 h-2.5 text-amber-600" />
+          <span>{isHu ? 'Csak megtekintő' : 'View only'}</span>
+        </span>
+      )}
+      {isSzvbMode && isInBuilding && (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
+          <Shield className="w-2.5 h-2.5 text-indigo-600" />
+          <span>SZVB</span>
+        </span>
+      )}
+      {isAuditorMode && isInBuilding && (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200 flex-shrink-0">
+          <ClipboardCheck className="w-2.5 h-2.5 text-teal-600" />
+          <span>{isHu ? 'Gazdasági ellenőr' : 'Financial Auditor'}</span>
+        </span>
+      )}
+    </>
+  );
+
   return (
     <div ref={headerContainerRef} className="sticky top-0 z-30 w-full shadow-sm">
       <ImpersonationBanner onExit={onGoHome} />
       <header className="w-full bg-white border-b border-gray-200 px-3 sm:px-4 md:px-8 py-3 flex items-center justify-between">
-        {/* Left: Menu Trigger & Logo / Building Name */}
+        {/* Left: Menu Trigger, Logo (Home/Portfolio), & Building Name (Inline Switcher when >1 KK building) */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 mr-2">
           {/* iOS Drawer Menu Trigger */}
           <button
@@ -127,12 +166,15 @@ export function Header({
             )}
           </button>
 
-          <div 
-            onClick={isCurrentlyAdminMode && !isPortfolioView && onGoPortfolio ? onGoPortfolio : onGoHome}
-            className="flex items-center gap-2 sm:gap-3 cursor-pointer select-none group min-w-0"
-            title={isHu ? "Kezdőlap" : "Home"}
-          >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#1E3A8A] flex items-center justify-center text-white shadow-md transition-transform group-hover:scale-105 flex-shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 select-none min-w-0">
+            {/* Logo button: always preserves original Home / Portfolio navigation */}
+            <button
+              type="button"
+              onClick={logoClickHandler}
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#1E3A8A] flex items-center justify-center text-white shadow-md transition-transform hover:scale-105 flex-shrink-0 cursor-pointer focus:outline-none"
+              title={logoTooltip}
+              aria-label={logoTooltip}
+            >
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="sm:w-5 sm:h-5">
                 <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
                 <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
@@ -142,116 +184,58 @@ export function Header({
                 <path d="M10 14h4"/>
                 <path d="M10 18h4"/>
               </svg>
-            </div>
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 leading-tight font-display truncate">
-                  {headerTitle}
-                </h1>
-                {isViewer && isInBuilding && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex-shrink-0">
-                    <Eye className="w-2.5 h-2.5 text-amber-600" />
-                    <span>{isHu ? 'Csak megtekintő' : 'View only'}</span>
-                  </span>
-                )}
-                {isSzvbMode && isInBuilding && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 flex-shrink-0">
-                    <Shield className="w-2.5 h-2.5 text-indigo-600" />
-                    <span>SZVB</span>
-                  </span>
-                )}
-                {isAuditorMode && isInBuilding && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200 flex-shrink-0">
-                    <ClipboardCheck className="w-2.5 h-2.5 text-teal-600" />
-                    <span>{isHu ? 'Gazdasági ellenőr' : 'Financial Auditor'}</span>
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] sm:text-xs text-gray-500 font-medium truncate max-w-[120px] xs:max-w-[170px] sm:max-w-[220px] md:max-w-none">
-                  {headerSubtitle}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+            </button>
 
-        {/* Right: Cloud Sync Badge, Role Switchers, Language toggle */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 flex-shrink-0">
-          <CloudSyncBadge hideWhenSynced={true} />
-
-          {/* Unified Portfolio & Managed Buildings Switcher (when inside a building in KK mode) */}
-          {isCurrentlyAdminMode && !isPortfolioView && (onGoPortfolio || onSelectBuilding) && (
-            <div className="relative" ref={switcherRef}>
-              <button
-                type="button"
-                onClick={() => setIsSwitcherOpen(prev => !prev)}
-                aria-expanded={isSwitcherOpen}
-                aria-haspopup="menu"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-semibold text-xs shadow-2xs transition-all cursor-pointer active:scale-95 ${
-                  isSwitcherOpen
-                    ? 'border-[#1E3A8A] bg-blue-50 text-[#1E3A8A]'
-                    : 'border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-gray-800'
-                }`}
-                title={t.header_switcher_tooltip || (isHu ? "Vissza a portfólió nézetbe vagy váltás másik társasházra" : "Return to portfolio view or switch to another condominium")}
-              >
-                <Building2 className="w-3.5 h-3.5 text-[#1E3A8A] flex-shrink-0" />
-                <span className="hidden sm:inline whitespace-nowrap">
-                  {t.header_switcher_btn || (isHu ? "Társasházak" : "Condominiums")}
-                </span>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 text-gray-500 transition-transform duration-150 flex-shrink-0 ${
-                    isSwitcherOpen ? 'rotate-180 text-[#1E3A8A]' : ''
+            {/* Building Name & Subtitle: inline dropdown switcher when KK manages >1 building */}
+            {canSwitchBuildings ? (
+              <div className="relative min-w-0" ref={switcherRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsSwitcherOpen((prev) => !prev)}
+                  aria-expanded={isSwitcherOpen}
+                  aria-haspopup="menu"
+                  title={t.header_switch_building_hint || (isHu ? "Váltás másik társasházra" : "Switch condominium")}
+                  className={`flex flex-col text-left min-w-0 rounded-lg px-1.5 -mx-1.5 py-0.5 transition-colors cursor-pointer group focus:outline-none ${
+                    isSwitcherOpen ? 'bg-blue-50/80' : 'hover:bg-gray-100/80'
                   }`}
-                />
-              </button>
-
-              {isSwitcherOpen && (
-                <div
-                  role="menu"
-                  className="absolute -right-12 sm:right-0 mt-2 w-[min(18.5rem,calc(100vw-1.5rem))] sm:w-80 bg-white rounded-2xl border border-gray-200 shadow-xl z-50 overflow-hidden animate-fadeIn"
                 >
-                  {/* Portfolio Overview Action */}
-                  {onGoPortfolio && (
-                    <div className="p-2 border-b border-gray-100 bg-slate-50/70">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setIsSwitcherOpen(false);
-                          onGoPortfolio();
-                        }}
-                        className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-white hover:bg-blue-50 border border-gray-200/80 hover:border-blue-200 text-left transition-all cursor-pointer group"
-                      >
-                        <div className="w-8 h-8 rounded-xl bg-[#1E3A8A] text-white flex items-center justify-center flex-shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                          <LayoutGrid className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold text-gray-900 group-hover:text-[#1E3A8A] truncate">
-                            {t.portfolio_back_to_buildings || (isHu ? "Társasházaim (Portfólió)" : "My Condos (Portfolio)")}
-                          </div>
-                          <div className="text-[11px] text-gray-500 truncate">
-                            {t.header_portfolio_view_desc || (isHu ? "Összes kezelt társasház áttekintése" : "Overview of all managed condominiums")}
-                          </div>
-                        </div>
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+                    <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 group-hover:text-[#1E3A8A] leading-tight font-display truncate transition-colors">
+                      {headerTitle}
+                    </h1>
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-400 group-hover:text-[#1E3A8A] transition-transform duration-150 flex-shrink-0 ${
+                        isSwitcherOpen ? 'rotate-180 text-[#1E3A8A]' : ''
+                      }`}
+                    />
+                    {roleBadges}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] sm:text-xs text-gray-500 font-medium truncate max-w-[120px] xs:max-w-[170px] sm:max-w-[220px] md:max-w-none">
+                      {headerSubtitle}
+                    </span>
+                  </div>
+                </button>
 
-                  {/* Managed Condominiums Direct Switcher */}
-                  {(accessibleBuildings || []).length > 0 && (
+                {isSwitcherOpen && (
+                  <div
+                    role="menu"
+                    className="absolute left-0 mt-2 w-[min(19rem,calc(100vw-2rem))] sm:w-80 bg-white rounded-2xl border border-gray-200 shadow-xl z-50 overflow-hidden animate-fadeIn"
+                  >
                     <div className="p-2">
                       <div className="px-2 pt-0.5 pb-1.5 flex items-center justify-between">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                          {t.header_managed_buildings || (isHu ? "Kezelt társasházak" : "Managed Condominiums")}
+                          {t.header_other_buildings || (isHu ? "További társasházak" : "Other Condominiums")}
                         </span>
                         <span className="text-[10px] font-bold text-gray-400">
-                          {(accessibleBuildings || []).length}
+                          {otherAccessibleBuildings.length}
                         </span>
                       </div>
-                      <div className="max-h-64 overflow-y-auto space-y-1">
-                        {(accessibleBuildings || []).map((b) => {
-                          const isActive = b.id === currentBuildingId;
+                      <div className="max-h-72 overflow-y-auto space-y-1">
+                        {otherAccessibleBuildings.map((b) => {
+                          const bIsViewer =
+                            isUserBuildingViewer(currentUser, b, organizations, buildings) ||
+                            !canUserManageBuilding(currentUser, b, organizations, buildings);
                           return (
                             <button
                               key={b.id}
@@ -259,24 +243,14 @@ export function Header({
                               role="menuitem"
                               onClick={() => {
                                 setIsSwitcherOpen(false);
-                                if (!isActive && onSelectBuilding) {
-                                  onSelectBuilding(b.id);
-                                }
+                                onSelectBuilding(b.id);
                               }}
-                              className={`w-full flex items-center justify-between gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                                isActive
-                                  ? 'bg-blue-50/90 border-blue-200 text-[#1E3A8A]'
-                                  : 'bg-white border-transparent hover:bg-gray-50 hover:border-gray-200/70 text-gray-800'
-                              }`}
+                              className="w-full flex items-center justify-between gap-2.5 p-2.5 rounded-xl border border-transparent bg-white hover:bg-blue-50/70 hover:border-blue-200/70 text-gray-800 text-left transition-all cursor-pointer group"
                             >
                               <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                <Building2
-                                  className={`w-4 h-4 flex-shrink-0 ${
-                                    isActive ? 'text-[#1E3A8A]' : 'text-gray-400'
-                                  }`}
-                                />
+                                <Building2 className="w-4 h-4 text-gray-400 group-hover:text-[#1E3A8A] flex-shrink-0 transition-colors" />
                                 <div className="min-w-0 flex-1">
-                                  <div className={`text-xs truncate ${isActive ? 'font-bold text-[#1E3A8A]' : 'font-semibold text-gray-800'}`}>
+                                  <div className="text-xs font-semibold text-gray-800 group-hover:text-[#1E3A8A] truncate transition-colors">
                                     {b.name}
                                   </div>
                                   {b.address && (
@@ -286,37 +260,46 @@ export function Header({
                                   )}
                                 </div>
                               </div>
-                              {(() => {
-                                const bIsViewer = isUserBuildingViewer(currentUser, b, organizations, buildings) || !canUserManageBuilding(currentUser, b, organizations, buildings);
-                                return (
-                                  <div className="flex items-center gap-1 flex-shrink-0">
-                                    {bIsViewer && (
-                                      <span className="px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold inline-flex items-center gap-0.5">
-                                        <Eye className="w-2.5 h-2.5 text-amber-600" />
-                                        <span>{isHu ? 'Megtekintő' : 'Viewer'}</span>
-                                      </span>
-                                    )}
-                                    {isActive && (
-                                      <>
-                                        <span className="px-1.5 py-0.5 rounded-md bg-blue-100 text-[#1E3A8A] text-[10px] font-bold">
-                                          {t.header_active_building_badge || (isHu ? "Aktív" : "Active")}
-                                        </span>
-                                        <Check className="w-3.5 h-3.5 text-[#1E3A8A] stroke-[2.5]" />
-                                      </>
-                                    )}
-                                  </div>
-                                );
-                              })()}
+                              {bIsViewer && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold inline-flex items-center gap-0.5 flex-shrink-0">
+                                  <Eye className="w-2.5 h-2.5 text-amber-600" />
+                                  <span>{isHu ? 'Megtekintő' : 'Viewer'}</span>
+                                </span>
+                              )}
                             </button>
                           );
                         })}
                       </div>
                     </div>
-                  )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={logoClickHandler}
+                className="flex flex-col text-left min-w-0 cursor-pointer focus:outline-none"
+                title={logoTooltip}
+              >
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                  <h1 className="text-sm sm:text-base md:text-lg font-bold text-gray-900 leading-tight font-display truncate">
+                    {headerTitle}
+                  </h1>
+                  {roleBadges}
                 </div>
-              )}
-            </div>
-          )}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] sm:text-xs text-gray-500 font-medium truncate max-w-[120px] xs:max-w-[170px] sm:max-w-[220px] md:max-w-none">
+                    {headerSubtitle}
+                  </span>
+                </div>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Cloud Sync Badge, Calendar, Notifications, Role Switcher, Language toggle */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 flex-shrink-0">
+          <CloudSyncBadge hideWhenSynced={true} />
 
           {/* Quick Calendar button in Header (Admins only, hidden for residents) */}
           {isCurrentlyAdminMode && onOpenCalendar && (

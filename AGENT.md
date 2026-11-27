@@ -917,8 +917,9 @@ A társasházakban gyakori, hogy egy albetétnek (lakás, garázs, üzlethelyis�
    - A **„Tulajdonosok”** fülön a SuperAdmin bármelyik Owner e-mail címét módosíthatja. A művelet atomian frissíti a `organizations`, `users`, `buildings` (kapcsolattartó és archív metaadatok) és `notifications` rekordokat, és igény esetén jelszóbeállító e-mailt küld az új címre.
 
 ### 34.5. Egységes Fejléc Navigáció Minden Menüpontban és `GlobalBalancesModal` Javítás
-- **Egységes bal felső `Menu` (☰) + jobb felső `X` bezárás gomb**:
+- **Egységes bal felső `Menu` (☰) + jobb felső `X` bezárás gomb és beépített társasház-váltó lenyíló menü (`Header.jsx`, `NavLogoButton.jsx`)**:
   - Az összes teljes képernyős menüpont (`FlatsDataModal`, `FinancialSituationModal`, `DocumentsModal`, `LoansModal`, `AssemblyModal`, `ProfileModal`, `GlobalBalancesModal`, `CalendarModal`, `CommunicationCenterModal`) bal felső sarkában egységesen megtalálható a 3 vízszintes vonalas menügomb (`onOpenDrawer`), a jobb felső sarkában pedig a tiszta `X` bezáró gomb (`onClose`).
+  - A fejléc jobb oldaláról eltávolításra került a különálló „Társasházak” gomb: ha a KK profilhoz egynél több társasház tartozik és házon belül tartózkodik, a bal felső **társasház neve mellett** egy kis lefelé mutató nyíl (`ChevronDown`) jelenik meg, amelyre (vagy a névre) kattintva közvetlenül legördül a többi kezelt társasház listája azonnali átlépéshez; a mellette lévő **kék logó ikon** továbbra is külön kattintható marad, és megőrzi eredeti funkcióját (visszalépés a Portfólió nézetbe / Főmenübe).
 - **Lakás törzsadatok (`EditFlatMasterModal.jsx`)**:
   - A jobb felső sarokban megszüntetve a duplikált „Bezárás” szöveges gomb, csak a letisztult `X` gomb (szerkesztéskor a Mentés gombbal) maradt.
 - **Társasház beállítások (`GlobalBalancesModal.jsx`) és Pénzügyi helyzet → Bank (`FinancialSituationModal.jsx`, `BankAccountsSection.jsx`)**:
