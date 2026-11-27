@@ -27,15 +27,19 @@ import {
   hydrateFirestoreSession,
   hydrateFirestoreBuilding,
   hydrateFirestoreBuildingFinancials,
+  firestoreBuildingToUiBuilding,
   firestoreTransactionsToUiCollections,
   purgeSensitiveLocalStorage,
   normalizeRoleForFirestore,
 } from '../services/firestoreAdapter';
 import {
+  fetchBuildingRoot,
   fetchPaginatedTransactions,
   updateUserPreferences,
   subscribeUserNotifications,
   subscribeOrganization,
+  subscribeUserProfile,
+  subscribeBuilding,
 } from '../services/firestoreService';
 
 import { createAuthActions } from './authActions';
@@ -63,6 +67,7 @@ import {
 } from '../utils/economicAuditor';
 import {
   resolveUserProfiles,
+  resolveActiveProfileValidity,
   saveLastActiveProfile,
 } from '../utils/userProfiles';
 
@@ -285,7 +290,7 @@ export function AppProvider({ children }) {
     setLastSyncTime(new Date());
   };
 
-  const reloadCurrentBuilding = async (targetBuildingId = null) => {
+  const reloadCurrentBuilding = async (targetBuildingId = null, { roleOverride = null } = {}) => {
     if (!IS_FIRESTORE_MODE) return null;
     const { auth } = getFirebaseInstance();
     const uid = auth?.currentUser?.uid || state.currentUser?.uid;
@@ -297,7 +302,7 @@ export function AppProvider({ children }) {
     try {
       const membership = state.currentUser?.memberships?.[bId];
       const hydrated = await hydrateFirestoreBuilding(bId, {
-        role: state.currentUser?.role || membership?.role || 'owner',
+        role: roleOverride || state.currentUser?.role || membership?.role || 'owner',
         uid,
         unitIds: membership?.unitIds || [],
         accessFromDate: state.currentUser?.accessFromDate || null,
@@ -1386,9 +1391,16 @@ export function AppProvider({ children }) {
   const teamActions = createTeamActions({ state, persistState, showToast, t });
   const emailActions = createEmailActions({ state, setState, persistState, showToast, t });
 
-  // Real-time Cloud Firestore listeners for user notifications & organization permissions
-  // so permission revocations, grants, and incoming mail reflect IMMEDIATELY across open sessions!
+  // Real-time Cloud Firestore listeners for user notifications, user memberships,
+  // organization permissions, and building role metadata (`szvb`, `economicAuditor`, `archived`)
+  // so role grants/revocations and incoming mail reflect IMMEDIATELY across open sessions!
   const orgIdsKey = (state.organizations || []).map((o) => o?.id).filter(Boolean).sort().join(',');
+  const buildingIdsKey = (state.buildings || [])
+    .filter((b) => b && b.id && b.archived !== true)
+    .map((b) => b.id)
+    .sort()
+    .join(',');
+
   useEffect(() => {
     if (!IS_FIRESTORE_MODE || !state.currentUser?.uid) return;
     const uid = state.currentUser.uid;
@@ -1400,6 +1412,46 @@ export function AppProvider({ children }) {
           ...prev,
           notifications: liveNotifs,
         }));
+      })
+    );
+
+    unsubs.push(
+      subscribeUserProfile(uid, (liveUserDoc) => {
+        if (!liveUserDoc) return;
+        const liveMemberships = liveUserDoc.memberships || {};
+        setState((prev) => {
+          if (!prev.currentUser || prev.currentUser.uid !== uid) return prev;
+          return {
+            ...prev,
+            currentUser: {
+              ...prev.currentUser,
+              memberships: liveMemberships,
+            },
+          };
+        });
+
+        // If user just gained an active membership on a building not yet loaded locally, fetch its root doc
+        const knownIds = new Set((buildingIdsKey ? buildingIdsKey.split(',') : []).filter(Boolean));
+        const newlyGrantedIds = Object.entries(liveMemberships)
+          .filter(([bId, m]) => bId && m && m.active === true && !knownIds.has(bId))
+          .map(([bId]) => bId);
+
+        for (const newBId of newlyGrantedIds) {
+          fetchBuildingRoot(newBId)
+            .then((bDoc) => {
+              if (!bDoc || bDoc.archived === true) return;
+              const uiB = firestoreBuildingToUiBuilding(bDoc);
+              if (!uiB) return;
+              setState((prev) => {
+                if ((prev.buildings || []).some((b) => b && b.id === uiB.id)) return prev;
+                return {
+                  ...prev,
+                  buildings: [...(prev.buildings || []), uiB],
+                };
+              });
+            })
+            .catch(() => {});
+        }
       })
     );
 
@@ -1422,12 +1474,284 @@ export function AppProvider({ children }) {
       );
     }
 
+    const buildingIds = buildingIdsKey ? buildingIdsKey.split(',').filter(Boolean) : [];
+    for (const bId of buildingIds) {
+      unsubs.push(
+        subscribeBuilding(
+          bId,
+          (liveBuildingDoc) => {
+            setState((prev) => {
+              const existingList = prev.buildings || [];
+              const existing = existingList.find((b) => b && b.id === liveBuildingDoc.id);
+              if (!existing) return prev;
+              const merged = firestoreBuildingToUiBuilding(liveBuildingDoc, {
+                flats: existing.flats || [],
+                transactions: existing.transactions || [],
+                expenses: existing.expenses || [],
+                manualDebits: existing.manualDebits || [],
+                loans: existing.loans || [],
+                documents: existing.documents || [],
+                infoSections: existing.infoSections || [],
+                categories: existing.categories || [],
+                hydrated: existing.hydrated,
+              });
+              if (!merged) return prev;
+              merged.firestoreMonthlySummaries = existing.firestoreMonthlySummaries || merged.firestoreMonthlySummaries || {};
+              return {
+                ...prev,
+                buildings: existingList.map((b) => (b && b.id === liveBuildingDoc.id ? merged : b)),
+              };
+            });
+          },
+          (deniedBuildingId) => {
+            // Building membership was revoked completely (e.g. external auditor removed):
+            // drop the inaccessible building locally so the active-profile guard immediately ejects them.
+            setState((prev) => ({
+              ...prev,
+              buildings: (prev.buildings || []).filter((b) => b && b.id !== deniedBuildingId),
+            }));
+          }
+        )
+      );
+    }
+
     return () => {
       unsubs.forEach((fn) => {
         try { fn(); } catch {}
       });
     };
-  }, [state.currentUser?.uid, orgIdsKey]);
+  }, [state.currentUser?.uid, orgIdsKey, buildingIdsKey]);
+
+  // Reactive Active-Profile Revocation Guard:
+  // If the user's currently active profile (SZVB, Financial Auditor, or offboarded KK) is revoked
+  // in real time while they are inside it, IMMEDIATELY eject them back to their valid apartment
+  // Owner profile (or sign them out cleanly if no profiles remain) so they can never view stale
+  // privileged screens or submit actions with revoked authority.
+  const lastRevocationSigRef = useRef('');
+  useEffect(() => {
+    if (!isInitialSyncDone || !state.currentUser || state.impersonatedFrom) return;
+
+    const validity = resolveActiveProfileValidity(state.currentUser, {
+      buildings: state.buildings,
+      organizations: state.organizations,
+      users: state.users,
+    });
+
+    // Seamless in-place sync if SZVB sub-role changed (e.g. Chairperson <-> Member) without revocation
+    if (validity.isValid) {
+      lastRevocationSigRef.current = '';
+      if (validity.szvbRoleChanged && validity.matchedProfile?.szvbRole) {
+        const nextSzvbRole = validity.matchedProfile.szvbRole;
+        setState((prev) => {
+          if (!prev.currentUser || prev.currentUser.role !== 'szvb' || prev.currentUser.szvbRole === nextSzvbRole) {
+            return prev;
+          }
+          return {
+            ...prev,
+            currentUser: {
+              ...prev.currentUser,
+              szvbRole: nextSzvbRole,
+            },
+          };
+        });
+      }
+      return;
+    }
+
+    const sig = `${state.currentUser.uid || state.currentUser.email}:${state.currentUser.role}:${state.currentUser.buildingId || ''}:${validity.fallbackProfile?.id || 'none'}`;
+    if (lastRevocationSigRef.current === sig) return;
+    lastRevocationSigRef.current = sig;
+
+    const isEn = state.currentLang === 'en';
+    const revokedRole = validity.revokedRole;
+    const fallback = validity.fallbackProfile;
+
+    if (!fallback) {
+      // Zero valid profiles remain (e.g. external auditor whose sole access was revoked)
+      if (IS_FIRESTORE_MODE) {
+        const { auth } = getFirebaseInstance();
+        if (auth) signOut(auth).catch(() => {});
+        purgeSensitiveLocalStorage();
+      }
+      setState((prev) => ({
+        ...prev,
+        currentUser: null,
+        impersonatedFrom: null,
+        activeRoleMode: null,
+        isPortfolioView: false,
+        currentBuildingId: null,
+        buildings: [],
+        flats: [],
+        transactions: [],
+        expenses: [],
+        manualDebits: [],
+        documents: [],
+        docFolders: [],
+        loans: [],
+        infoSections: [],
+      }));
+      showToast(
+        isEn
+          ? 'Your access to this condominium has been revoked.'
+          : 'A hozzáférésed megszűnt ehhez a társasházhoz.',
+        'warning'
+      );
+      return;
+    }
+
+    const { kkProfile } = resolveUserProfiles(state.currentUser, {
+      buildings: state.buildings,
+      organizations: state.organizations,
+      users: state.users,
+    });
+
+    const targetBuildingId = fallback.buildingId || null;
+    const curB = targetBuildingId ? (state.buildings || []).find((b) => b && b.id === targetBuildingId) : null;
+    const userEmail = (state.currentUser.email || '').toLowerCase().trim();
+
+    let nextUser = null;
+    let nextRoleMode = 'tenant';
+    let nextIsPortfolio = false;
+
+    if (fallback.type === 'owner') {
+      nextUser = stripSensitiveUserFields({
+        id: `${targetBuildingId}-${fallback.flatNum}`,
+        uid: state.currentUser.uid,
+        name: fallback.ownerName || fallback.name || state.currentUser.name,
+        email: state.currentUser.email || fallback.email,
+        role: 'Owner',
+        szvbRole: null,
+        flatNum: fallback.flatNum,
+        unitId: fallback.unitId || null,
+        buildingId: targetBuildingId,
+        isAdminUser: Boolean(kkProfile),
+        memberships: state.currentUser.memberships,
+      });
+      nextRoleMode = 'tenant';
+      nextIsPortfolio = false;
+    } else if (fallback.type === 'szvb') {
+      nextUser = stripSensitiveUserFields({
+        id: `szvb-${targetBuildingId}`,
+        uid: state.currentUser.uid,
+        name: fallback.name || state.currentUser.name,
+        email: state.currentUser.email || fallback.email,
+        role: 'szvb',
+        szvbRole: fallback.szvbRole || 'member',
+        flatNum: fallback.flatNum || '0',
+        buildingId: targetBuildingId,
+        isAdminUser: Boolean(kkProfile),
+        memberships: state.currentUser.memberships,
+      });
+      nextRoleMode = 'szvb';
+      nextIsPortfolio = false;
+    } else if (fallback.type === 'auditor') {
+      nextUser = stripSensitiveUserFields({
+        id: `auditor-${targetBuildingId}`,
+        uid: state.currentUser.uid,
+        name: fallback.name || state.currentUser.name,
+        email: state.currentUser.email || fallback.email,
+        role: 'auditor',
+        auditorType: fallback.auditorType || 'external',
+        flatNum: fallback.flatNum || '0',
+        buildingId: targetBuildingId,
+        isAdminUser: Boolean(kkProfile),
+        memberships: state.currentUser.memberships,
+      });
+      nextRoleMode = 'auditor';
+      nextIsPortfolio = false;
+    } else {
+      nextUser = stripSensitiveUserFields({
+        id: fallback.role === 'superadmin' ? (state.currentUser.uid || 'superadmin') : (state.currentUser.uid || 'admin'),
+        uid: state.currentUser.uid,
+        name: fallback.name || state.currentUser.name,
+        email: state.currentUser.email || fallback.email,
+        role: fallback.role || 'admin',
+        orgId: fallback.orgId || null,
+        orgRole: fallback.orgRole || null,
+        flatNum: '0',
+        buildingId: null,
+        isAdminUser: true,
+        memberships: state.currentUser.memberships,
+      });
+      nextRoleMode = 'kk';
+      nextIsPortfolio = true;
+    }
+
+    setCopiedTx(null);
+    saveLastActiveProfile(nextUser.email, {
+      id: fallback.id,
+      type: fallback.type,
+      buildingId: targetBuildingId,
+      flatNum: nextUser.flatNum || '0',
+    });
+
+    if (!IS_FIRESTORE_MODE) {
+      try {
+        if (!isCurrentTabSessionOnly() && localStorage.getItem('tarsashaz_remember_me') === 'true') {
+          localStorage.setItem('tarsashaz_logged_in_user', JSON.stringify(nextUser));
+        }
+        sessionStorage.setItem('tarsashaz_session_user', JSON.stringify(nextUser));
+        localStorage.setItem('tarsashaz_role_mode', nextRoleMode);
+        localStorage.setItem('tarsashaz_is_portfolio', nextIsPortfolio ? 'true' : 'false');
+      } catch {}
+    }
+
+    // Immediately strip privileged SZVB/Auditor building-wide flats & loans from memory when dropping to Owner!
+    const safeFlats = fallback.type === 'owner'
+      ? (curB?.flats || []).filter((f) => {
+          if (!f) return false;
+          if (fallback.flatNum && String(f.flatNum) === String(fallback.flatNum)) return true;
+          const mainEm = String(f.email || '').trim().toLowerCase();
+          if (userEmail && mainEm === userEmail) return true;
+          return Array.isArray(f.owners) && f.owners.some((o) => String(o?.email || '').trim().toLowerCase() === userEmail);
+        })
+      : (curB?.flats || []);
+
+    persistState((s) => ({
+      ...s,
+      currentUser: nextUser,
+      currentBuildingId: targetBuildingId,
+      activeRoleMode: nextRoleMode,
+      isPortfolioView: nextIsPortfolio,
+      flats: curB ? safeFlats : s.flats,
+      transactions: curB ? (curB.transactions || []) : s.transactions,
+      expenses: curB ? (curB.expenses || []) : s.expenses,
+      manualDebits: curB ? (curB.manualDebits || []) : s.manualDebits,
+      documents: curB ? (curB.documents || []) : s.documents,
+      docFolders: curB ? (curB.docFolders || []) : (s.docFolders || []),
+      loans: fallback.type === 'owner' ? [] : (curB ? (curB.loans || []) : s.loans),
+      infoSections: curB ? (curB.infoSections || []) : s.infoSections,
+      buildingInitialReserveCommon: curB ? (curB.buildingInitialReserveCommon || 0) : 0,
+      buildingInitialReserveRenovation: curB ? (curB.buildingInitialReserveRenovation || 0) : 0,
+    }), 'localOnly');
+
+    if (IS_FIRESTORE_MODE && targetBuildingId) {
+      reloadCurrentBuilding(targetBuildingId, { roleOverride: nextUser.role }).catch(() => {});
+    }
+
+    if (revokedRole === 'szvb' && fallback.type === 'owner') {
+      showToast(
+        isEn
+          ? `Your SZVB access was revoked — switched back to Flat ${fallback.flatNum}.`
+          : `Az SZVB szerepköröd megszűnt — visszairányítottunk a(z) ${fallback.flatNum}. lakás profilba.`,
+        'warning'
+      );
+    } else if (revokedRole === 'auditor' && fallback.type === 'owner') {
+      showToast(
+        isEn
+          ? `Your Financial Auditor access was revoked — switched back to Flat ${fallback.flatNum}.`
+          : `A gazdasági ellenőri jogosultságod megszűnt — visszairányítottunk a(z) ${fallback.flatNum}. lakás profilba.`,
+        'warning'
+      );
+    } else {
+      showToast(
+        isEn
+          ? 'Your previous profile access was revoked — switched to your remaining profile.'
+          : 'A korábbi profil jogosultságod megszűnt — átváltottunk a megmaradt profilodra.',
+        'warning'
+      );
+    }
+  }, [isInitialSyncDone, state.currentUser, state.impersonatedFrom, state.buildings, state.organizations, state.users]);
 
   // Invisible Server Clock Sync: subscribe to Firebase `.info/serverTimeOffset`
   // so Europe/Budapest scheduling & calendar logic never relies on drifted client clocks.
@@ -1636,7 +1960,7 @@ export function AppProvider({ children }) {
     }), 'localOnly');
 
     if (IS_FIRESTORE_MODE && targetBuildingId) {
-      reloadCurrentBuilding(targetBuildingId);
+      reloadCurrentBuilding(targetBuildingId, { roleOverride: 'Owner' });
     }
 
     showToast(isEn ? `Switched to Flat ${chosenFlat.flatNum}` : `Átváltva: ${chosenFlat.flatNum}. lakás`);

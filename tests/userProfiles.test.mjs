@@ -7,6 +7,7 @@ import {
   getNotificationsForActiveProfile,
   getUnreadNotificationCountsByProfile,
   resolveInitialLoginProfile,
+  resolveActiveProfileValidity,
 } from '../src/utils/userProfiles.js';
 import {
   buildBankChangeNotification,
@@ -255,4 +256,90 @@ test('6. Multi-profile active-role isolation: same email in SZVB or Owner mode N
   assert.equal(ownerCtx.isAdminRole, false);
   assert.equal(canUserManageBuilding(ownerActiveUser, buildings[0], ownerOrgs, buildings), false);
   assert.equal(canUserEditBankAccountNumbers(ownerActiveUser, buildings[0], ownerOrgs, buildings), false);
+});
+
+test('7. Real-time active-profile revocation guard: revoked SZVB/Auditor/KK immediately falls back to apartment Owner profile', () => {
+  const activeSzvbUser = {
+    email: 'janos@example.com',
+    role: 'szvb',
+    szvbRole: 'chairperson',
+    buildingId: 'b1',
+    flatNum: '14',
+  };
+
+  // While still SZVB chairperson -> valid
+  const validBefore = resolveActiveProfileValidity(activeSzvbUser, { buildings, organizations: [], users: [] });
+  assert.equal(validBefore.isValid, true);
+  assert.equal(validBefore.szvbRoleChanged, false);
+
+  // Demoted from chairperson -> member (still SZVB) -> remains valid with szvbRoleChanged=true
+  const demotedBuildings = buildings.map((b) =>
+    b.id === 'b1'
+      ? {
+          ...b,
+          szvb: {
+            chairperson: { name: 'Másik Tulaj', email: 'masik@example.com', flatNum: '2' },
+            members: [{ name: 'Kovács János', email: 'janos@example.com', flatNum: '14' }],
+          },
+        }
+      : b
+  );
+  const demotedCheck = resolveActiveProfileValidity(activeSzvbUser, {
+    buildings: demotedBuildings,
+    organizations: [],
+    users: [],
+  });
+  assert.equal(demotedCheck.isValid, true);
+  assert.equal(demotedCheck.szvbRoleChanged, true);
+  assert.equal(demotedCheck.matchedProfile.szvbRole, 'member');
+
+  // SZVB role completely revoked on b1 -> MUST immediately eject back to Owner flat 14 on b1!
+  const revokedBuildings = buildings.map((b) =>
+    b.id === 'b1' ? { ...b, szvb: { chairperson: null, members: [] } } : b
+  );
+  const revokedSzvb = resolveActiveProfileValidity(activeSzvbUser, {
+    buildings: revokedBuildings,
+    organizations: [],
+    users: [],
+  });
+  assert.equal(revokedSzvb.isValid, false);
+  assert.equal(revokedSzvb.revokedRole, 'szvb');
+  assert.equal(revokedSzvb.reason, 'active_profile_revoked');
+  assert.equal(revokedSzvb.fallbackProfile?.type, 'owner');
+  assert.equal(revokedSzvb.fallbackProfile?.buildingId, 'b1');
+  assert.equal(revokedSzvb.fallbackProfile?.flatNum, '14');
+
+  // External Financial Auditor (owns no flat) whose auditor access is revoked -> no remaining profiles
+  const externalAuditorUser = {
+    email: 'kulso.ellenor@example.com',
+    role: 'auditor',
+    buildingId: 'b1',
+    flatNum: '0',
+    memberships: { b1: { role: 'auditor', active: false } },
+  };
+  const revokedExternal = resolveActiveProfileValidity(externalAuditorUser, {
+    buildings: revokedBuildings,
+    organizations: [],
+    users: [],
+  });
+  assert.equal(revokedExternal.isValid, false);
+  assert.equal(revokedExternal.fallbackProfile, null);
+  assert.equal(revokedExternal.reason, 'no_remaining_profiles');
+
+  // Suspended KK staff currently active in KK mode -> immediately ejected to personal Owner profile
+  const suspendedOrgs = [
+    {
+      ...organizations[0],
+      members: [{ ...organizations[0].members[0], active: false }],
+    },
+  ];
+  const activeKkStaff = { email: 'janos@example.com', role: 'admin', orgId: 'org-1' };
+  const revokedKk = resolveActiveProfileValidity(activeKkStaff, {
+    buildings,
+    organizations: suspendedOrgs,
+    users: [],
+  });
+  assert.equal(revokedKk.isValid, false);
+  assert.equal(revokedKk.revokedRole, 'admin');
+  assert.equal(revokedKk.fallbackProfile?.type, 'owner');
 });

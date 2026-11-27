@@ -505,6 +505,40 @@ export function subscribeOrganization(orgId, onUpdate) {
   );
 }
 
+export function subscribeUserProfile(uid, onUpdate) {
+  if (!uid || typeof onUpdate !== 'function') return () => {};
+  const db = requireFirestore();
+  return onSnapshot(
+    doc(db, 'users', uid),
+    (snap) => {
+      if (snap.exists()) {
+        onUpdate({ id: snap.id, ...snap.data() });
+      }
+    },
+    (err) => console.warn('Firestore user profile listener warning:', err?.message)
+  );
+}
+
+export function subscribeBuilding(buildingId, onUpdate, onPermissionDenied = null) {
+  if (!buildingId || typeof onUpdate !== 'function') return () => {};
+  const db = requireFirestore();
+  return onSnapshot(
+    doc(db, 'buildings', buildingId),
+    (snap) => {
+      if (snap.exists()) {
+        onUpdate({ id: snap.id, ...snap.data() });
+      }
+    },
+    (err) => {
+      if (err?.code === 'permission-denied' && typeof onPermissionDenied === 'function') {
+        onPermissionDenied(buildingId, err);
+        return;
+      }
+      console.warn(`Firestore building (${buildingId}) listener warning:`, err?.message);
+    }
+  );
+}
+
 export async function callManageOrganizationMember(payload) {
   const fn = httpsCallable(requireFunctions(), 'manageOrganizationMember');
   const res = await fn(payload);

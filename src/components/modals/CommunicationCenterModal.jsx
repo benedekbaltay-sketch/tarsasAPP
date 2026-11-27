@@ -350,6 +350,15 @@ export function CommunicationCenterModal({
     }
   }, [isAdmin, activeTab]);
 
+  // If the user's active profile/role changes (e.g. live SZVB/Auditor revocation),
+  // immediately close any open compose/reply modal so stale role state can never be submitted.
+  useEffect(() => {
+    setIsDirectComposeOpen(false);
+    setDirectReplyTarget(null);
+    setViewingNotification(null);
+    setIsComposeOpen(false);
+  }, [currentUser?.role, currentUser?.buildingId, currentUser?.flatNum]);
+
   const matchesSearch = (n) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();

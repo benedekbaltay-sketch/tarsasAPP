@@ -575,3 +575,106 @@ export function resolveInitialLoginProfile(allProfiles = [], savedProfile = null
     allProfiles[0]
   );
 }
+
+/**
+ * Validates whether `currentUser`'s currently active profile is STILL authorized against the
+ * latest live `buildings`, `organizations`, and `users` state.
+ *
+ * When a privileged / delegated role (SZVB, Financial Auditor, or offboarded KK staff) is revoked
+ * while the user is actively viewing that profile, this deterministically selects the safest
+ * fallback profile (prioritizing the user's own apartment Owner profile in that same building!).
+ */
+export function resolveActiveProfileValidity(
+  currentUser,
+  { buildings = [], organizations = [], users = [] } = {}
+) {
+  if (!currentUser) {
+    return { isValid: true, matchedProfile: null, fallbackProfile: null, reason: null, szvbRoleChanged: false };
+  }
+
+  // SuperAdmin is always valid
+  if (currentUser.role === 'superadmin') {
+    return { isValid: true, matchedProfile: null, fallbackProfile: null, reason: null, szvbRoleChanged: false };
+  }
+
+  const activeBuildings = (buildings || []).filter((b) => b && b.archived !== true);
+  // Do not falsely eject building-scoped profiles before buildings have hydrated
+  if (
+    activeBuildings.length === 0 &&
+    (currentUser.role === 'szvb' || currentUser.role === 'auditor' || currentUser.role === 'Owner')
+  ) {
+    return { isValid: true, matchedProfile: null, fallbackProfile: null, reason: null, szvbRoleChanged: false };
+  }
+
+  const resolved = resolveUserProfiles(currentUser, {
+    buildings: activeBuildings,
+    organizations,
+    users,
+  });
+  const activeKey = getActiveProfileKey(currentUser);
+  const matchedProfile = (resolved.allProfiles || []).find((p) => p && p.id === activeKey) || null;
+
+  // Also check explicit server-side membership deactivation on current building (e.g. external auditor)
+  const bId = currentUser.buildingId || null;
+  let explicitlyDeactivatedInMembership = false;
+  if (bId && currentUser.memberships) {
+    let mem = null;
+    if (Array.isArray(currentUser.memberships)) {
+      mem = currentUser.memberships.find((m) => m && m.buildingId === bId) || null;
+    } else if (typeof currentUser.memberships === 'object') {
+      mem = currentUser.memberships[bId] || null;
+    }
+    if (mem && mem.active === false && (currentUser.role === 'szvb' || currentUser.role === 'auditor' || currentUser.role === 'Owner')) {
+      explicitlyDeactivatedInMembership = true;
+    }
+  }
+
+  if (matchedProfile && !explicitlyDeactivatedInMembership) {
+    const szvbRoleChanged = Boolean(
+      currentUser.role === 'szvb' &&
+      matchedProfile.szvbRole &&
+      currentUser.szvbRole &&
+      matchedProfile.szvbRole !== currentUser.szvbRole
+    );
+    return {
+      isValid: true,
+      matchedProfile,
+      fallbackProfile: null,
+      reason: null,
+      szvbRoleChanged,
+    };
+  }
+
+  // Active profile is NO LONGER authorized -> choose the safest fallback profile!
+  const remainingProfiles = (resolved.allProfiles || []).filter((p) => {
+    if (!p) return false;
+    if (explicitlyDeactivatedInMembership && bId && p.buildingId === bId) return false;
+    return true;
+  });
+
+  // Priority 1: User's own apartment Owner profile in the SAME building (exact flatNum match first)
+  const sameBuildingOwner = bId
+    ? (remainingProfiles.find(
+        (p) => p.type === 'owner' && p.buildingId === bId && currentUser.flatNum && String(p.flatNum) === String(currentUser.flatNum)
+      ) || remainingProfiles.find((p) => p.type === 'owner' && p.buildingId === bId))
+    : null;
+
+  const fallbackProfile =
+    sameBuildingOwner ||
+    remainingProfiles.find((p) => p.type === 'owner') ||
+    remainingProfiles.find((p) => p.type === 'szvb') ||
+    remainingProfiles.find((p) => p.type === 'auditor') ||
+    remainingProfiles.find((p) => p.type === 'kk') ||
+    remainingProfiles[0] ||
+    null;
+
+  return {
+    isValid: false,
+    matchedProfile: null,
+    revokedRole: currentUser.role,
+    revokedBuildingId: bId,
+    fallbackProfile,
+    reason: fallbackProfile ? 'active_profile_revoked' : 'no_remaining_profiles',
+    szvbRoleChanged: false,
+  };
+}
